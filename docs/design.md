@@ -124,6 +124,38 @@ One kernel + initramfs serves every package, cached by the browser.
 6. **Polish**: ghostty-web terminal, OPFS-persistent store, maybe
    networking via c2w-net-proxy.
 
+## Alternatives considered
+
+qemu-wasm's own README names the prior art; none of it can run the
+x86_64 binaries cache.nixos.org holds, which is the requirement that
+decides everything:
+
+- **JSLinux** (bellard.org/jslinux) emulates a 64-bit x86 CPU — AVX-512
+  and APX included — and boots in seconds, but that engine's source is
+  unreleased: the published TinyEMU (2019-12-21, MIT) carries only the
+  old 32-bit x86 and the RISC-V emulators, and its vfsync filesystem
+  and websocket VPN are services on bellard.org. Nothing to build on
+  today; a future source release would be worth revisiting as a
+  smaller, faster backend.
+- **v86** is fast and maintained but 32-bit x86 by design; i686
+  nixpkgs is not substitutable at any depth of history that matters.
+- **qemu.js** (the frozen port) predates wasm threads and asyncify;
+  qemu-wasm is that idea done with them.
+- **Unicorn.js** is QEMU's CPU core extracted for binary analysis — no
+  devices, nothing boots.
+
+JSLinux still contributes the design worth stealing: vfsync faults the
+root filesystem in over HTTP per file as the guest touches it, which is
+why it boots instantly. The equivalent here — a 9p backend that fetches
+and unpacks a store path's NAR on the guest's first access to it,
+instead of downloading the whole closure before boot — is the intended
+future shape of pipeline step 3; per-NAR granularity is coarser than
+vfsync's per-file, but a closure's cold-boot cost drops to the paths a
+command actually touches. qemu-wasm has no such hook, so lazy 9p means
+writing an emscripten FS backend (or a QEMU fsdev) ourselves; the eager
+walk-fetch-unpack path stays as milestone 2-3 and the lazy backend
+replaces it underneath, invisible to the rest.
+
 ## Open questions
 
 - Where do the qemu-wasm artifacts build? The emsdk docker container is
