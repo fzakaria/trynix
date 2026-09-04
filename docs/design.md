@@ -99,6 +99,43 @@ build both with nix instead — the flake is on NixOS's side of the fence:
 
 One kernel + initramfs serves every package, cached by the browser.
 
+## Start time
+
+Booting under emulation is the slow path — the upstream Alpine demo
+pays for a big eager download, then a full BIOS/kernel/OpenRC boot on
+a cold JIT (blocks are interpreted until their 1500th execution, and
+boot code runs once). The fix is in the fork already:
+`examples/migration/` snapshots a VM on a _native_ build of the same
+tree (`migrate file:vm.state` in the monitor) and the browser build
+resumes it with `-incoming file:vm.state`, skipping boot entirely.
+
+The trynix shape — one generic snapshot serves every package
+selection, because the selection rides the 9p share, not the snapshot:
+
+1. At image-build time, boot the guest natively
+   (`--with-coroutine=ucontext`, no emscripten) to the point where init
+   has done the one-time work and waits — deliberately before mounting
+   the 9p share, so the snapshot holds no open filesystem state against
+   a share whose contents change per session. Snapshot and compress; a
+   just-booted minimal guest is mostly zero pages, which the migration
+   stream elides.
+2. On page load, fetch qemu artifacts and snapshot (service-worker /
+   OPFS cached — warm visits skip the download) in parallel with the
+   closure NARs going into the MEMFS share via `Module.FS`.
+3. Start with `-incoming`: resume is RAM-load plus device restore,
+   seconds rather than a boot.
+4. The page signals the guest (a line on the serial console), init
+   mounts the share fresh, reads the manifest the page wrote (store
+   paths, what goes on PATH), and execs the shell.
+
+Migration demands that snapshotter and restorer agree exactly — QEMU
+version, machine type, device config, RAM size. A liability for a
+hand-run flow; a non-issue here, where both builds come from the same
+pinned fork in the same flake.
+
+Budget: cold visit ≈ parallel downloads + a few seconds of resume;
+warm visit ≈ closure download only, itself OPFS-cached per NAR.
+
 ## Repository layout
 
 - `site/` — the static site (vanilla ES modules today; the multiverse
@@ -116,7 +153,8 @@ One kernel + initramfs serves every package, cached by the browser.
 2. **NAR unpack**: xz + NAR decode in the browser, OPFS cache; "download
    this closure" becomes a real store tree in MEMFS.
 3. **Boot**: qemu-wasm artifacts + nix-built kernel/initramfs; a shell
-   over 9p with `hello` on PATH. The demo.
+   over 9p with `hello` on PATH. The demo. Then the migration snapshot
+   (see "Start time") so starting is a resume, not a boot.
 4. **Resolve**: the multiverse index shards wired into search — attr +
    version picker, the census gating the boot button.
 5. **Coexistence**: grail's solver embedded — boot a world, "python
