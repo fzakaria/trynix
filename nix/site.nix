@@ -16,6 +16,12 @@ pkgs.runCommand "trynix-site" { } ''
   cp -r ${self}/site/. $out/
   chmod -R u+w $out
   cp -r ${vendor} $out/vendor
+  chmod -R u+w $out/vendor
+
+  # The COOP/COEP service worker must sit at the site root: a worker's
+  # scope is its directory, and a worker under vendor/ can never control
+  # index.html — it would reload the page forever trying.
+  mv $out/vendor/coi-serviceworker.js $out/coi-serviceworker.js
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).

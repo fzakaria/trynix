@@ -78,9 +78,9 @@ function renderClosure(closure) {
   result.replaceChildren(table);
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
+// Walk whatever the input holds, rendering the closure and arming the
+// boot button. Shared by the form and by Boot's own cold path.
+async function walkFromInput() {
   const digest = digestFromInput(input.value);
   if (digest === null) {
     status.textContent = `need a store path with its ${DIGEST_LENGTH}-character digest`;
@@ -90,6 +90,8 @@ form.addEventListener("submit", async (event) => {
   status.textContent = "walking…";
   result.replaceChildren();
   bootButton.disabled = true;
+  // A failed walk must not leave the previous closure bootable.
+  walked = null;
 
   try {
     const closure = await walkClosure(digest, (n) => {
@@ -110,10 +112,17 @@ form.addEventListener("submit", async (event) => {
     renderClosure(closure);
 
     walked = { rootDigest: digest, closure };
-    bootButton.disabled = false;
   } catch (err) {
     status.textContent = String(err);
+  } finally {
+    // Re-armed either way: a failed walk should be retryable.
+    bootButton.disabled = false;
   }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  walkFromInput();
 });
 
 // The boot flow: engine, guest image and closure download in parallel
@@ -188,7 +197,12 @@ async function boot({ rootDigest, closure }) {
   }
 }
 
-bootButton.addEventListener("click", () => {
+// Boot is one click from a cold page: it walks the closure first if the
+// current input has not been walked yet.
+bootButton.addEventListener("click", async () => {
+  if (walked === null || walked.rootDigest !== digestFromInput(input.value)) {
+    await walkFromInput();
+  }
   if (walked !== null) {
     boot(walked);
   }

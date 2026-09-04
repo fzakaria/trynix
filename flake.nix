@@ -5,6 +5,15 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
+  # The guest kernel is the one expensive build in this flake; the cache
+  # means a contributor (and CI) fetches it rather than compiling it.
+  nixConfig = {
+    extra-substituters = [ "https://trynix.cachix.org" ];
+    extra-trusted-public-keys = [
+      "trynix.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
+    ];
+  };
+
   outputs =
     { self, nixpkgs }:
     let

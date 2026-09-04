@@ -1,10 +1,14 @@
 # Formatting first, then `nix flake check`, which runs everything the
 # flake defines — all of it offline:
 #
-#   checks.tests — the node test suite (the narinfo parser against a
-#                  fixture of what cache.nixos.org serves)
+#   checks.tests — the node test suite (the narinfo parser, and the NAR
+#                  parser against bytes nix itself wrote)
 #   checks.site  — the deployable tree assembles: entry page and the
 #                  hashed module directory in place
+#
+# The guest image is built here too, and pushed to cachix: it is the one
+# expensive derivation in the tree (a Linux kernel), and the pages job
+# and every contributor substitute it rather than compiling it.
 name: ci
 
 on:
@@ -19,7 +23,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -29,8 +33,19 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
+      - uses: cachix/cachix-action@v15
+        with:
+          name: trynix
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # A pull request from a fork has no token; read from the cache
+          # and skip pushing rather than failing the job.
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+
       - name: Formatting
         run: nix fmt -- --ci
 
       - name: Tests
         run: nix flake check -L
+
+      - name: Guest image
+        run: nix build .#guest -L

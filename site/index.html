@@ -21,12 +21,13 @@
     <!-- GitHub Pages cannot set COOP/COEP response headers; this service
          worker injects them so SharedArrayBuffer (qemu's pthreads) works.
          A server that sends the real headers makes it a no-op. -->
-    <script src="vendor/coi-serviceworker.js"></script>
+    <script src="coi-serviceworker.js"></script>
 
-    <!-- Vendored UMD bundles: Terminal, openpty, xzwasm globals. -->
+    <!-- Vendored UMD bundles: Terminal, openpty, xzwasm, fzstd globals. -->
     <script src="vendor/xterm.js"></script>
     <script src="vendor/xterm-pty.js"></script>
     <script src="vendor/xzwasm.js"></script>
+    <script src="vendor/fzstd.js"></script>
   </head>
   <body>
     <header class="site">
@@ -66,7 +67,7 @@
           placeholder="/nix/store/<digest>-<name>, a store basename, or a bare digest"
         />
         <button type="submit">Walk</button>
-        <button type="button" id="boot-button" disabled>Boot</button>
+        <button type="button" id="boot-button">Boot</button>
       </form>
       <p id="status" class="muted"></p>
     </section>

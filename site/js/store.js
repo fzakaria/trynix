@@ -4,9 +4,10 @@
 // compressed bytes, the number the narinfo priced) into the xzwasm
 // decompressor, then through the NAR parser into entry lists.
 //
-// xzwasm arrives as a vendored UMD script, so the global is used here
-// rather than an import.
-/* global xzwasm */
+// The cache compresses NARs per path — xz for older builds, zstd for
+// newer ones — so both decoders are on hand. xzwasm and fzstd arrive as
+// vendored UMD scripts, so globals are used here rather than imports.
+/* global xzwasm, fzstd */
 
 import { CACHE_URL } from "./config.js";
 import { parseNar } from "./nar.js";
@@ -29,11 +30,14 @@ export async function fetchNar(info, onBytes) {
   let stream = res.body.pipeThrough(counter);
   if (info.compression === "xz") {
     stream = new xzwasm.XzReadableStream(stream);
-  } else if (info.compression !== "none") {
+  } else if (info.compression !== "zstd" && info.compression !== "none") {
     throw new Error(`unsupported NAR compression "${info.compression}"`);
   }
 
-  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  if (info.compression === "zstd") {
+    bytes = fzstd.decompress(bytes);
+  }
   return parseNar(bytes);
 }
 

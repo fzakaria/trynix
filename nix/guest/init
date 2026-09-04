@@ -23,5 +23,9 @@ echo
 echo "trynix: welcome to the multiverse"
 echo
 
-# cttyhack attaches the shell to the console so job control works.
-exec setsid cttyhack /bin/sh
+# setsid -c starts the shell in a new session with the console as its
+# controlling terminal, so Ctrl-C and job control work. If that is
+# unavailable, fall back to a plain shell on the console — no job
+# control, but it still boots rather than panicking init.
+setsid -c /bin/sh
+exec /bin/sh

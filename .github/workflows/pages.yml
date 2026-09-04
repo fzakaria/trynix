@@ -1,6 +1,12 @@
-# Publishes the site to GitHub Pages. The deployed tree is
-# `nix build .#site` — the same derivation `nix run .#serve` tests
-# locally.
+# Publishes the site to GitHub Pages: `nix build .#site` (the same tree
+# `nix run .#serve` tests locally), with the two out-of-band artifact
+# sets overlaid — the guest image from `nix build .#guest` under guest/,
+# and the qemu engine from the engine release under qemu/.
+#
+# The engine is not in the tree and is not built here: it needs docker
+# and emscripten (docs/engine.md), takes tens of minutes, and changes
+# only when the qemu-wasm pin moves. It is built by hand and uploaded to
+# the `engine` release tag; this job downloads it.
 #
 # One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
 name: pages
@@ -10,7 +16,7 @@ on:
     branches: [main]
     paths:
       - site/**
-      - nix/site.nix
+      - nix/**
       - flake.lock
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -28,7 +34,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -41,6 +47,12 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
+      - uses: cachix/cachix-action@v15
+        with:
+          name: trynix
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+
       - name: Build the site
         # The store output is read-only and symlinked; the pages artifact
         # needs a plain writable directory, so dereference-copy it out.
@@ -48,6 +60,20 @@ jobs:
           nix build .#site
           cp -rL result _site
           chmod -R u+w _site
+
+      - name: Overlay the guest image
+        run: |
+          nix build .#guest -L
+          mkdir -p _site/guest
+          cp -rL result/. _site/guest/
+          chmod -R u+w _site/guest
+
+      - name: Overlay the qemu engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p _site/qemu
+          gh release download engine --repo "$GITHUB_REPOSITORY" --dir _site/qemu --clobber
 
       - uses: actions/configure-pages@v5
 
