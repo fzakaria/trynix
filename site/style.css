@@ -1,0 +1,166 @@
+/* Minimal on purpose: system fonts, one accent, dark mode via media query.
+   The tokens and the site chrome match nixpkgs-multiverse, so the two
+   pages read as one family. */
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6a6a6a;
+  --line: #e0e0e0;
+  --accent: #4f6bed;
+  --code-bg: #f4f4f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --fg: #e6e6e6;
+    --muted: #9a9a9a;
+    --line: #33363d;
+    --accent: #8fa3ff;
+    --code-bg: #22252c;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  padding: 1rem;
+  max-width: 60rem;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+}
+h1 {
+  font-size: 1.3rem;
+  margin: 0.2rem 0;
+}
+h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The site header: the title on the left, the top-level destinations on the
+   right. Wraps to two lines on a narrow phone rather than shrinking. */
+header.site {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 1rem;
+  margin: 0.2rem 0 0.6rem;
+}
+nav.site {
+  margin: 0;
+  border: 0;
+  display: flex;
+  gap: 1rem;
+  font-size: 14px;
+}
+nav.site a {
+  display: inline;
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  text-decoration: none;
+}
+nav.site a:hover {
+  text-decoration: underline;
+}
+nav.site a.active {
+  color: var(--fg);
+  font-weight: 600;
+}
+h2 {
+  font-size: 1.1rem;
+  margin: 1rem 0 0.3rem;
+}
+.muted {
+  color: var(--muted);
+}
+a {
+  color: var(--accent);
+}
+code {
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
+  background: var(--code-bg);
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+}
+
+/* The walk form: the input takes the measure, the button rides beside it. */
+#walk-form {
+  display: flex;
+  gap: 0.5rem;
+}
+#walk-form input {
+  flex: 1;
+  padding: 0.5rem;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+#walk-form button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#status {
+  margin: 0.5rem 0;
+}
+
+/* The closure table: store paths are long, so the path column gets the
+   measure and the size columns hug their content on the right. */
+#result table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+#result th,
+#result td {
+  text-align: left;
+  padding: 0.25rem 0.6rem 0.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+#result th.size,
+#result td.size {
+  text-align: right;
+  white-space: nowrap;
+}
+#result td.path {
+  font:
+    12px/1.6 ui-monospace,
+    monospace;
+  word-break: break-all;
+}
+
+footer {
+  margin-top: 2rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  text-align: center;
+}
+/* The second footer line: a store path is a single 68-character token —
+   broken across lines it is unreadable and awkward to select. Hold it on
+   one line and let the font shrink instead. */
+#store {
+  margin-top: 0.3rem;
+}
+#store code {
+  font-size: min(12px, 2.1vw);
+  white-space: nowrap;
+  background: none;
+  padding: 0;
+}

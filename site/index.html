@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>trynix</title>
+    <meta
+      name="description"
+      content="Boot anything nixpkgs ever shipped, in your browser: qemu-wasm plus the nixpkgs-multiverse index, no server anywhere."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>"
+    />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site">
+      <h1><a href=".">trynix</a></h1>
+      <nav class="site">
+        <a class="active" href=".">Boot</a>
+        <a href="https://nixmultiverse.com/" title="the index trynix resolves packages against">
+          Multiverse
+        </a>
+        <a
+          href="https://fzakaria.github.io/grail/"
+          title="grail: solve version-range queries over the index"
+        >
+          Version ranges
+        </a>
+        <a href="https://github.com/fzakaria/trynix">GitHub</a>
+      </nav>
+    </header>
+
+    <p>
+      trynix boots packages from
+      <a href="https://github.com/fzakaria/nixpkgs-multiverse">nixpkgs history</a> inside a
+      <a href="https://github.com/ktock/qemu-wasm">qemu-wasm</a> virtual machine, entirely in this
+      tab. The first slice below is the pipeline's front end: the runtime closure of a store path,
+      walked live from <code>cache.nixos.org</code> — the exact set of NARs a boot would fetch, and
+      what the download costs.
+    </p>
+
+    <section id="closure">
+      <h2>Walk a closure</h2>
+      <form id="walk-form">
+        <input
+          id="store-path"
+          type="search"
+          spellcheck="false"
+          value="/nix/store/18bbdvag5v2f3d4y37pdbkzvh7s71cw4-hello-2.12.2"
+          placeholder="/nix/store/<digest>-<name>, a store basename, or a bare digest"
+        />
+        <button type="submit">Walk</button>
+      </form>
+      <p id="status" class="muted"></p>
+      <div id="result"></div>
+    </section>
+
+    <footer class="muted">
+      Made with ❤️ by
+      <a href="https://fzakaria.com">Farid Zakaria</a>
+      ·
+      <a href="https://github.com/fzakaria/trynix/blob/main/LICENSE">MIT</a>
+      <div id="store" hidden><code id="store-path-footer"></code></div>
+    </footer>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

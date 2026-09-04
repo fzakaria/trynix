@@ -1,0 +1,36 @@
+# Formatting first, then `nix flake check`, which runs everything the
+# flake defines — all of it offline:
+#
+#   checks.tests — the node test suite (the narinfo parser against a
+#                  fixture of what cache.nixos.org serves)
+#   checks.site  — the deployable tree assembles: entry page and the
+#                  hashed module directory in place
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Formatting
+        run: nix fmt -- --ci
+
+      - name: Tests
+        run: nix flake check -L

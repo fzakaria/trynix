@@ -1,0 +1,10 @@
+StorePath: /nix/store/18bbdvag5v2f3d4y37pdbkzvh7s71cw4-hello-2.12.2
+URL: nar/0fixture0fixture0fixture0fixture0fixture0fixture0000.nar.xz
+Compression: xz
+FileHash: sha256:0fixture0fixture0fixture0fixture0fixture0fixture0000
+FileSize: 50560
+NarHash: sha256:1fixture1fixture1fixture1fixture1fixture1fixture1111
+NarSize: 226504
+References: 18bbdvag5v2f3d4y37pdbkzvh7s71cw4-hello-2.12.2 wx1vk75bpdr65g6xwxbj4rw0pk04v5j3-glibc-2.27
+Deriver: 2fixture2fixture2fixture2fixture-hello-2.12.2.drv
+Sig: cache.nixos.org-1:fixture

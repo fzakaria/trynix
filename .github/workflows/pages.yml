@@ -1,0 +1,59 @@
+# Publishes the site to GitHub Pages. The deployed tree is
+# `nix build .#site` — the same derivation `nix run .#serve` tests
+# locally.
+#
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - nix/site.nix
+      - flake.lock
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Deploys must land in order; a newer push supersedes an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Build the site
+        # The store output is read-only and symlinked; the pages artifact
+        # needs a plain writable directory, so dereference-copy it out.
+        run: |
+          nix build .#site
+          cp -rL result _site
+          chmod -R u+w _site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

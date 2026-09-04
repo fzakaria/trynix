@@ -1,0 +1,5 @@
+{
+  "//": "exists only so node treats site/js/*.js as ES modules in tests",
+  "private": true,
+  "type": "module"
+}
