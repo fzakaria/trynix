@@ -1,15 +1,21 @@
-# `nix build .#site` — the exact tree the pages workflow deploys and
-# `nix run .#serve` tests locally. Today the tree is site/ verbatim; the
-# qemu-wasm artifacts, guest kernel and multiverse data shards will join
-# it as the runtime lands (docs/design.md holds the plan).
+# `nix build .#site` — the static site tree: site/ plus the vendored
+# browser dependencies (nix/vendor.nix). The qemu engine artifacts and
+# the guest image are overlaid at serve/deploy time — the engine because
+# it is built out-of-band (docker + emscripten, see docs/design.md) and
+# published as a release asset rather than committed, the guest so that
+# a site iteration does not wait on a kernel build.
 {
   pkgs,
   self,
 }:
+let
+  vendor = import ./vendor.nix { inherit pkgs; };
+in
 pkgs.runCommand "trynix-site" { } ''
   mkdir -p $out
   cp -r ${self}/site/. $out/
   chmod -R u+w $out
+  cp -r ${vendor} $out/vendor
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).

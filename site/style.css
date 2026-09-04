@@ -145,6 +145,48 @@ code {
   word-break: break-all;
 }
 
+/* Boot progress: one row per stage — label, bar, byte count. */
+.progress-row {
+  display: grid;
+  grid-template-columns: 10rem 1fr 12rem;
+  gap: 0.8rem;
+  align-items: center;
+  margin: 0.35rem 0;
+  font-size: 14px;
+}
+.progress-row .bar {
+  height: 0.5rem;
+  background: var(--code-bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-row .fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+.progress-row.done .fill {
+  background: #3fa34d;
+}
+.progress-row.failed .fill {
+  background: #c94f4f;
+}
+.progress-row .bytes {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The serial console. xterm draws its own colors; the frame stays dark
+   in both themes. */
+#terminal {
+  margin-top: 0.8rem;
+  background: #000;
+  border-radius: 6px;
+  padding: 0.5rem;
+  min-height: 24rem;
+}
+
 footer {
   margin-top: 2rem;
   padding: 0.8rem 0;

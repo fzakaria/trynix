@@ -8,6 +8,8 @@ pkgs.nixfmt-tree.override {
     pkgs.prettier
   ];
   settings = {
+    # Built artifacts and third-party bundles are not ours to format.
+    global.excludes = [ "vendor/*" ];
     formatter.prettier = {
       command = "prettier";
       options = [ "--write" ];

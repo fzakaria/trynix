@@ -1,0 +1,27 @@
+#!/bin/sh
+# trynix guest init: bring up the pseudo-filesystems, mount the 9p store
+# share the page populated, apply its manifest, and hand the serial
+# console a shell. The share layout is the page's contract:
+#   /mnt/share/nix/store/...   the fetched closure
+#   /mnt/share/manifest        shell fragment: PATH and friends
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+
+# The store share; the tag matches the -virtfs id the page passes. A
+# large msize cuts round-trips on the synchronous 9p backend.
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576 store0 /mnt/share
+ln -s /mnt/share/nix /nix
+
+if [ -f /mnt/share/manifest ]; then
+  . /mnt/share/manifest
+fi
+
+echo
+echo "trynix: welcome to the multiverse"
+echo
+
+# cttyhack attaches the shell to the console so job control works.
+exec setsid cttyhack /bin/sh

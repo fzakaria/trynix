@@ -15,3 +15,22 @@ export const DIGEST_PATTERN = /^[0-9a-z]{32}$/;
 // How many narinfo fetches fly at once during a closure walk. The bound
 // exists for the browser's connection queue, not for the cache.
 export const FETCH_CONCURRENCY = 20;
+
+// How many NAR downloads decompress at once during a boot.
+export const NAR_CONCURRENCY = 4;
+
+// The guest files the page feeds into the VM's -L directory, served
+// under guest/ (nix/guest.nix builds them).
+export const GUEST_FILES = [
+  "bzImage",
+  "initramfs.cpio.gz",
+  "bios-256k.bin",
+  "vgabios-stdvga.bin",
+  "kvmvapic.bin",
+  "linuxboot_dma.bin",
+];
+
+// The qemu engine artifacts, served under qemu/. out.js and the worker
+// are loaded by the module machinery; the wasm is prefetched by hand so
+// the biggest download gets a progress bar.
+export const QEMU_WASM = "qemu/qemu-system-x86_64.wasm";

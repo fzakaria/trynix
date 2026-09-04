@@ -16,6 +16,17 @@
     <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
 
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="vendor/xterm.css" />
+
+    <!-- GitHub Pages cannot set COOP/COEP response headers; this service
+         worker injects them so SharedArrayBuffer (qemu's pthreads) works.
+         A server that sends the real headers makes it a no-op. -->
+    <script src="vendor/coi-serviceworker.js"></script>
+
+    <!-- Vendored UMD bundles: Terminal, openpty, xzwasm globals. -->
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/xterm-pty.js"></script>
+    <script src="vendor/xzwasm.js"></script>
   </head>
   <body>
     <header class="site">
@@ -39,9 +50,9 @@
       trynix boots packages from
       <a href="https://github.com/fzakaria/nixpkgs-multiverse">nixpkgs history</a> inside a
       <a href="https://github.com/ktock/qemu-wasm">qemu-wasm</a> virtual machine, entirely in this
-      tab. The first slice below is the pipeline's front end: the runtime closure of a store path,
-      walked live from <code>cache.nixos.org</code> — the exact set of NARs a boot would fetch, and
-      what the download costs.
+      tab. Paste a store path: its runtime closure is walked live from
+      <code>cache.nixos.org</code>, fetched, and mounted into an x86_64 Linux guest over virtio-9p
+      — a shell with the package on <code>PATH</code>, no server anywhere.
     </p>
 
     <section id="closure">
@@ -55,8 +66,18 @@
           placeholder="/nix/store/<digest>-<name>, a store basename, or a bare digest"
         />
         <button type="submit">Walk</button>
+        <button type="button" id="boot-button" disabled>Boot</button>
       </form>
       <p id="status" class="muted"></p>
+    </section>
+
+    <section id="boot" hidden>
+      <h2>Boot</h2>
+      <div id="boot-progress"></div>
+      <div id="terminal"></div>
+    </section>
+
+    <section>
       <div id="result"></div>
     </section>
 
