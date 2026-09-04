@@ -8,12 +8,22 @@
       name="description"
       content="Boot anything nixpkgs ever shipped, in your browser: qemu-wasm plus the nixpkgs-multiverse index, no server anywhere."
     />
+    <link rel="canonical" href="https://trynix.dev/" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>"
     />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="trynix" />
+    <meta property="og:title" content="trynix — boot anything nixpkgs ever shipped, in your browser" />
+    <meta
+      property="og:description"
+      content="Pick any package from 13 years of nixpkgs history and boot it in an x86_64 Linux VM in your tab. No server anywhere."
+    />
+    <meta property="og:url" content="https://trynix.dev/" />
 
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="vendor/xterm.css" />
@@ -39,9 +49,9 @@
         </a>
         <a
           href="https://fzakaria.github.io/grail/"
-          title="grail: solve version-range queries over the index"
+          title="grail: solve version-range queries over this index"
         >
-          Version ranges
+          grail
         </a>
         <a href="https://github.com/fzakaria/trynix">GitHub</a>
       </nav>
@@ -51,25 +61,73 @@
       trynix boots packages from
       <a href="https://github.com/fzakaria/nixpkgs-multiverse">nixpkgs history</a> inside a
       <a href="https://github.com/ktock/qemu-wasm">qemu-wasm</a> virtual machine, entirely in this
-      tab. Paste a store path: its runtime closure is walked live from
-      <code>cache.nixos.org</code>, fetched, and mounted into an x86_64 Linux guest over virtio-9p
-      — a shell with the package on <code>PATH</code>, no server anywhere.
+      tab. Pick any package nixpkgs ever shipped and its closure is fetched from
+      <code>cache.nixos.org</code> and mounted into an x86_64 Linux guest over virtio-9p — a shell
+      with everything on <code>PATH</code>, no server anywhere.
     </p>
 
-    <section id="closure">
-      <h2>Walk a closure</h2>
-      <form id="walk-form">
+    <p class="examples muted">
+      Try:
+      <a href="?pkg=hello">hello</a> ·
+      <a href="?pkg=ripgrep&pkg=jq">ripgrep and jq</a> ·
+      <a href="?pkg=python3@3.6.2">python 3.6.2 from 2017</a> ·
+      <a href="?pkg=jujutsu@0.43.0">jujutsu</a> ·
+      <a href="?pkg=hello@2.10&pkg=hello@2.12.2">two eras of hello at once</a>
+    </p>
+
+    <section id="pick">
+      <nav id="lanes">
+        <a class="active" href="#" data-lane="search">Search packages</a>
+        <a href="#" data-lane="ranges">Version ranges</a>
+        <a href="#" data-lane="path">Store path</a>
+      </nav>
+
+      <div class="lane" data-lane="search">
         <input
-          id="store-path"
+          id="search"
           type="search"
           spellcheck="false"
-          value="/nix/store/18bbdvag5v2f3d4y37pdbkzvh7s71cw4-hello-2.12.2"
-          placeholder="/nix/store/<digest>-<name>, a store basename, or a bare digest"
+          autocomplete="off"
+          placeholder="search nixpkgs — hello, python3, jujutsu, ripgrep…"
         />
-        <button type="submit">Walk</button>
-        <button type="button" id="boot-button">Boot</button>
-      </form>
+        <div id="search-results"></div>
+      </div>
+
+      <div class="lane" data-lane="ranges" hidden>
+        <form id="ranges-form">
+          <input
+            id="ranges-input"
+            type="search"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="python3@3.10.* ripgrep jujutsu@>=0.40"
+          />
+          <button type="submit">Resolve</button>
+        </form>
+        <p class="muted">
+          Each spec resolves on its own to the newest matching build.
+          <a href="https://github.com/fzakaria/grail">grail</a> answers the harder question — which
+          versions all held at one moment in nixpkgs history — and its plans paste in here.
+        </p>
+        <div id="ranges-results"></div>
+      </div>
+
+      <div class="lane" data-lane="path" hidden>
+        <form id="walk-form">
+          <input
+            id="store-path"
+            type="search"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="/nix/store/<digest>-<name>, a store basename, or a bare digest"
+          />
+          <button type="submit">Add</button>
+        </form>
+      </div>
+
+      <div id="selection"></div>
       <p id="status" class="muted"></p>
+      <button type="button" id="boot-button" disabled>Boot</button>
     </section>
 
     <section id="boot" hidden>

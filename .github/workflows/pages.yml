@@ -71,9 +71,14 @@ jobs:
       - name: Overlay the qemu engine
         env:
           GH_TOKEN: ${{ github.token }}
+        # A missing release is not a failed deploy: the site still
+        # walks closures and explains itself, and only the Boot button
+        # is dead. docs/engine.md covers publishing the release.
         run: |
           mkdir -p _site/qemu
-          gh release download engine --repo "$GITHUB_REPOSITORY" --dir _site/qemu --clobber
+          if ! gh release download engine --repo "$GITHUB_REPOSITORY" --dir _site/qemu --clobber; then
+            echo "::warning::no engine release; the deployed site cannot boot a VM"
+          fi
 
       - uses: actions/configure-pages@v5
 

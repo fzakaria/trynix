@@ -7,6 +7,14 @@
 // the pipeline.
 export const CACHE_URL = "https://cache.nixos.org";
 
+// The nixpkgs-multiverse index: every version of every attribute
+// nixpkgs ever shipped, joined to the store path Hydra built. Served
+// from GitHub Pages with open CORS, so the browser reads it directly.
+export const MULTIVERSE_URL = "https://nixmultiverse.com";
+
+// How many attribute matches the search list shows at once.
+export const SEARCH_LIMIT = 12;
+
 // A store basename is <digest>-<name>; the digest is 32 characters of
 // nix base32, which draws from lowercase letters and digits.
 export const DIGEST_LENGTH = 32;

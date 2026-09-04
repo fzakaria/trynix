@@ -11,11 +11,12 @@
 
 import { CACHE_URL } from "./config.js";
 import { parseNar } from "./nar.js";
+import { cachedFetch } from "./cache.js";
 
 // One NAR: fetch, count, decompress, parse. onBytes hears compressed
 // chunk sizes as they arrive.
 export async function fetchNar(info, onBytes) {
-  const res = await fetch(`${CACHE_URL}/${info.url}`);
+  const { response: res } = await cachedFetch(`${CACHE_URL}/${info.url}`);
   if (!res.ok) {
     throw new Error(`${info.url}: HTTP ${res.status}`);
   }

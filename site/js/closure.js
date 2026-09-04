@@ -41,9 +41,20 @@ async function fetchNarinfo(digest) {
 // FETCH_CONCURRENCY narinfos in flight at a time. Returns a Map of
 // digest -> parsed narinfo in discovery order; onProgress hears the
 // count as it grows.
-export async function walkClosure(rootDigest, onProgress = () => {}) {
+//
+// `known` is a closure already walked. Paths in it are neither fetched
+// nor returned, so walking several roots that share a glibc costs one
+// fetch of it rather than one per root.
+export async function walkClosure(
+  rootDigest,
+  onProgress = () => {},
+  known = new Map(),
+) {
   const closure = new Map();
-  const enqueued = new Set([rootDigest]);
+  if (known.has(rootDigest)) {
+    return closure;
+  }
+  const enqueued = new Set([rootDigest, ...known.keys()]);
   let frontier = [rootDigest];
 
   while (frontier.length > 0) {

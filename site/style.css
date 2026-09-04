@@ -145,6 +145,145 @@ code {
   word-break: break-all;
 }
 
+/* Example links under the intro. */
+.examples a {
+  white-space: nowrap;
+}
+
+/* The lane tabs: search, ranges, store path. */
+#lanes {
+  margin: 1rem 0 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+#lanes a {
+  display: inline-block;
+  border-bottom: 2px solid transparent;
+  padding: 0.4rem 0.8rem;
+  font: inherit;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+#lanes a.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+#ranges-form,
+#walk-form {
+  display: flex;
+  gap: 0.5rem;
+}
+#ranges-form input,
+#walk-form input {
+  flex: 1;
+  padding: 0.5rem;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+#ranges-form button,
+#walk-form button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#ranges-results {
+  margin: 0.5rem 0;
+  font-size: 14px;
+}
+
+/* The package picker: a search box, a list of matches, and the chosen
+   builds as removable chips. */
+#search {
+  width: 100%;
+  padding: 0.5rem;
+  font: inherit;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+#search-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.5rem 0;
+}
+#search-results p {
+  margin: 0.2rem 0;
+  width: 100%;
+}
+#search-results button {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#search-results button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+#search-results button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+#search-results .name {
+  font:
+    13px ui-monospace,
+    monospace;
+}
+#selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.5rem 0;
+}
+#selection .chip {
+  padding: 0.25rem 0.6rem;
+  font:
+    13px ui-monospace,
+    monospace;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+#advanced {
+  margin: 0.6rem 0;
+}
+#advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+#boot-button {
+  padding: 0.5rem 1.4rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#boot-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Boot progress: one row per stage — label, bar, byte count. */
 .progress-row {
   display: grid;

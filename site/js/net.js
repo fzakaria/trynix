@@ -1,9 +1,12 @@
 // Fetch helpers shared by the boot flow.
 
-// Fetch a URL into bytes. onTotal hears the Content-Length once (null
-// when the server does not say); onBytes hears each chunk's size.
+import { cachedFetch } from "./cache.js";
+
+// Fetch a URL into bytes, through the persistent cache. onTotal hears
+// the Content-Length once (null when the server does not say); onBytes
+// hears each chunk's size.
 export async function fetchWithProgress(url, { onBytes, onTotal } = {}) {
-  const res = await fetch(url);
+  const { response: res } = await cachedFetch(url);
   if (!res.ok) {
     throw new Error(`${url}: HTTP ${res.status}`);
   }

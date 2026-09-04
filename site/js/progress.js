@@ -53,6 +53,10 @@ export class ProgressPanel {
         bytes += delta;
         render();
       },
+      // A stage whose progress is a count rather than a byte total.
+      note(message) {
+        text.textContent = message;
+      },
       done(note) {
         el.classList.add("done");
         fill.style.width = "100%";
