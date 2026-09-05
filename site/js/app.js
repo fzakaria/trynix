@@ -240,33 +240,57 @@ laneNav.addEventListener("click", (event) => {
 // guest does not have. Naming the whole closure costs a longer variable
 // and fixes that class of failure outright.
 function buildManifest(closure, rootDigests, unpacked) {
-  // Only directories that exist may be named. A missing one is not
-  // harmlessly skipped here the way it would be on a normal
-  // filesystem: 9p hands the guest emscripten's errno rather than a
-  // Linux one, so a lookup of a directory that is not there fails with
-  // an errno glibc does not recognise ("Error 44"), and the dynamic
-  // loader gives up on the whole search instead of moving to the next
-  // entry. One bogus entry made every package whose libraries are
-  // found by search — rather than by RPATH — fail to start.
+  const dirs = binAndLibDirs(closure, rootDigests, unpacked);
+  return (
+    `export PATH="${dirs.bin.join(":")}:$PATH"\n` +
+    `export LD_LIBRARY_PATH="${dirs.lib.join(":")}"\n`
+  );
+}
+
+// Which directories a closure actually has, as guest paths.
+//
+// Only directories that exist may be named. A missing one is not
+// harmlessly skipped the way it would be on a normal filesystem: the
+// engine's 9p answers a lookup of something absent with ENOENT only
+// because patches/ makes it: without that patch it answers with
+// emscripten's WASI numbering, which the guest reads as ECHRNG, and
+// the dynamic loader gives up on the whole search.
+//
+// PATH leads with the selected roots so that what the reader asked for
+// wins a collision, then everything else in the closure — a package
+// whose programs live in a dependency still works.
+function binAndLibDirs(closure, rootDigests, unpacked) {
+  const byBasename = new Map(unpacked.map((p) => [p.basename, p]));
   const has = (basename, directory) =>
-    unpacked
-      .find((p) => p.basename === basename)
+    byBasename
+      .get(basename)
       ?.entries.some(
         (entry) => entry.path === directory && entry.type === "directory",
       ) ?? false;
 
-  const dirs = (digests, directory) =>
+  const guestPath = (basename, directory) =>
+    `/nix/store/${basename}/${directory}`;
+  const basenames = (digests) =>
     digests
       .map((digest) => closure.get(digest))
       .filter((info) => info !== undefined)
-      .map((info) => basenameOf(info))
-      .filter((basename) => has(basename, directory))
-      .map((basename) => `/nix/store/${basename}/${directory}`);
+      .map(basenameOf);
 
-  const path = dirs(rootDigests, "bin").join(":");
-  const libraryPath = dirs([...closure.keys()], "lib").join(":");
+  const roots = basenames(rootDigests);
+  const rest = basenames([...closure.keys()]).filter((b) => !roots.includes(b));
 
-  return `export PATH="${path}:$PATH"\nexport LD_LIBRARY_PATH="${libraryPath}"\n`;
+  return {
+    bin: [...roots, ...rest]
+      .filter((b) => has(b, "bin"))
+      .map((b) => guestPath(b, "bin")),
+    lib: [...roots, ...rest]
+      .filter((b) => has(b, "lib"))
+      .map((b) => guestPath(b, "lib")),
+    // Roots that ship no programs of their own: nixpkgs splits many
+    // packages so the binaries live in a separate output, and the
+    // index publishes the default one.
+    silentRoots: roots.filter((b) => !has(b, "bin")),
+  };
 }
 
 // The union of every selected root's runtime closure, in one map. Roots
@@ -450,6 +474,17 @@ async function boot() {
       snapshotPromise,
     ]);
 
+    const silent = binAndLibDirs(
+      closure,
+      rootDigests,
+      closurePaths,
+    ).silentRoots;
+    if (silent.length > 0) {
+      status.textContent =
+        `no programs in ${silent.join(", ")} — nixpkgs splits some packages so ` +
+        `their binaries live in a separate output, and the index publishes the default one`;
+    }
+
     consoleNote.textContent =
       snapshot === null ? "booting the guest…" : "resuming the guest…";
     vm = await bootVM({
@@ -525,18 +560,13 @@ async function addToRunningVM() {
       }),
     );
 
-    const binDirs = rootDigests
-      .map((digest) => fresh.get(digest) ?? mounted.get(digest))
-      .filter((info) => info !== undefined)
-      .map((info) => basenameOf(info))
-      .filter((basename) =>
-        unpacked
-          .find((p) => p.basename === basename)
-          ?.entries.some((e) => e.path === "bin" && e.type === "directory"),
-      )
-      .map((basename) => `/nix/store/${basename}/bin`);
+    const merged = new Map([...mounted, ...fresh]);
+    const dirs = binAndLibDirs(merged, rootDigests, unpacked);
+    if (dirs.silentRoots.length > 0) {
+      status.textContent = `no programs in ${dirs.silentRoots.join(", ")}`;
+    }
 
-    vm.addPaths(unpacked, binDirs);
+    vm.addPaths(unpacked, dirs.bin);
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }

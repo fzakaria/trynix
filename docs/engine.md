@@ -9,11 +9,19 @@ qemu-system-x86_64.wasm       ~40 MB
 qemu-system-x86_64.worker.js  the pthread bootstrap
 ```
 
-They are **not** in this repository and are not built by CI. The build
-needs docker and a pinned emscripten SDK, takes tens of minutes, and the
-output changes only when the qemu-wasm pin moves — so it is built by
-hand and uploaded once to the `engine` release tag, which the pages
-workflow downloads into `qemu/`.
+A fourth file rides along in the same release, built by
+`tools/make-snapshot.py`:
+
+```
+vm.state                      the migration snapshot, ~35 MB
+```
+
+None of them are in this repository and none are built by CI. The
+engine needs docker and a pinned emscripten SDK and takes tens of
+minutes; the snapshot needs a _native_ build of the same fork. Both
+change only when the qemu-wasm pin, the patches, or the guest image
+move — so they are built by hand and uploaded to the `engine` release
+tag, which the pages workflow downloads whole into `qemu/`.
 
 ## Building
 
@@ -31,6 +39,11 @@ Clone [qemu-wasm] (this was written against `0ef7b4e2`, a fork of QEMU
    (`https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/...`)
    serves the same file.
 
+3. **Apply `patches/`.** `0001-9pfs-translate-emscripten-errnos-to-linux.patch`
+   makes 9p report Linux errno numbers instead of emscripten's WASI
+   ones. Without it no package can find a library by search; see
+   docs/design.md.
+
 Otherwise the recipe is upstream's verbatim — the emscripten flags
 matter (`-sASYNCIFY`, `-pthread -sPROXY_TO_PTHREAD`,
 `-sTOTAL_MEMORY=2300MB`, the xterm-pty `--js-library`, `-sEXPORT_ES6`)
@@ -44,6 +57,25 @@ two names, and upload all three:
 $ gh release create engine --title "qemu-wasm engine" --notes "qemu-wasm 0ef7b4e2, x86_64-softmmu"
 $ gh release upload engine out.js qemu-system-x86_64.wasm qemu-system-x86_64.worker.js --clobber
 ```
+
+## Taking the snapshot
+
+The browser resumes a VM rather than booting one, and the snapshot has
+to come from a _native_ build of the same fork — both ends of a
+migration must agree on QEMU version, machine type and devices, which
+rules out nixpkgs' QEMU. Build it with the fork's own
+`examples/x86_64/image/Dockerfile.qemu` and `--with-coroutine=ucontext
+--enable-virtfs --enable-attr`, then:
+
+```console
+$ nix build .#guest
+$ python3 tools/make-snapshot.py --qemu ./qemu-system-x86_64 \
+    --guest ./result --out vm.state
+$ gh release upload engine vm.state --clobber
+```
+
+Retake it whenever the guest image changes: the snapshot holds that
+kernel and initramfs in its RAM.
 
 ## Serving locally
 
