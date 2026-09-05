@@ -23,7 +23,9 @@ let
   xzwasm = npm "xzwasm" "0.1.2" "18zc8z5hfy34cy3z7a5baz07hccl2y0y17y7qsxiy4wsw8v6ig7n";
   fzstd = npm "fzstd" "0.1.1" "1ia5gjcs9r9pfj4jqd3jac233a08qy9342fh27i7n1ir6hnyxljy";
   coi = npm "coi-serviceworker" "0.1.7" "05ln49m3gfi5x71azfbvmb0ww13ii2xmvkr3x46j45g2913nsm3a";
-  ghostty = npm "ghostty-web" "0.4.0-next.20.g1858a59" "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
+  ghostty =
+    npm "ghostty-web" "0.4.0-next.20.g1858a59"
+      "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
