@@ -170,7 +170,6 @@ export async function openTerminal(element, keyBarElement) {
       const keyBar = new KeyBar(keyBarElement, {
         send: (data) => master.ldisc.writeFromLower(data),
         focus,
-        size: () => ({ rows: terminal.rows, cols: terminal.cols }),
         zoom,
       });
       bridge(terminal, master, keyBar);

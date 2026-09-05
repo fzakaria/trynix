@@ -29,17 +29,10 @@ const KEYS = [
   { label: "End", cursor: "F" },
   { label: "PgUp", send: `${CSI}5~` },
   { label: "PgDn", send: `${CSI}6~` },
-  // The guest learns its terminal size once, at boot (boot.js), and
-  // nothing tells it when a soft keyboard takes half the rows. Fit
-  // tells the shell the size the terminal has now; it is a typed
-  // command, so it is for the prompt.
-  {
-    label: "Fit",
-    command: ({ rows, cols }) => `stty rows ${rows} cols ${cols}\n`,
-  },
   // A smaller or larger face. Portrait at the default size is about
-  // 50 columns, and a full-screen program wants 80; press Fit after,
-  // so the guest hears the new grid.
+  // 50 columns, and a full-screen program wants 80. The guest hears
+  // the new grid through the share (boot.js) and whatever is running
+  // redraws.
   { label: "A−", zoom: -1 },
   { label: "A+", zoom: 1 },
 ];
@@ -64,13 +57,10 @@ function control(character) {
 
 export class KeyBar {
   // send: writes bytes to the guest. focus: gives the terminal the
-  // keyboard back after a tap. size: the terminal's rows and columns
-  // now, for the key that tells the guest. zoom: changes the face by
-  // a step.
-  constructor(element, { send, focus, size, zoom }) {
+  // keyboard back after a tap. zoom: changes the face by a step.
+  constructor(element, { send, focus, zoom }) {
     this.send = send;
     this.focus = focus;
-    this.size = size;
     this.zoom = zoom;
     this.armed = { ctrl: false, alt: false };
     this.buttons = new Map();
@@ -111,12 +101,6 @@ export class KeyBar {
           : `${CSI}1;${modifier}${key.cursor}`,
       );
       this.disarm();
-      this.focus();
-      return;
-    }
-
-    if (key.command !== undefined) {
-      this.send(key.command(this.size()));
       this.focus();
       return;
     }

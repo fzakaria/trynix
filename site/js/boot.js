@@ -95,12 +95,31 @@ function manifest({ rows, cols }) {
     // guarantees a reply comes back. When none did, init hung here --
     // before it printed the line the page waits for -- and the boot sat
     // out the page's whole handshake timeout. The page already knows the
-    // size it laid the terminal out at, so it states it instead. Later
-    // changes travel as SIGWINCH through the line discipline.
+    // size it laid the terminal out at, so it states it instead.
     `stty rows ${rows} cols ${cols}`,
+    // Later sizes arrive the same way, through the share: the page
+    // writes winsize.1, winsize.2, ... as the terminal is resized (a
+    // phone's keyboard, a zoom, a window), and this loop applies each
+    // one to the console. Setting a tty's size makes the kernel send
+    // SIGWINCH to whatever is running on it, so a full-screen program
+    // redraws by itself, the way it would under a real terminal.
+    //
+    // Nothing else carries a resize into a serial console. A new file
+    // per size rather than one rewritten file, because the share is
+    // mounted cache=loose and a file the guest has read stays as it
+    // was; a name it has never looked up is looked up fresh. The wait
+    // is a timed read on a fifo rather than `sleep`, which would fork
+    // a process a second on a CPU this slow.
+    "mkfifo /tmp/tick",
+    "(n=1; while :; do f=/share/winsize.$n;" +
+      ' if [ -r "$f" ]; then read -r r c < "$f"; stty rows "$r" cols "$c" < /dev/console; n=$((n+1));' +
+      " else read -r -t 1 _ <> /tmp/tick; fi; done) &",
     "",
   ].join("\n");
 }
+
+// How the page names each size it hands the guest (see manifest).
+const WINSIZE_FILE = `${SHARE_DIR}/winsize`;
 
 const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 
@@ -273,6 +292,14 @@ export async function startVM({
 
   const mod = await filesystem;
   const share = storeShare(mod.FS);
+
+  // Every resize from here on goes to the guest through the share; the
+  // size at boot went in the manifest.
+  let resizes = 0;
+  ui.terminal.onResize(({ rows, cols }) => {
+    resizes += 1;
+    mod.FS.writeFile(`${WINSIZE_FILE}.${resizes}`, `${rows} ${cols}\n`);
+  });
 
   // Reachable from the browser console: the terminal, the pty pair,
   // and everything the guest has said. Debugging a guest that will not
