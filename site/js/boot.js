@@ -57,7 +57,39 @@ const GUEST_STORE_DIR = "/nix/store";
 // "ld-linux-x86-64.so.2: version `GLIBC_2.35' not found (required by
 // glibc-2.42/libc.so.6)" — the older loader, handed the newer libc.
 // With nothing set, each binary loads its own and they coexist.
-const MANIFEST = `export PATH="${GUEST_BIN_DIR}:$PATH"\n`;
+//
+// The console is a serial line, and a serial tty has no window size
+// until something sets one: TIOCGWINSZ answers 0x0, and a full-screen
+// program (btop: "Failed to get size of terminal!") refuses to start.
+// The browser's resize events reach the line discipline and stop
+// there; nothing carries them into a 16550. `resize` is how a serial
+// console has always learned its size — it parks the cursor in the
+// far corner, asks the terminal where that landed, and sets the tty
+// from the answer — and ghostty answers it. The handshake's spare
+// newlines (see resume) are still queued on the tty at this point and
+// would be read as that answer, so they are drained first: with
+// canonical mode off and a 0.2 s read timeout, `cat` takes what is
+// queued and gets end-of-file when nothing more comes. (busybox's
+// `read -t` takes whole seconds only, and a whole second is too long
+// to wait at every boot.)
+//
+// TERM is xterm-256color rather than ghostty's own xterm-ghostty: the
+// guest's programs look the name up in the terminfo their own ncurses
+// carries, and only very recent ncurses knows ghostty's, while every
+// era knows xterm-256color — which is the fallback ghostty's docs give
+// for a machine without its terminfo. LANG=C.UTF-8 is built into glibc
+// since 2.35, so programs that insist on a UTF-8 locale (btop) get
+// one; a closure old enough to lack it falls back to C, and perl says
+// so.
+const MANIFEST = [
+  `export PATH="${GUEST_BIN_DIR}:$PATH"`,
+  "export TERM=xterm-256color",
+  "export LANG=C.UTF-8",
+  "stty -icanon min 0 time 2; cat >/dev/null; stty icanon min 1 time 0",
+  // stdout only: the cursor query goes out on stderr.
+  "resize >/dev/null",
+  "",
+].join("\n");
 
 const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 
@@ -70,11 +102,8 @@ const READY_MARKER = "trynix: waiting for the store";
 const MOUNTED_MARKER = "trynix: welcome to the multiverse";
 
 const TRANSCRIPT_LIMIT = 65536;
-// How often the resuming guest is offered its newline, and how long
-// the console has to stay quiet afterwards before it counts as at the
-// prompt.
+// How often the resuming guest is offered its newline.
 const RESUME_POLL_MS = 300;
-const SETTLE_MS = 400;
 
 // Ctrl-L: the shell's line editor clears its screen and draws the
 // prompt again. Clearing the terminal from this side wipes the prompt
@@ -310,7 +339,6 @@ async function coldBoot(console_, master, terminal) {
   await console_.waitFor(READY_MARKER);
   sendLine(master);
   await console_.waitFor(MOUNTED_MARKER);
-  await console_.settle(SETTLE_MS);
   terminal.clear();
   send(master, REDRAW_PROMPT);
 }
@@ -329,19 +357,20 @@ async function coldBoot(console_, master, terminal) {
 // caught it, so one newline finishes the handshake — but a newline
 // sent while QEMU is still loading the stream is lost, and nothing
 // says when loading is done. So newlines are offered every
-// RESUME_POLL_MS until the guest answers. The ones that arrive after
-// the read is satisfied reach the shell instead and each leaves a
-// bare prompt, which is why the console is cleared only once it has
-// been quiet for a moment: by then the shell has printed them all.
+// RESUME_POLL_MS until the guest says anything at all. Only the first
+// is actually lost (the UART it lands in is overwritten by the
+// restore); the rest queue in the UART and reach the guest together,
+// as the echo of the one it took plus spares, which the manifest
+// drains before anything reads the tty.
 async function resume(console_, master, terminal) {
   const poll = setInterval(() => sendLine(master), RESUME_POLL_MS);
   sendLine(master);
-  await console_.waitFor(MOUNTED_MARKER);
+  await console_.waitForOutput();
   clearInterval(poll);
+  await console_.waitFor(MOUNTED_MARKER);
 
   // Drop what the guest said on the way up; the reader starts at a
   // prompt.
-  await console_.settle(SETTLE_MS);
   terminal.clear();
   send(master, REDRAW_PROMPT);
 }
@@ -365,10 +394,12 @@ function watchConsole(master) {
 
   const decoder = new TextDecoder();
 
-  let lastWrite = performance.now();
+  const outputWaiters = [];
 
   master.onWrite(([data]) => {
-    lastWrite = performance.now();
+    for (const resolve of outputWaiters.splice(0)) {
+      resolve();
+    }
     // The pty emits either a string or raw bytes depending on what the
     // guest wrote; concatenating the bytes directly would stringify the
     // array and match no marker ever again.
@@ -389,18 +420,10 @@ function watchConsole(master) {
   return {
     transcript: () => transcript,
 
-    // Resolves once nothing has been written for `ms`.
-    settle(ms) {
+    // Resolves the next time the guest writes anything at all.
+    waitForOutput() {
       return new Promise((resolve) => {
-        const check = () => {
-          const quiet = performance.now() - lastWrite;
-          if (quiet >= ms) {
-            resolve();
-            return;
-          }
-          setTimeout(check, ms - quiet);
-        };
-        check();
+        outputWaiters.push(resolve);
       });
     },
 
