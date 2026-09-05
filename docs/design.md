@@ -28,18 +28,19 @@ The pieces already exist in sibling projects; trynix is the glue:
    (verified 2026-09-04 on nix-cache-info, narinfo and NAR URLs come off
    the same S3/Fastly config), so plain `fetch` works from any origin.
    Implemented: `site/js/closure.js`.
-3. **Fetch and unpack.** Each NAR is xz whole-file; decompress with a
-   wasm xz decoder, parse the NAR format, and write the tree into
-   emscripten's in-memory filesystem via `Module.FS` under a shared
-   directory. Cache decompressed NARs in OPFS keyed by digest so a
-   glibc fetched once is free forever after.
+3. **Fetch and unpack.** A NAR arrives xz or zstd compressed depending
+   on when it was built; both decoders are vendored. The tree is
+   written into emscripten's filesystem via `Module.FS` under the
+   share. Compressed NARs are kept in the Cache API — a store path is
+   immutable, so a cached NAR can never be stale.
 4. **Boot.** qemu-wasm with a prebuilt guest kernel and a tiny initramfs.
    The store enters the guest over virtio-9p; init mounts it, symlinks
    `/nix/store`, puts the selected outputs' `bin/` on PATH, and execs a
    shell on the serial console.
-5. **Terminal.** xterm.js + xterm-pty, which is what qemu-wasm links
-   against; [ghostty-web] is xterm.js-API-compatible and is the intended
-   face once the plumbing works.
+5. **Terminal.** [ghostty-web] — libghostty-vt, the parser the native
+   app uses, compiled to wasm — with xterm.js as the fallback. The pty
+   is bridged by hand, because xterm-pty's addon wants an `onBinary`
+   ghostty does not implement.
 
 ## What the qemu-wasm survey established
 
@@ -91,9 +92,9 @@ build both with nix instead — the flake is on NixOS's side of the fence:
 
 - an x86_64 kernel with virtio, 9p and serial built in (nixpkgs
   `linuxKernel` with a trimmed structured config);
-- a busybox (pkgsStatic) initramfs whose init mounts the 9p share as
-  `/nix/store`, mounts proc/sys/dev, sets PATH from a manifest file the
-  page writes next to the store, and execs `sh` on ttyS0;
+- a busybox (pkgsStatic) initramfs whose init mounts the 9p share at
+  `/share`, symlinks `/nix` into it, sources the manifest the page
+  wrote, and execs `sh` on ttyS0;
 - packed with `file_packager` (or fed through `Module.FS` directly —
   the kernel and initramfs are files in MEMFS like everything else).
 
@@ -125,8 +126,20 @@ selection, because the selection rides the 9p share, not the snapshot:
 3. Start with `-incoming`: resume is RAM-load plus device restore,
    seconds rather than a boot.
 4. The page signals the guest (a line on the serial console), init
-   mounts the share fresh, reads the manifest the page wrote (store
-   paths, what goes on PATH), and execs the shell.
+   mounts the share, reads the manifest the page wrote (store paths,
+   what goes on PATH), and execs the shell.
+
+Two details the implementation forced. QEMU refuses to migrate a VM
+that has a virtfs export mounted, so init has to wait for the
+handshake _before_ mounting rather than polling a mounted share — which
+is also why the first mount always sees a finished share. And a VM
+restored from a migration stream arrives stopped: `-nographic` muxes
+the monitor onto the guest's console, so the page types `cont` there
+(Ctrl-A c toggles) before handing the guest its newline.
+
+Measured: a resume reaches a shell in about 17 seconds against a cold
+boot's minute-plus, and that is before the engine and snapshot are
+served from the browser cache.
 
 Migration demands that snapshotter and restorer agree exactly — QEMU
 version, machine type, device config, RAM size. A liability for a
@@ -135,6 +148,37 @@ pinned fork in the same flake.
 
 Budget: cold visit ≈ parallel downloads + a few seconds of resume;
 warm visit ≈ closure download only, itself OPFS-cached per NAR.
+
+## Where emscripten and the guest disagree
+
+Three bugs, all in the seam between emscripten's filesystem and a real
+Linux guest reading it over 9p. Each one is invisible until a package
+does something more than `hello` does, and each is worth knowing before
+changing this code.
+
+**Symlinks.** `FS.readlink` resolves a link against its parent and
+returns an absolute path, while the stat beside it reports the
+_relative_ target's length. A guest reading such a link gets a string
+longer than the size it was promised. trynix writes absolute targets
+itself (`absoluteTarget` in `site/js/store.js`) so the two agree, and
+mounts the share in the guest at the same path the page built it at
+(`/share`) so those absolute targets resolve. The mount point is
+load-bearing, not cosmetic.
+
+**Errnos.** 9p2000.L carries Linux errno numbers, but emscripten's libc
+numbers its errnos after WASI. qemu-wasm declares emscripten to need no
+translation, so ENOENT (44 in WASI, 2 in Linux) reaches the guest as
+ECHRNG. A dynamic loader walking `LD_LIBRARY_PATH` expects ENOENT from
+directories that lack the library and moves on; given "Error 44" it
+stops. Every package that finds libraries by search rather than by
+RPATH fails to start, naming a library `ls` will show and `cat` will
+read. `patches/0001-9pfs-translate-emscripten-errnos-to-linux.patch`
+fixes it in the engine, and is worth sending upstream.
+
+**stdout.** Defining `Module.print` or `printErr` takes stdout and
+stderr away from the xterm-pty js-library linked into the build, and
+the console stays blank for the whole run — guest output included.
+QEMU's diagnostics arrive in the terminal instead.
 
 ## Repository layout
 
@@ -150,17 +194,19 @@ warm visit ≈ closure download only, itself OPFS-cached per NAR.
 
 1. **Closure walk** (done): store path in, closure table and download
    price out, live from cache.nixos.org.
-2. **NAR unpack**: xz + NAR decode in the browser, OPFS cache; "download
-   this closure" becomes a real store tree in MEMFS.
-3. **Boot**: qemu-wasm artifacts + nix-built kernel/initramfs; a shell
-   over 9p with `hello` on PATH. The demo. Then the migration snapshot
-   (see "Start time") so starting is a resume, not a boot.
-4. **Resolve**: the multiverse index shards wired into search — attr +
-   version picker, the census gating the boot button.
-5. **Coexistence**: grail's solver embedded — boot a world, "python
-   3.10 with openssl 1.1", multiple packages on one PATH.
-6. **Polish**: ghostty-web terminal, OPFS-persistent store, maybe
-   networking via c2w-net-proxy.
+2. **NAR unpack** (done): xz and zstd decode in the browser, the Cache
+   API holding the compressed NARs.
+3. **Boot** (done): qemu-wasm artifacts + a nix-built kernel and
+   initramfs; a shell over 9p with the selection on PATH. The
+   migration snapshot (see "Start time") makes starting a resume.
+4. **Resolve** (done): the multiverse index read live — search over
+   every attribute, versions with their closure sizes, the census
+   hiding paths the cache no longer serves, and a version-range lane.
+5. **Terminal** (done): libghostty-vt, with xterm.js as the fallback.
+6. **Next**: lazy per-NAR 9p so a boot fetches only what the guest
+   touches; grail's clingo solver embedded for real coexistence
+   answers; networking via c2w-net-proxy; and sending the errno patch
+   upstream.
 
 ## Alternatives considered
 
