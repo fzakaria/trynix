@@ -37,6 +37,18 @@ test("parseNarinfo treats a missing References line as no references", () => {
   assert.equal(info.fileSize, 0);
 });
 
+test("parseNarinfo collects every signature, not the last one", () => {
+  const info = parseNarinfo(
+    [
+      "StorePath: /nix/store/x",
+      "Sig: cache.nixos.org-1:aaa",
+      "Sig: other-1:bbb",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(info.sigs, ["cache.nixos.org-1:aaa", "other-1:bbb"]);
+});
+
 test("digestOf takes the digest half of a store basename", () => {
   assert.equal(
     digestOf("wx1vk75bpdr65g6xwxbj4rw0pk04v5j3-glibc-2.27"),

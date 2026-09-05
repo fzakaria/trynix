@@ -14,6 +14,13 @@ import { PackagePicker } from "./search.js";
 import { parseSpecs, resolveSpecs } from "./ranges.js";
 import { versionsOf } from "./multiverse.js";
 import { readUrl, writeUrl } from "./url.js";
+import {
+  DEFAULT_SUBSTITUTERS,
+  parseSubstituters,
+  readSubstituters,
+  verify,
+  writeSubstituters,
+} from "./substituters.js";
 import { humanBytes } from "./format.js";
 import {
   DIGEST_LENGTH,
@@ -155,6 +162,23 @@ walkForm.addEventListener("submit", (event) => {
   storePathInput.value = "";
 });
 
+// The cache list: extra substituters and their keys, kept per reader.
+const cachesInput = document.getElementById("caches-input");
+const cachesStatus = document.getElementById("caches-status");
+cachesInput.value = readSubstituters()
+  .slice(DEFAULT_SUBSTITUTERS.length)
+  .map((s) => `${s.url} ${s.key}`)
+  .join("\n");
+
+document.getElementById("caches-save").addEventListener("click", () => {
+  try {
+    writeSubstituters(parseSubstituters(cachesInput.value));
+    cachesStatus.textContent = "saved";
+  } catch (err) {
+    cachesStatus.textContent = String(err);
+  }
+});
+
 // The lane tabs: anchors so each is a real link, one visible at a time.
 const laneNav = document.getElementById("lanes");
 laneNav.addEventListener("click", (event) => {
@@ -275,6 +299,7 @@ async function boot() {
   const panel = new ProgressPanel(bootProgress);
 
   const walkRow = panel.row("closure walk");
+  const signatureRow = panel.row("signatures");
   const engineRow = panel.row("qemu engine");
   const guestRow = panel.row("guest image");
   const closureRow = panel.row("closure");
@@ -287,6 +312,25 @@ async function boot() {
     );
     walkRow.done(`${closure.size} paths`);
     renderClosure(closure);
+
+    // Signatures are checked against the configured keys. A path no key
+    // vouches for is still booted — the reader chose the cache — but
+    // the count is reported rather than hidden.
+    const substituters = readSubstituters();
+    const verdicts = await Promise.all(
+      [...closure.values()].map((i) => verify(i, substituters)),
+    );
+    const unverifiable = verdicts.filter((v) => v === null).length;
+    const unsigned = verdicts.filter((v) => v === false).length;
+    if (unverifiable > 0) {
+      signatureRow.done("this browser cannot check Ed25519");
+    } else if (unsigned > 0) {
+      signatureRow.fail(
+        `${unsigned} of ${closure.size} unsigned by a known key`,
+      );
+    } else {
+      signatureRow.done(`${closure.size} verified`);
+    }
 
     const enginePromise = fetchWithProgress(QEMU_WASM, {
       onTotal: (n) => engineRow.setTotal(n),

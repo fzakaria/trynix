@@ -10,13 +10,18 @@
 /* global xzwasm, fzstd */
 
 import { CACHE_URL } from "./config.js";
+
 import { parseNar } from "./nar.js";
 import { cachedFetch } from "./cache.js";
 
 // One NAR: fetch, count, decompress, parse. onBytes hears compressed
 // chunk sizes as they arrive.
 export async function fetchNar(info, onBytes) {
-  const { response: res } = await cachedFetch(`${CACHE_URL}/${info.url}`);
+  // The NAR comes from whichever cache served the narinfo: a narinfo's
+  // URL is relative to its own cache.
+  const { response: res } = await cachedFetch(
+    `${info.substituter ?? CACHE_URL}/${info.url}`,
+  );
   if (!res.ok) {
     throw new Error(`${info.url}: HTTP ${res.status}`);
   }

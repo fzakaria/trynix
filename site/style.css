@@ -196,6 +196,27 @@ code {
   border-radius: 4px;
   cursor: pointer;
 }
+#caches-input {
+  width: 100%;
+  padding: 0.5rem;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+#caches-save {
+  margin-top: 0.4rem;
+  padding: 0.4rem 1rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
 #ranges-results {
   margin: 0.5rem 0;
   font-size: 14px;
