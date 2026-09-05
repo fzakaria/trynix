@@ -34,7 +34,8 @@ import {
   QEMU_WORKER,
   SNAPSHOT_URL,
 } from "./config.js";
-import { asset, assets } from "./assets.js";
+import { asset, assets, manifest } from "./assets.js";
+import { buildReport } from "./report.js";
 import { binOutputOf } from "./outputs.js";
 import { log, onLog } from "./log.js";
 
@@ -365,6 +366,8 @@ let vm = null;
 // Everything the running guest already has, so a later addition only
 // fetches what is new.
 let mounted = new Map();
+// How the guest started, for the report.
+let bootMode = "not started";
 
 function reboot() {
   const entries = [...selection.values()];
@@ -494,6 +497,7 @@ async function boot() {
       snapshotPromise,
     ]).then(([, guestFiles, machine, snapshot]) => {
       resuming = snapshot !== null;
+      bootMode = resuming ? "resumed from the snapshot" : "cold booted";
       log(
         snapshot === null
           ? "no snapshot; the guest will cold boot"
@@ -618,6 +622,29 @@ async function addToRunningVM() {
     bootButton.disabled = false;
   }
 }
+
+// ---------- the report ----------
+
+// Built when pressed, from what the page already has (report.js). The
+// clipboard needs a secure context and a user gesture; when it is
+// refused, the report replaces the log so it can be selected by hand.
+const reportStatus = document.getElementById("report-status");
+document.getElementById("copy-report").addEventListener("click", async () => {
+  const report = buildReport({
+    manifest: await manifest(),
+    closure: mounted,
+    terminal: vm?.terminal ?? null,
+    transcript: window.trynix?.transcript() ?? "",
+    boot: bootMode,
+  });
+  try {
+    await navigator.clipboard.writeText(report);
+    reportStatus.textContent = "copied";
+  } catch {
+    debugLog.textContent = report;
+    reportStatus.textContent = "select it below and copy";
+  }
+});
 
 // ---------- restoring a shared link ----------
 

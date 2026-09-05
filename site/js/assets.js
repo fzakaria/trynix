@@ -14,7 +14,7 @@ const MANIFEST_URL = "assets.json";
 
 let manifestPromise;
 
-function manifest() {
+export function manifest() {
   manifestPromise ??= fetch(MANIFEST_URL, { cache: "no-store" })
     .then((res) => (res.ok ? res.json() : { files: {} }))
     .catch(() => ({ files: {} }));

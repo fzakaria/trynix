@@ -533,6 +533,21 @@ code {
   cursor: pointer;
   font-size: 13px;
 }
+.debug-actions {
+  margin: 0.4rem 0 0;
+  font-size: 13px;
+}
+#copy-report {
+  margin-right: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
 #debug pre {
   max-height: 18rem;
   overflow: auto;

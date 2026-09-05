@@ -30,3 +30,14 @@ export function onLog(listener) {
 }
 
 export const logLines = () => lines.join("\n");
+
+// Uncaught errors and rejected promises go in the log too. They were
+// what the first field reports lacked: a reader saw a red row and a
+// message, and the exception behind it went to a console nobody opened.
+window.addEventListener("error", (event) => {
+  log(`uncaught: ${event.message} (${event.filename}:${event.lineno})`);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  log(`unhandled: ${reason?.stack ?? reason?.message ?? String(reason)}`);
+});
