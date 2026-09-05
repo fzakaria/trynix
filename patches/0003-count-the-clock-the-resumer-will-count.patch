@@ -1,0 +1,31 @@
+--- a/include/qemu/timer.h	2026-09-05 15:22:10.267524475 -0700
++++ b/include/qemu/timer.h	2026-09-05 15:22:10.298745356 -0700
+@@ -846,7 +846,27 @@
+ /*******************************************/
+ /* host CPU ticks (if available) */
+ 
+-#if defined(_ARCH_PPC)
++#if defined(QEMU_GENERIC_HOST_TICKS)
++/*
++ * Count the same ticks the WebAssembly build will count.
++ *
++ * This binary exists only to take the migration snapshot the browser
++ * resumes. The guest calibrates its TSC once, while it boots here, and
++ * then runs there — and there, wasm has no cycle counter, so QEMU falls
++ * back to the monotonic clock below and the guest's TSC advances in
++ * nanoseconds. Calibrating against a real rdtsc here would teach the
++ * guest a frequency the resumed machine never delivers: every sleep and
++ * every timeout in the guest would then run long by the ratio between
++ * the two, which on the machine that took this snapshot was 3.3x.
++ * Both ends of a migration have to agree about the clock as much as
++ * about the devices.
++ */
++static inline int64_t cpu_get_host_ticks(void)
++{
++    return get_clock();
++}
++
++#elif defined(_ARCH_PPC)
+ 
+ static inline int64_t cpu_get_host_ticks(void)
+ {

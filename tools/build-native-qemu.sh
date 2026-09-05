@@ -43,9 +43,23 @@ CMD sleep infinity
 EOF
 fi
 
+# The same patches the engine gets, so the binary that takes the
+# snapshot and the one that resumes it are the same QEMU.
+# patches/0003 in particular only takes effect here, through the define
+# below: it makes this build count the monotonic clock the WebAssembly
+# build counts, so the guest calibrates its TSC against the clock it
+# will actually run on.
+PATCHES=${TRYNIX_PATCHES:-$(cd "$(dirname "$0")" && pwd)/../patches}
+for patch in "$PATCHES"/*.patch; do
+  [ -e "$patch" ] || continue
+  echo "applying $(basename "$patch")"
+  patch -d "$WORK/src" -p1 < "$patch"
+done
+
 docker run --rm -d --name "$CONTAINER" -v "$WORK/src:/qemu" "$IMAGE" >/dev/null
 docker exec "$CONTAINER" /qemu/configure --static --target-list=x86_64-softmmu \
-  --without-default-features --enable-system --with-coroutine=ucontext --enable-virtfs --enable-attr
+  --without-default-features --enable-system --with-coroutine=ucontext --enable-virtfs --enable-attr \
+  --extra-cflags=-DQEMU_GENERIC_HOST_TICKS
 docker exec "$CONTAINER" make -j "$JOBS" qemu-system-x86_64
 
 mkdir -p "$OUT"
