@@ -12,6 +12,8 @@
 import { CACHE_URL } from "./config.js";
 import { parseNar } from "./nar.js";
 import { fetchWithProgress } from "./net.js";
+import { evictFromCache } from "./cache.js";
+import { verifyHash } from "./hash.js";
 import { log } from "./log.js";
 
 // Downloads run several at a time, but decompression does not.
@@ -34,8 +36,30 @@ function serialize(work) {
   return result;
 }
 
-// One NAR: fetch, count, decompress, parse. onBytes hears compressed
+// The compressed bytes against what the narinfo promised: the size,
+// which catches a download that ended short, and the hash, which
+// catches everything else. Null means good; otherwise the reason.
+async function verifyCompressed(info, bytes) {
+  if (info.fileSize > 0 && bytes.byteLength !== info.fileSize) {
+    return `${bytes.byteLength} bytes, narinfo says ${info.fileSize}`;
+  }
+  if (info.fileHash !== undefined) {
+    const ok = await verifyHash(bytes, info.fileHash);
+    if (ok === false) {
+      return "sha256 does not match the narinfo";
+    }
+  }
+  return null;
+}
+
+// One NAR: fetch, verify, decompress, parse. onBytes hears compressed
 // chunk sizes as they arrive.
+//
+// The unpacked archive is checked against NarSize as well. That is
+// the check that would have caught the first report of this failing:
+// a truncated archive decoded as far as it went, and the parser ran
+// off its end. The compressed copy is dropped from the cache and
+// fetched once more before giving up.
 export async function fetchNar(info, onBytes) {
   if (!["xz", "zstd", "none"].includes(info.compression)) {
     throw new Error(`unsupported NAR compression "${info.compression}"`);
@@ -44,24 +68,45 @@ export async function fetchNar(info, onBytes) {
   // The NAR comes from whichever cache served the narinfo: a narinfo's
   // URL is relative to its own cache. The compressed bytes are what get
   // cached, so a second visit skips the network but still decompresses.
-  const compressed = await fetchWithProgress(
-    `${info.substituter ?? CACHE_URL}/${info.url}`,
-    {
-      onBytes,
-    },
-  );
+  const url = `${info.substituter ?? CACHE_URL}/${info.url}`;
 
+  for (let attempt = 1; ; attempt += 1) {
+    const compressed = await fetchWithProgress(url, {
+      onBytes,
+      verify: (bytes) => verifyCompressed(info, bytes),
+    });
+    const nar = await decompress(info, compressed);
+
+    if (info.narSize === 0 || nar.byteLength === info.narSize) {
+      return parseNar(nar);
+    }
+
+    const problem = `${info.storePath}: unpacked to ${nar.byteLength} bytes, narinfo says ${info.narSize}`;
+    await evictFromCache(url);
+    if (attempt >= NAR_ATTEMPTS) {
+      throw new Error(problem);
+    }
+    log(`${problem}; fetching again`);
+    onBytes(-compressed.byteLength);
+  }
+}
+
+// How many times a NAR that unpacks to the wrong size is fetched.
+const NAR_ATTEMPTS = 2;
+
+// The archive's bytes, whatever it was compressed with.
+async function decompress(info, compressed) {
   if (info.compression === "none") {
-    return parseNar(compressed);
+    return compressed;
   }
 
   return serialize(async () => {
     try {
       if (info.compression === "zstd") {
-        return parseNar(fzstd.decompress(compressed));
+        return fzstd.decompress(compressed);
       }
       const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
-      return parseNar(new Uint8Array(await new Response(stream).arrayBuffer()));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
     } catch (err) {
       // Say which archive, since the underlying message names nothing.
       log(

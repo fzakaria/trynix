@@ -52,3 +52,17 @@ export async function storeInCache(url, bytes) {
     // out of quota, or storage denied: the next visit re-downloads
   }
 }
+
+// Forget a URL: for a cached body that turned out to be short or
+// corrupt, so the next fetch goes to the network.
+export async function evictFromCache(url) {
+  const cache = await openCache();
+  if (cache === null) {
+    return;
+  }
+  try {
+    await cache.delete(url);
+  } catch {
+    // nothing to forget, or storage denied
+  }
+}

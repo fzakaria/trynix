@@ -1,6 +1,6 @@
 // Fetch helpers shared by the boot flow.
 
-import { cachedResponse, storeInCache } from "./cache.js";
+import { cachedResponse, evictFromCache, storeInCache } from "./cache.js";
 import { log } from "./log.js";
 
 // A fetch can simply fail: a connection reset, a CDN hiccup, a browser
@@ -43,10 +43,26 @@ async function drain(res, { onBytes, onTotal } = {}) {
 // Fetch a URL into bytes, through the persistent cache. A hit is read
 // from storage (and still reports its size, so a progress row fills);
 // a miss is fetched, returned, and stored once it is complete.
+//
+// `verify(bytes)` resolves to null for good bytes and to a reason for
+// bad ones. A body can arrive short without the fetch failing — a
+// mobile connection that drops mid-download looks like a clean end —
+// and a bad body must be neither used nor kept: a cached hit that
+// fails is evicted and fetched again, a download that fails is retried
+// like any other failed attempt, and only what passes is stored.
 export async function fetchWithProgress(url, options = {}) {
+  const verify = options.verify ?? (async () => null);
+
   const hit = await cachedResponse(url);
   if (hit !== null) {
-    return drain(hit, options);
+    const bytes = await drain(hit, options);
+    const problem = await verify(bytes);
+    if (problem === null) {
+      return bytes;
+    }
+    log(`cached copy of ${url} is bad (${problem}); fetching again`);
+    await evictFromCache(url);
+    options.onBytes?.(-bytes.byteLength);
   }
 
   let downloaded = 0;
@@ -64,6 +80,11 @@ export async function fetchWithProgress(url, options = {}) {
         options.onBytes?.(n);
       };
       const bytes = await drain(res, { ...options, onBytes });
+
+      const problem = await verify(bytes);
+      if (problem !== null) {
+        throw new Error(problem);
+      }
 
       await storeInCache(url, bytes);
       return bytes;

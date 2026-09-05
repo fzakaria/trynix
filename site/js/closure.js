@@ -31,6 +31,7 @@ export function parseNarinfo(text) {
     url: fields.URL,
     compression: fields.Compression,
     fileSize: Number(fields.FileSize ?? 0),
+    fileHash: fields.FileHash,
     narSize: Number(fields.NarSize ?? 0),
     narHash: fields.NarHash,
     sigs,
