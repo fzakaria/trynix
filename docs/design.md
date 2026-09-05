@@ -69,8 +69,11 @@ cache.nixos.org, in the order given, and nothing about them is kept in
 the browser — the link is the only place the list lives. A cache has
 to allow cross-origin reads for a page to fetch from it at all.
 
-`boot` stays out of a shared link on purpose: a link should offer the
-boot, and only the page's own reload wants it automatic.
+`boot=1` works in any link. The page never adds it to the address bar
+itself, though: a link copied from there lands on the selection with
+the Boot button ready, rather than starting a download on open. The
+one link the page writes with it is its own "start over in a fresh
+VM" reload, where starting at once is the point.
 
 ## The store share
 
