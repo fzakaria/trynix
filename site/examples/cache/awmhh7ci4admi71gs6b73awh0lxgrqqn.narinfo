@@ -1,0 +1,10 @@
+StorePath: /nix/store/awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3
+URL: nar/0hql628s9n2i5xhx0aqpcqmz9s4lxapj2iwhdmw68na5ba7h4545.nar.xz
+Compression: xz
+FileHash: sha256:0hql628s9n2i5xhx0aqpcqmz9s4lxapj2iwhdmw68na5ba7h4545
+FileSize: 58472
+NarHash: sha256:1mj77fx0lzl0xf8gmx7rj3mqs8vf2vwvczgxf6bapj599wb07zdr
+NarSize: 279624
+References: awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3 n51dhmdbik1kfrsm62j5knavmigwrl1a-glibc-2.42-84
+Deriver: q983z9l2v2k1hi4r320izf3aa94hfvsc-hello-trynix-2.12.3.drv
+Sig: trynix-examples-1:chxqqXVflNtMsxO8XtKT1Dl7QzAHVitwo4HX30KMDUUwXxM1peysyiAu7a2Nd2wr7qZe2yi4bFEnUAVZNJtmAA==
