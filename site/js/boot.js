@@ -76,6 +76,12 @@ const TRANSCRIPT_LIMIT = 65536;
 // prompt.
 const RESUME_POLL_MS = 300;
 const SETTLE_MS = 400;
+
+// Ctrl-L: the shell's line editor clears its screen and draws the
+// prompt again. Clearing the terminal from this side wipes the prompt
+// with everything else, and a reader facing an empty console assumes
+// it is still loading.
+const REDRAW_PROMPT = "\x0c";
 const HANDSHAKE_TIMEOUT_MS = 180000;
 
 // MEMFS takes the buffer it is handed rather than copying it: the
@@ -325,7 +331,9 @@ async function coldBoot(console_, master, terminal) {
   await console_.waitFor(READY_MARKER);
   sendLine(master);
   await console_.waitFor(MOUNTED_MARKER);
+  await console_.settle(SETTLE_MS);
   terminal.clear();
+  send(master, REDRAW_PROMPT);
 }
 
 // Hand a resumed guest the handshake.
@@ -356,6 +364,7 @@ async function resume(console_, master, terminal) {
   // prompt.
   await console_.settle(SETTLE_MS);
   terminal.clear();
+  send(master, REDRAW_PROMPT);
 }
 
 // Input goes in the way a keystroke does: the line discipline the
