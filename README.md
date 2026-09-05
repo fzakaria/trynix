@@ -59,6 +59,7 @@ three seconds; the design doc has the numbers and where the time goes.
 ```console
 $ nix run .#serve         # build the site and serve it on :8137
 $ nix flake check         # tests, the site assembles, snapshot pins match
+$ nix run .#boot-test     # open the site in a browser, wait for a shell
 $ nix fmt                 # before committing
 ```
 

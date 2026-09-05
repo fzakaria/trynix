@@ -6,6 +6,11 @@
 #   checks.site  — the deployable tree assembles: entry page and the
 #                  hashed module directory in place
 #
+# Then the one thing those cannot see: the site is opened in a real
+# browser and has to reach a shell. Every check above passed while the
+# guest hung on resume and readers waited out a three minute timeout,
+# because being the right bytes and booting are different questions.
+#
 # The guest image is built here too, and pushed to cachix: it is the one
 # expensive derivation in the tree (a Linux kernel), and the pages job
 # and every contributor substitute it rather than compiling it.
@@ -49,3 +54,9 @@ jobs:
 
       - name: Guest image
         run: nix build .#guest -L
+
+      # Cold boots in headless chromium: the resume handshake has raced
+      # twice, and a race only shows up over repeated fresh starts. This
+      # needs the network, since the closure comes from cache.nixos.org.
+      - name: Boots to a shell
+        run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --runs 5

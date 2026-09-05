@@ -84,6 +84,16 @@
           # take the migration snapshot: --qemu, --guest, --out
           make-snapshot = tool "make-snapshot" "${pkgs.python3}/bin/python3 ${./tools/make-snapshot.py}" [ ];
 
+          # boot the built site in a real browser, repeatedly, and fail
+          # if the guest does not reach a shell
+          boot-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "boot-test" "${python}/bin/python3 ${./tools/boot-test.py}" [
+              pkgs.chromium
+            ];
+
           # publish engine and snapshot as a dated release and repin
           publish-engine = tool "publish-engine" "${pkgs.python3}/bin/python3 ${./tools/publish-engine.py}" [
             pkgs.gh
