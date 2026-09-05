@@ -1,0 +1,74 @@
+--- a/emscripten-pty.js	2026-09-05 07:57:06.227159575 -0700
++++ b2/emscripten-pty.js	2026-09-05 08:10:39.667574560 -0700
+@@ -78,6 +78,21 @@
+ 
+     $PTY_pollTimeout: 0,
+ 
++    // The timeout the caller of poll(2) actually asked for. emscripten's
++    // own poll implementation calls every stream's poll op with a
++    // hardcoded -1, so the TTY op below cannot see the deadline the
++    // caller computed and would sleep until a keystroke arrived,
++    // ignoring its timers. Recorded on the way in and used instead.
++    $PTY_realPollTimeout: -1,
++
++    // And never sleep longer than this. Asking the TTY to wait throws,
++    // which abandons the scan of the caller's remaining descriptors, so
++    // a descriptor that becomes ready while the terminal is quiet is
++    // only noticed once poll returns. Returning early from poll is
++    // always allowed, so a cap costs nothing but keeps such an event
++    // from waiting on a keystroke that may never come.
++    $PTY_maxPollSleep: 50,
++
+     $PTY_askToWaitAgain__deps: ['$PTY_pollTimeout', '$FS'],
+     $PTY_askToWaitAgain: (timeout) => {
+         PTY_pollTimeout = timeout;
+@@ -206,16 +221,22 @@
+         }
+     }),
+ 
+-    __syscall__newselect__deps: ['$xterm_pty_old_newselect', '$PTY_wrapPoll'],
+-    __syscall__newselect: (nfds, readfds, writefds, exceptfds, timeout) => (
+-        PTY_wrapPoll(() => xterm_pty_old_newselect(nfds, readfds, writefds, exceptfds, timeout))
+-    ),
++    __syscall__newselect__deps: ['$xterm_pty_old_newselect', '$PTY_wrapPoll', '$PTY_realPollTimeout'],
++    __syscall__newselect: (nfds, readfds, writefds, exceptfds, timeout) => {
++        // select(2) carries a timeval rather than milliseconds, so read
++        // nothing from it and let the cap above bound the wait.
++        PTY_realPollTimeout = -1;
++        return PTY_wrapPoll(() => xterm_pty_old_newselect(nfds, readfds, writefds, exceptfds, timeout));
++    },
+ #if !PROXY_TO_PTHREAD
+     __syscall__newselect__async: true,
+ #endif
+ 
+-    __syscall_poll__deps: ['$xterm_pty_old_poll', '$PTY_wrapPoll'],
+-    __syscall_poll: (fds, nfds, timeout) => PTY_wrapPoll(() => xterm_pty_old_poll(fds, nfds, timeout)),
++    __syscall_poll__deps: ['$xterm_pty_old_poll', '$PTY_wrapPoll', '$PTY_realPollTimeout'],
++    __syscall_poll: (fds, nfds, timeout) => {
++        PTY_realPollTimeout = timeout;
++        return PTY_wrapPoll(() => xterm_pty_old_poll(fds, nfds, timeout));
++    },
+ #if !PROXY_TO_PTHREAD
+     __syscall_poll__async: true,
+ #endif
+@@ -223,7 +244,7 @@
+ 
+ // Override default TTY ops to use our PTY.
+ // Doing this at compile-time reduces amount of generated unused JS.
+-Lib.$TTY__deps.push('$PTY', '$PTY_askToWaitAgain');
++Lib.$TTY__deps.push('$PTY', '$PTY_askToWaitAgain', '$PTY_realPollTimeout', '$PTY_maxPollSleep');
+ 
+ let outputTtyOps = {
+     put_char: () => {
+@@ -295,7 +316,10 @@
+ 
+     poll: (stream, timeout) => {
+         if (!PTY.readable && timeout) {
+-            PTY_askToWaitAgain(timeout);
++            const wait = PTY_realPollTimeout < 0 || PTY_realPollTimeout > PTY_maxPollSleep
++                ? PTY_maxPollSleep
++                : PTY_realPollTimeout;
++            PTY_askToWaitAgain(wait);
+         }
+         return (PTY.readable ? {{{ cDefs.POLLIN }}} : 0) | (PTY.writable ? {{{ cDefs.POLLOUT }}} : 0);
+     },

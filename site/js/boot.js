@@ -214,17 +214,6 @@ export async function startVM({
         }
         ensureDir(mod.FS, STORE_DIR);
 
-        // The xterm-pty poll workaround every qemu-wasm example
-        // carries: an unreadable pty must not park QEMU in a blocking
-        // poll.
-        const oldPoll = mod.TTY.stream_ops.poll;
-        mod.TTY.stream_ops.poll = function (stream, timeout) {
-          if (!slave.readable) {
-            return (slave.readable ? 1 : 0) | (slave.writable ? 4 : 0);
-          }
-          return oldPoll.call(stream, timeout);
-        };
-
         onFilesystem(mod);
       },
     ],

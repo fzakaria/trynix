@@ -22,7 +22,9 @@ fi
 SRC_CHECKOUT=$1
 OUT=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
-PATCHES=$HERE/../patches
+# Run as a flake app the script lives alone in the store, so the repo's
+# patches cannot be found beside it; flake.nix passes their path in.
+PATCHES=${TRYNIX_PATCHES:-$HERE/../patches}
 
 IMAGE=trynix-buildqemu
 CONTAINER=trynix-build-engine-$$
@@ -55,6 +57,17 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 docker run --rm -d --name "$CONTAINER" -v "$WORK/src:/qemu" "$IMAGE" >/dev/null
+
+# The console library is linked in from the image's node_modules rather
+# than from the QEMU tree, so its patches are applied in the container.
+# patches/xterm-pty/ fixes poll(2): emscripten hands every stream's poll
+# op a hardcoded -1, so the terminal slept until a keystroke and QEMU's
+# main loop had to spin instead of waiting on its own deadline.
+for patch in "$PATCHES"/xterm-pty/*.patch; do
+  [ -e "$patch" ] || continue
+  echo "applying $(basename "$patch") to xterm-pty"
+  docker exec -i "$CONTAINER" patch -d /build/node_modules/xterm-pty -p1 < "$patch"
+done
 docker exec "$CONTAINER" emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
   --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
   --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="$EXTRA_LDFLAGS"

@@ -59,7 +59,10 @@
             program = "${
               pkgs.writeShellApplication {
                 inherit name runtimeInputs;
-                text = ''exec ${script} "$@"'';
+                text = ''
+                  export TRYNIX_PATCHES=${./patches}
+                  exec ${script} "$@"
+                '';
               }
             }/bin/${name}";
           };
