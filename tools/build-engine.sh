@@ -60,6 +60,12 @@ docker exec "$CONTAINER" emconfigure /qemu/configure --static --target-list=x86_
   --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="$EXTRA_LDFLAGS"
 docker exec "$CONTAINER" emmake make -j "$JOBS" qemu-system-x86_64
 
+# The -g flag emits ~24 MB of DWARF into the ~41 MB wasm, none of it
+# read at runtime; strip it so the browser downloads and compiles a
+# third of the bytes. llvm-strip drops the .debug_* custom sections and
+# keeps the name section, so a profile still shows function names.
+docker exec "$CONTAINER" /emsdk/upstream/bin/llvm-strip --strip-debug /build/qemu-system-x86_64.wasm
+
 mkdir -p "$OUT"
 docker cp "$CONTAINER:/build/qemu-system-x86_64" "$OUT/out.js"
 docker cp "$CONTAINER:/build/qemu-system-x86_64.wasm" "$OUT/qemu-system-x86_64.wasm"
