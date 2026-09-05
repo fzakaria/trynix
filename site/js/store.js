@@ -12,6 +12,27 @@
 import { CACHE_URL } from "./config.js";
 import { parseNar } from "./nar.js";
 import { fetchWithProgress } from "./net.js";
+import { log } from "./log.js";
+
+// Downloads run several at a time, but decompression does not.
+//
+// Each xz stream instantiates its own decoder, and a NAR can be
+// enormous — gcc unpacks to 143 MB. Several of those decoding at once
+// exhaust the decoder's wasm memory, and the failure arrives as a
+// stream error, which reading a Response reports as the same bare
+// "TypeError: Failed to fetch" a dead network gives. Serialising the
+// decode keeps the peak to one archive.
+let decoding = Promise.resolve();
+
+function serialize(work) {
+  const result = decoding.then(work, work);
+  // A failed decode must not poison the queue for everything after it.
+  decoding = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
 
 // One NAR: fetch, count, decompress, parse. onBytes hears compressed
 // chunk sizes as they arrive.
@@ -33,12 +54,24 @@ export async function fetchNar(info, onBytes) {
   if (info.compression === "none") {
     return parseNar(compressed);
   }
-  if (info.compression === "zstd") {
-    return parseNar(fzstd.decompress(compressed));
-  }
 
-  const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
-  return parseNar(new Uint8Array(await new Response(stream).arrayBuffer()));
+  return serialize(async () => {
+    try {
+      if (info.compression === "zstd") {
+        return parseNar(fzstd.decompress(compressed));
+      }
+      const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
+      return parseNar(new Uint8Array(await new Response(stream).arrayBuffer()));
+    } catch (err) {
+      // Say which archive, since the underlying message names nothing.
+      log(
+        `failed to decompress ${info.url} (${info.compression}): ${err.message}`,
+      );
+      throw new Error(
+        `${info.storePath}: ${info.compression} decode failed: ${err.message}`,
+      );
+    }
+  });
 }
 
 // mkdir -p against the emscripten FS: existing components are fine.

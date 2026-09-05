@@ -76,6 +76,10 @@ export async function bootVM({
   // The console transcript, tapped before the terminal draws it.
   const console_ = watchConsole(master);
 
+  // Counts the environment files written for live additions, so each
+  // gets its own name.
+  let added = 0;
+
   // Reachable from the browser console: the terminal, the pty pair and
   // which engine is drawing. Debugging a guest that will not talk is
   // otherwise guesswork.
@@ -117,8 +121,17 @@ export async function bootVM({
 
         // The store share: the fetched closure plus the manifest the
         // guest init sources.
+        //
+        // Each path is dropped from the array as it is written. Every
+        // file exists twice while it is being copied — once as the
+        // parsed NAR, once in the filesystem — and holding the whole
+        // closure in both forms at once is what makes a large one fail:
+        // the tab runs out of room and the next fetch dies with a bare
+        // "TypeError: Failed to fetch". Releasing as we go keeps the
+        // peak at one path rather than all of them.
         ensureDir(mod.FS, STORE_DIR);
-        for (const { basename, entries } of closure) {
+        while (closure.length > 0) {
+          const { basename, entries } = closure.shift();
           writeEntries(mod.FS, `${STORE_DIR}/${basename}`, entries);
         }
         mod.FS.writeFile(`${SHARE_DIR}/manifest`, manifest);
@@ -181,9 +194,19 @@ export async function bootVM({
         }
         writeEntries(Module.FS, path, entries);
       }
-      if (binDirs.length > 0) {
-        send(master, `export PATH="${binDirs.join(":")}:$PATH"\n`);
+      if (binDirs.length === 0) {
+        return;
       }
+
+      // The new PATH goes in a file, and only a short `.` command is
+      // typed. A closure of any size makes that variable thousands of
+      // characters long, and a line that long does not survive the
+      // terminal's line discipline: it arrives wrapped and truncated,
+      // and the shell tries to run the wreckage.
+      added += 1;
+      const file = `${SHARE_DIR}/env-${added}.sh`;
+      Module.FS.writeFile(file, `export PATH="${binDirs.join(":")}:$PATH"\n`);
+      send(master, `. ${file}\n`);
     },
   };
 }

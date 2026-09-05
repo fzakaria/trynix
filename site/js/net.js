@@ -1,6 +1,16 @@
 // Fetch helpers shared by the boot flow.
 
 import { cachedResponse, storeInCache } from "./cache.js";
+import { log } from "./log.js";
+
+// A fetch can simply fail: a connection reset, a CDN hiccup, a browser
+// declining under pressure. All of them arrive as a bare TypeError
+// with no status and no URL. Retrying a few times turns most of them
+// into a slower success rather than a dead boot.
+const ATTEMPTS = 4;
+const BACKOFF_MS = 400;
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Read a response body into one buffer, reporting chunk sizes as they
 // arrive.
@@ -39,13 +49,36 @@ export async function fetchWithProgress(url, options = {}) {
     return drain(hit, options);
   }
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`${url}: HTTP ${res.status}`);
+  let downloaded = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      // A retry restarts the download, so the progress a failed
+      // attempt reported has to be taken back or the bar overcounts.
+      const onBytes = (n) => {
+        downloaded += n;
+        options.onBytes?.(n);
+      };
+      const bytes = await drain(res, { ...options, onBytes });
+
+      await storeInCache(url, bytes);
+      return bytes;
+    } catch (err) {
+      options.onBytes?.(-downloaded);
+      downloaded = 0;
+
+      if (attempt >= ATTEMPTS) {
+        log(`giving up on ${url} after ${attempt} attempts: ${err.message}`);
+        throw new Error(`${url}: ${err.message}`);
+      }
+      log(`retrying ${url} (attempt ${attempt} failed: ${err.message})`);
+      await delay(BACKOFF_MS * attempt);
+    }
   }
-  const bytes = await drain(res, options);
-  await storeInCache(url, bytes);
-  return bytes;
 }
 
 // Run tasks with a bounded number in flight, preserving result order.

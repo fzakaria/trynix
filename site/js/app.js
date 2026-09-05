@@ -34,6 +34,8 @@ import {
   SNAPSHOT_URL,
 } from "./config.js";
 import { asset, assets } from "./assets.js";
+import { binOutputOf } from "./outputs.js";
+import { log, onLog } from "./log.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -52,6 +54,7 @@ const terminalElement = document.getElementById("terminal");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const rebootLink = document.getElementById("reboot-link");
+const debugLog = document.getElementById("debug-log");
 const addNote = document.getElementById("add-note");
 
 // The selection: digest -> { digest, label, attr, version, storePath }.
@@ -114,6 +117,12 @@ function render() {
   });
   history.replaceState(null, "", url);
 }
+
+// The debug pane mirrors the log as it is written.
+onLog((lines) => {
+  debugLog.textContent = lines.join("\n");
+  debugLog.scrollTop = debugLog.scrollHeight;
+});
 
 const entryOf = (version) => ({
   digest: version.digest,
@@ -233,21 +242,39 @@ laneNav.addEventListener("click", (event) => {
 
 // ---------- the boot ----------
 
-// The shell fragment the guest init sources: every chosen root's bin
-// directory on PATH, and every path in the closure on LD_LIBRARY_PATH.
+// The shell fragment the guest init sources. PATH, and deliberately
+// nothing else.
 //
-// The library path is not redundant with the binaries' own RPATHs. A
-// Rust binary reaches libgcc_s.so.1 through the unwinder's dlopen
-// rather than a DT_NEEDED entry, so nothing in the executable names the
-// directory holding it and the loader falls back to a system path this
-// guest does not have. Naming the whole closure costs a longer variable
-// and fixes that class of failure outright.
+// An LD_LIBRARY_PATH covering the closure looks helpful and is
+// actively harmful here. Every nix binary already names its own
+// interpreter in PT_INTERP and its own libraries in DT_RUNPATH, by
+// absolute store path — that is what makes two eras able to share a
+// machine at all. But the loader searches LD_LIBRARY_PATH *before*
+// DT_RUNPATH, so setting it overrides all of that and hands each
+// binary whichever copy of a library happens to come first.
+//
+// Booting ripgrep beside lolcat is where that shows: their closures
+// carry glibc 2.42 and 2.30, and the mix died on
+// "ld-linux-x86-64.so.2: version `GLIBC_2.35' not found (required by
+// glibc-2.42/libc.so.6)" — the older loader, handed the newer libc.
+// With nothing set, each binary loads its own and they coexist.
 function buildManifest(closure, rootDigests, unpacked) {
   const dirs = binAndLibDirs(closure, rootDigests, unpacked);
-  return (
-    `export PATH="${dirs.bin.join(":")}:$PATH"\n` +
-    `export LD_LIBRARY_PATH="${dirs.lib.join(":")}"\n`
-  );
+  return `export PATH="${dirs.bin.join(":")}:$PATH"\n`;
+}
+
+// Selected digests, plus the `bin` output of any package that keeps
+// its programs in one. Booting jq means booting jq.out *and* jq.bin:
+// the two are separate store paths and neither references the other.
+async function withBinOutputs(digests) {
+  const roots = [...digests];
+  for (const digest of digests) {
+    const bin = await binOutputOf(digest);
+    if (bin !== null && !roots.includes(bin)) {
+      roots.push(bin);
+    }
+  }
+  return roots;
 }
 
 // Which directories a closure actually has, as guest paths.
@@ -286,9 +313,6 @@ function binAndLibDirs(closure, rootDigests, unpacked) {
     bin: [...roots, ...rest]
       .filter((b) => has(b, "bin"))
       .map((b) => guestPath(b, "bin")),
-    lib: [...roots, ...rest]
-      .filter((b) => has(b, "lib"))
-      .map((b) => guestPath(b, "lib")),
     // Roots that ship no programs of their own: nixpkgs splits many
     // packages so the binaries live in a separate output, and the
     // index publishes the default one.
@@ -394,10 +418,11 @@ async function boot() {
   const vmRow = panel.row("virtual machine");
 
   try {
-    const rootDigests = [...selection.keys()];
+    const rootDigests = await withBinOutputs([...selection.keys()]);
     const closure = await walkRoots(rootDigests, (n) =>
       walkRow.note(`${n} narinfos`),
     );
+    log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
     walkRow.done(`${closure.size} paths`);
     renderClosure(closure);
 
@@ -496,8 +521,16 @@ async function boot() {
         `their binaries live in a separate output, and the index publishes the default one`;
     }
 
+    log(
+      snapshot === null
+        ? "no snapshot; cold booting"
+        : "resuming from the snapshot",
+    );
     consoleNote.textContent =
       snapshot === null ? "booting the guest…" : "resuming the guest…";
+    // bootVM consumes closurePaths as it writes them, and the engine
+    // and snapshot buffers are handed over rather than kept: between
+    // them they are the largest things this page ever holds.
     vm = await bootVM({
       wasmBinary: wasmBytes.buffer,
       guestFiles,
@@ -510,6 +543,7 @@ async function boot() {
         consoleVeil.hidden = true;
       },
     });
+    log(`virtual machine running, terminal is ${vm.engine}`);
     vmRow.done("running");
     vmStarted = true;
     mounted = closure;
@@ -518,8 +552,10 @@ async function boot() {
     addNote.hidden = false;
     bootButton.disabled = false;
   } catch (err) {
+    log(`boot failed: ${err.message}`);
     vmRow.fail(String(err));
-    status.textContent = String(err);
+    status.textContent = `${err} — see the debug log`;
+    document.getElementById("debug").open = true;
     bootButton.disabled = false;
   }
 }
@@ -549,7 +585,7 @@ async function addToRunningVM() {
   const row = panel.row("adding");
 
   try {
-    const rootDigests = [...selection.keys()];
+    const rootDigests = await withBinOutputs([...selection.keys()]);
     const fresh = await walkRoots(
       rootDigests,
       (n) => row.note(`${n} narinfos`),
@@ -645,15 +681,22 @@ async function prefetch() {
   }
 }
 
-// requestIdleCallback keeps this off the critical path on a slow
-// device; not every browser has it.
-if (typeof requestIdleCallback === "function") {
-  requestIdleCallback(prefetch);
-} else {
-  setTimeout(prefetch, 0);
-}
-
 const initial = readUrl();
+
+// Not while a boot is already starting. A reboot lands on ?boot=1 and
+// the boot fetches these itself; racing it only doubles ~75 MB of
+// engine and snapshot in flight, which is enough to make a fetch fail
+// outright on a tab that is already holding a closure in memory.
+//
+// requestIdleCallback keeps the rest off the critical path on a slow
+// device; not every browser has it.
+if (!initial.boot) {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(prefetch);
+  } else {
+    setTimeout(prefetch, 0);
+  }
+}
 render();
 if (initial.pkgs.length > 0 || initial.paths.length > 0) {
   restore(initial).then(() => {

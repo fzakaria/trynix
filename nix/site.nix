@@ -1,27 +1,43 @@
-# `nix build .#site` — the static site tree: site/ plus the vendored
-# browser dependencies (nix/vendor.nix). The qemu engine artifacts and
-# the guest image are overlaid at serve/deploy time — the engine because
-# it is built out-of-band (docker + emscripten, see docs/design.md) and
-# published as a release asset rather than committed, the guest so that
-# a site iteration does not wait on a kernel build.
+# `nix build .#site` — the whole deployable tree, so the pages workflow
+# only has to upload what nix built:
+#
+#   index.html, style.css, js.<hash>/   the site itself
+#   vendor/                             pinned browser dependencies
+#   qemu/                               the engine and the snapshot
+#   guest/                              kernel, initramfs, BIOS blobs
+#   outs/                               sibling-output digests
+#   assets.json                         content hashes for the above
+#
+# The engine and snapshot are fetches rather than builds (nix/engine.nix
+# explains why), but they are pinned by hash, so this derivation is
+# still a complete and reproducible description of what gets served.
 {
   pkgs,
   self,
 }:
 let
   vendor = import ./vendor.nix { inherit pkgs; };
+  engine = import ./engine.nix { inherit pkgs; };
+  outputs = import ./outputs.nix { inherit pkgs; };
+  guest = (import ./guest.nix { inherit pkgs; }).guest;
 in
-pkgs.runCommand "trynix-site" { } ''
+pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mkdir -p $out
   cp -r ${self}/site/. $out/
   chmod -R u+w $out
   cp -r ${vendor} $out/vendor
-  chmod -R u+w $out/vendor
+  cp -r ${outputs} $out/outs
+  chmod -R u+w $out/vendor $out/outs
 
   # The COOP/COEP service worker must sit at the site root: a worker's
   # scope is its directory, and a worker under vendor/ can never control
   # index.html — it would reload the page forever trying.
   mv $out/vendor/coi-serviceworker.js $out/coi-serviceworker.js
+
+  mkdir -p $out/qemu $out/guest
+  cp ${engine}/* $out/qemu/
+  cp ${guest}/* $out/guest/
+  chmod -R u+w $out/qemu $out/guest
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).
@@ -35,4 +51,9 @@ pkgs.runCommand "trynix-site" { } ''
     xargs sha256sum | sha256sum | cut -c1-12)
   mv $out/js "$out/js.$hash"
   substituteInPlace $out/index.html --replace-fail "js/app.js" "js.$hash/app.js"
+
+  # The same trick for the files the page fetches by a fixed name and
+  # keeps in the browser's Cache API, which keys on the URL: their
+  # content hashes ride as a query string instead.
+  python3 ${../tools/asset-versions.py} $out qemu guest
 ''

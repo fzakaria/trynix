@@ -1,12 +1,12 @@
-# Publishes the site to GitHub Pages: `nix build .#site` (the same tree
-# `nix run .#serve` tests locally), with the two out-of-band artifact
-# sets overlaid — the guest image from `nix build .#guest` under guest/,
-# and the qemu engine from the engine release under qemu/.
+# Publishes the site to GitHub Pages. The deployed tree is exactly
+# `nix build .#site` — the same one `nix run .#serve` tests locally —
+# so this job builds and uploads, and decides nothing.
 #
-# The engine is not in the tree and is not built here: it needs docker
-# and emscripten (docs/engine.md), takes tens of minutes, and changes
-# only when the qemu-wasm pin moves. It is built by hand and uploaded to
-# the `engine` release tag; this job downloads it.
+# The engine and the snapshot are not built here: they need docker and
+# emscripten, and a native build of the same QEMU fork (docs/engine.md).
+# They are built by hand, published to the `engine` release, and pinned
+# by hash in nix/engine-pins.json, so the derivation fetches them
+# rather than the workflow.
 #
 # One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
 name: pages
@@ -17,6 +17,7 @@ on:
     paths:
       - site/**
       - nix/**
+      - tools/**
       - flake.lock
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -54,38 +55,15 @@ jobs:
           skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
 
       - name: Build the site
-        # The store output is read-only and symlinked; the pages artifact
-        # needs a plain writable directory, so dereference-copy it out.
+        # Everything served is in this one derivation — site, vendored
+        # dependencies, engine, snapshot, guest image, sibling-output
+        # shards and the asset manifest. The store output is read-only
+        # and symlinked; the pages artifact needs a plain writable
+        # directory, so dereference-copy it out.
         run: |
-          nix build .#site
+          nix build .#site -L
           cp -rL result _site
           chmod -R u+w _site
-
-      - name: Overlay the guest image
-        run: |
-          nix build .#guest -L
-          mkdir -p _site/guest
-          cp -rL result/. _site/guest/
-          chmod -R u+w _site/guest
-
-      - name: Overlay the qemu engine
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # A missing release is not a failed deploy: the site still
-        # walks closures and explains itself, and only the Boot button
-        # is dead. docs/engine.md covers publishing the release.
-        run: |
-          mkdir -p _site/qemu
-          if ! gh release download engine --repo "$GITHUB_REPOSITORY" --dir _site/qemu --clobber; then
-            echo "::warning::no engine release; the deployed site cannot boot a VM"
-          fi
-
-      - name: Version the fetched assets
-        # The engine, guest image and snapshot are fetched by fixed
-        # names and kept in the browser's Cache API, which keys on the
-        # URL. Their content hashes ride as a query string so a new
-        # snapshot is a new URL rather than a cache hit on the old one.
-        run: python3 tools/asset-versions.py _site qemu guest
 
       - uses: actions/configure-pages@v5
 

@@ -52,14 +52,17 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          # serve the site locally with the overlays a boot needs: the
-          # guest image under guest/, and the out-of-band qemu engine
-          # artifacts under qemu/ ($TRYNIX_QEMU_DIR, defaulting to
-          # vendor/qemu-wasm in the working directory). Sends real
-          # COOP/COEP headers, so SharedArrayBuffer works without the
-          # service-worker shim. `nix run .#serve -- <port>` overrides
-          # the default 8137. no-store because store paths carry a 1970
-          # mtime, and a 304 would keep a previous build's JS forever.
+          # serve the built site, exactly the tree pages deploys —
+          # engine, snapshot and guest image included, since the
+          # derivation carries them. $TRYNIX_QEMU_DIR overlays a
+          # locally built engine over qemu/ for iterating on it, and
+          # assets.json is recomputed to match.
+          #
+          # Sends real COOP/COEP headers, so SharedArrayBuffer works
+          # without the service-worker shim. `nix run .#serve -- <port>`
+          # overrides the default 8137. no-store because store paths
+          # carry a 1970 mtime, and a 304 would keep a previous build's
+          # JS forever.
           serve = {
             type = "app";
             program = "${pkgs.writeShellScript "serve-site" ''
@@ -67,30 +70,29 @@
               import hashlib, http.server, json, os, sys, urllib.parse
 
               SITE = "${self.packages.${system}.site}"
-              GUEST = "${self.packages.${system}.guest}"
-              QEMU = os.environ.get(
-                  "TRYNIX_QEMU_DIR", os.path.join(os.getcwd(), "vendor/qemu-wasm")
-              )
+              QEMU = os.environ.get("TRYNIX_QEMU_DIR")
 
-              # The same content hashes tools/asset-versions.py writes in
-              # CI, computed here so a local tree needs no extra step.
-              def versions():
-                  files = {}
-                  for directory, root in (("qemu", QEMU), ("guest", GUEST)):
-                      if not os.path.isdir(root):
-                          continue
-                      for name in sorted(os.listdir(root)):
-                          path = os.path.join(root, name)
-                          if not os.path.isfile(path):
-                              continue
-                          digest = hashlib.sha256()
-                          with open(path, "rb") as f:
-                              for chunk in iter(lambda: f.read(1 << 20), b""):
-                                  digest.update(chunk)
-                          files[f"{directory}/{name}"] = digest.hexdigest()[:12]
-                  return json.dumps({"files": files}).encode()
+              def digest(path):
+                  h = hashlib.sha256()
+                  with open(path, "rb") as f:
+                      for chunk in iter(lambda: f.read(1 << 20), b""):
+                          h.update(chunk)
+                  return h.hexdigest()[:12]
 
-              ASSETS = versions()
+              # With an engine overlay the manifest shipped in the site
+              # describes the wrong bytes, so it is rebuilt over what is
+              # actually being served.
+              def assets():
+                  with open(os.path.join(SITE, "assets.json")) as f:
+                      manifest = json.load(f)
+                  if QEMU and os.path.isdir(QEMU):
+                      for name in sorted(os.listdir(QEMU)):
+                          path = os.path.join(QEMU, name)
+                          if os.path.isfile(path):
+                              manifest["files"][f"qemu/{name}"] = digest(path)
+                  return json.dumps(manifest).encode()
+
+              ASSETS = assets()
 
               class Handler(http.server.SimpleHTTPRequestHandler):
                   def do_GET(self):
@@ -105,9 +107,8 @@
 
                   def translate_path(self, path):
                       path = urllib.parse.urlparse(path).path
-                      for prefix, root in (("/qemu/", QEMU), ("/guest/", GUEST)):
-                          if path.startswith(prefix):
-                              return os.path.join(root, path[len(prefix):])
+                      if QEMU and path.startswith("/qemu/"):
+                          return os.path.join(QEMU, path[len("/qemu/"):])
                       if path == "/":
                           path = "/index.html"
                       return os.path.join(SITE, path.lstrip("/"))
@@ -119,7 +120,7 @@
                       super().end_headers()
 
               port = int(sys.argv[1])
-              print(f"serving on http://127.0.0.1:{port}/ (site={SITE}, qemu={QEMU})", flush=True)
+              print(f"serving on http://127.0.0.1:{port}/ (site={SITE}, qemu={QEMU or 'from the site'})", flush=True)
               http.server.ThreadingHTTPServer(("", port), Handler).serve_forever()
               EOF
             ''}";

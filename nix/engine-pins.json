@@ -1,0 +1,11 @@
+{
+  "comment": "The qemu-wasm engine and the migration snapshot, built out of band (docs/engine.md) and published to this repository's `engine` release. Pinned by hash so `nix build .#site` produces the whole deployable tree, engine included.",
+  "baseUrl": "https://github.com/fzakaria/trynix/releases/download",
+  "tag": "engine",
+  "files": {
+    "out.js": "sha256-7MYYTgiE+Qq/UbYOeGHaT/9ftyH0KU2fk5sAH5ds9zs=",
+    "qemu-system-x86_64.wasm": "sha256-Y9efUOkk4V8jV7fo6C8P2VXExj+WBXsEH8tuCsMvZwU=",
+    "qemu-system-x86_64.worker.js": "sha256-jvqwKpy17mPO0i6YU7znTLuJXRWl+z1ROf74VcUPYuo=",
+    "vm.state": "sha256-A+q2/5iZFCdD3mdBfxVdqDXp4cl7aBHs9RKg1DtYQ98="
+  }
+}

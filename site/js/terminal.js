@@ -25,11 +25,23 @@ function bridge(terminal, master) {
 }
 
 async function openGhostty(element) {
-  const { init, Terminal: GhosttyTerminal } =
-    await import("../vendor/ghostty-web.js");
+  const {
+    init,
+    Terminal: GhosttyTerminal,
+    FitAddon,
+  } = await import("../vendor/ghostty-web.js");
   await init();
   const terminal = new GhosttyTerminal();
   terminal.open(element);
+
+  // Without this the terminal keeps its default 80x24 and the rest of
+  // the container is dead black space beside it. The addon also
+  // watches the container, so a resized window refits.
+  const fit = new FitAddon();
+  terminal.loadAddon(fit);
+  fit.fit();
+  fit.observeResize();
+
   return { terminal, engine: "ghostty" };
 }
 
@@ -37,6 +49,24 @@ function openXterm(element) {
   const terminal = new Terminal();
   terminal.open(element);
   return { terminal, engine: "xterm" };
+}
+
+// Ctrl-C over a selection is a copy, everywhere else in the browser.
+// Passing it through as well sends an interrupt to the guest and
+// leaves a stray prompt, so it is swallowed when there is something to
+// copy — and passed through untouched when there is not, because that
+// is how a shell is interrupted.
+function handleCopyKey(terminal) {
+  terminal.attachCustomKeyEventHandler?.((event) => {
+    const isCopy =
+      event.key === "c" && (event.ctrlKey || event.metaKey) && !event.altKey;
+    if (event.type === "keydown" && isCopy && terminal.hasSelection?.()) {
+      navigator.clipboard?.writeText(terminal.getSelection()).catch(() => {});
+      terminal.clearSelection?.();
+      return false;
+    }
+    return true;
+  });
 }
 
 // Returns { terminal, engine, attach } — attach wires a pty master to
@@ -49,6 +79,8 @@ export async function openTerminal(element) {
   } catch {
     opened = openXterm(element);
   }
+
+  handleCopyKey(opened.terminal);
 
   return {
     ...opened,

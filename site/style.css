@@ -428,6 +428,29 @@ code {
   min-height: 24rem;
 }
 
+/* The debug log: closed until something goes wrong and the reader
+   opens it. */
+#debug {
+  margin: 1rem 0;
+}
+#debug summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+#debug pre {
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0.4rem 0 0;
+  padding: 0.6rem;
+  background: var(--code-bg);
+  border-radius: 4px;
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 footer {
   margin-top: 2rem;
   padding: 0.8rem 0;
