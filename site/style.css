@@ -356,7 +356,9 @@ code {
   cursor: default;
 }
 
-/* Boot progress: one row per stage — label, bar, byte count. */
+/* Boot progress: one row per stage — label, bar, byte count. On a
+   narrow screen the label and the count share a line and the bar gets
+   the whole next one; the fixed columns left it a sliver on a phone. */
 .progress-row {
   display: grid;
   grid-template-columns: 10rem 1fr 12rem;
@@ -364,6 +366,16 @@ code {
   align-items: center;
   margin: 0.35rem 0;
   font-size: 14px;
+}
+@media (max-width: 40rem) {
+  .progress-row {
+    grid-template-columns: 1fr auto;
+    gap: 0.3rem 0.8rem;
+    margin: 0.5rem 0;
+  }
+  .progress-row .bar {
+    grid-column: 1 / -1;
+  }
 }
 .progress-row .bar {
   height: 0.5rem;
@@ -499,6 +511,17 @@ code {
   height: 30rem;
   padding: 0.5rem 0 0.5rem 0.6rem;
   background: var(--console-bg);
+}
+
+/* On a touch device the terminal takes what is left of the viewport
+   above the soft keyboard, minus the console bar and the key bar, so
+   the keys are always on screen. The viewport meta asks the browser to
+   shrink the layout when the keyboard opens, which is what makes dvh
+   track it. */
+@media (pointer: coarse) {
+  #terminal {
+    height: max(12rem, calc(100dvh - 7rem));
+  }
 }
 
 /* The debug log: closed until something goes wrong and the reader

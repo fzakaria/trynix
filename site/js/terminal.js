@@ -26,8 +26,13 @@ export const THEME = {
   cursor: "#e6e6e6",
   selectionBackground: "#3b4252",
 };
+// A phone gets a smaller face: 14px is 43 columns on a portrait
+// screen, which full-screen programs refuse; 12px is a little over 50.
+// (80 columns wants the phone turned sideways.)
 const FONT_SIZE = 14;
+const FONT_SIZE_TOUCH = 12;
 const SCROLLBACK_LINES = 5000;
+const touch = matchMedia("(pointer: coarse)");
 const BACKGROUND_PROPERTY = "--console-bg";
 
 // The bridge, in both directions: what the guest writes is drawn, what
@@ -85,7 +90,7 @@ export async function openTerminal(element, keyBarElement) {
   );
   const terminal = new GhosttyTerminal({
     theme: THEME,
-    fontSize: FONT_SIZE,
+    fontSize: touch.matches ? FONT_SIZE_TOUCH : FONT_SIZE,
     scrollback: SCROLLBACK_LINES,
     cursorBlink: true,
   });
@@ -101,12 +106,21 @@ export async function openTerminal(element, keyBarElement) {
 
   handleCopyKey(terminal);
 
+  // Focus without scrolling: ghostty's own focus() lets the browser
+  // scroll the input into view, and on a phone with the keyboard up
+  // that drags the page away from the key bar on every tap.
+  const focus = () => {
+    const input = element.querySelector("textarea");
+    (input ?? element).focus({ preventScroll: true });
+  };
+
   return {
     terminal,
     attach: (master) => {
       const keyBar = new KeyBar(keyBarElement, {
         send: (data) => master.ldisc.writeFromLower(data),
-        focus: () => terminal.focus(),
+        focus,
+        size: () => ({ rows: terminal.rows, cols: terminal.cols }),
       });
       bridge(terminal, master, keyBar);
     },
