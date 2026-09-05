@@ -64,7 +64,7 @@
             type = "app";
             program = "${pkgs.writeShellScript "serve-site" ''
               exec ${pkgs.python3}/bin/python3 - "''${1:-8137}" <<'EOF'
-              import http.server, os, sys, urllib.parse
+              import hashlib, http.server, json, os, sys, urllib.parse
 
               SITE = "${self.packages.${system}.site}"
               GUEST = "${self.packages.${system}.guest}"
@@ -72,7 +72,37 @@
                   "TRYNIX_QEMU_DIR", os.path.join(os.getcwd(), "vendor/qemu-wasm")
               )
 
+              # The same content hashes tools/asset-versions.py writes in
+              # CI, computed here so a local tree needs no extra step.
+              def versions():
+                  files = {}
+                  for directory, root in (("qemu", QEMU), ("guest", GUEST)):
+                      if not os.path.isdir(root):
+                          continue
+                      for name in sorted(os.listdir(root)):
+                          path = os.path.join(root, name)
+                          if not os.path.isfile(path):
+                              continue
+                          digest = hashlib.sha256()
+                          with open(path, "rb") as f:
+                              for chunk in iter(lambda: f.read(1 << 20), b""):
+                                  digest.update(chunk)
+                          files[f"{directory}/{name}"] = digest.hexdigest()[:12]
+                  return json.dumps({"files": files}).encode()
+
+              ASSETS = versions()
+
               class Handler(http.server.SimpleHTTPRequestHandler):
+                  def do_GET(self):
+                      if urllib.parse.urlparse(self.path).path == "/assets.json":
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(ASSETS)))
+                          self.end_headers()
+                          self.wfile.write(ASSETS)
+                          return
+                      super().do_GET()
+
                   def translate_path(self, path):
                       path = urllib.parse.urlparse(path).path
                       for prefix, root in (("/qemu/", QEMU), ("/guest/", GUEST)):

@@ -28,9 +28,12 @@ import {
   DIGEST_PATTERN,
   GUEST_FILES,
   NAR_CONCURRENCY,
+  QEMU_MAIN,
   QEMU_WASM,
+  QEMU_WORKER,
   SNAPSHOT_URL,
 } from "./config.js";
+import { asset, assets } from "./assets.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -417,7 +420,15 @@ async function boot() {
       signatureRow.done(`${closure.size} verified`);
     }
 
-    const enginePromise = fetchWithProgress(QEMU_WASM, {
+    const engineUrls = await assets([QEMU_MAIN, QEMU_WASM, QEMU_WORKER]);
+    const engine = {
+      main: engineUrls.get(QEMU_MAIN),
+      // emscripten asks for files by bare name; hand back the
+      // versioned URL when there is one.
+      locate: (file) => engineUrls.get(`qemu/${file}`) ?? `qemu/${file}`,
+    };
+
+    const enginePromise = fetchWithProgress(engineUrls.get(QEMU_WASM), {
       onTotal: (n) => engineRow.setTotal(n),
       onBytes: (n) => engineRow.add(n),
     }).then((bytes) => {
@@ -428,7 +439,7 @@ async function boot() {
     const guestPromise = Promise.all(
       GUEST_FILES.map(async (name) => [
         name,
-        await fetchWithProgress(`guest/${name}`, {
+        await fetchWithProgress(await asset(`guest/${name}`), {
           onBytes: (n) => guestRow.add(n),
         }),
       ]),
@@ -453,7 +464,7 @@ async function boot() {
 
     // The snapshot is optional: published, a visit resumes a guest that
     // is already up; absent, the same arguments cold-boot.
-    const snapshotPromise = fetchWithProgress(SNAPSHOT_URL, {
+    const snapshotPromise = fetchWithProgress(await asset(SNAPSHOT_URL), {
       onTotal: (n) => snapshotRow.setTotal(n),
       onBytes: (n) => snapshotRow.add(n),
     }).then(
@@ -493,6 +504,7 @@ async function boot() {
       closure: closurePaths,
       manifest: buildManifest(closure, rootDigests, closurePaths),
       terminalElement,
+      engine,
       snapshot,
       onReady: () => {
         consoleVeil.hidden = true;
@@ -618,8 +630,14 @@ async function restore({ pkgs, paths }) {
 // boot's own fetches then find everything in the cache and finish
 // instantly. Failures are ignored: this is an optimisation, and the
 // boot does its own fetching either way.
-function prefetch() {
-  const warm = (url) => fetchWithProgress(url).catch(() => {});
+async function prefetch() {
+  const warm = async (path) => {
+    try {
+      await fetchWithProgress(await asset(path));
+    } catch {
+      // an optimisation that failed is not an error
+    }
+  };
   warm(QEMU_WASM);
   warm(SNAPSHOT_URL);
   for (const name of GUEST_FILES) {

@@ -80,6 +80,13 @@ jobs:
             echo "::warning::no engine release; the deployed site cannot boot a VM"
           fi
 
+      - name: Version the fetched assets
+        # The engine, guest image and snapshot are fetched by fixed
+        # names and kept in the browser's Cache API, which keys on the
+        # URL. Their content hashes ride as a query string so a new
+        # snapshot is a new URL rather than a cache hit on the old one.
+        run: python3 tools/asset-versions.py _site qemu guest
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

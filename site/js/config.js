@@ -40,10 +40,13 @@ export const GUEST_FILES = [
   "linuxboot_dma.bin",
 ];
 
-// The qemu engine artifacts, served under qemu/. out.js and the worker
-// are loaded by the module machinery; the wasm is prefetched by hand so
-// the biggest download gets a progress bar.
+// The qemu engine artifacts, served under qemu/. The wasm is fetched
+// by hand so the biggest download gets a progress bar; out.js and the
+// pthread worker are loaded by the module machinery, through the same
+// versioned URLs (site/js/assets.js).
 export const QEMU_WASM = "qemu/qemu-system-x86_64.wasm";
+export const QEMU_MAIN = "qemu/out.js";
+export const QEMU_WORKER = "qemu/qemu-system-x86_64.worker.js";
 
 // The migration snapshot: a guest already booted to the point of
 // waiting for the store share, so a visit resumes rather than boots.

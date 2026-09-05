@@ -10,10 +10,6 @@
 import { ensureDir, writeEntries } from "./store.js";
 import { openTerminal } from "./terminal.js";
 
-// Where the qemu artifacts live relative to the page; the worker
-// re-imports the main script by absolute URL.
-const QEMU_DIR = "qemu";
-
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
 // /share the init script mounts (tag store0, matching nix/guest/init).
 const PACK_DIR = "/pack";
@@ -61,12 +57,15 @@ const QEMU_ARGS = [
 // guestFiles: Map of name -> Uint8Array (bzImage, initramfs, BIOS).
 // closure: array of { basename, entries } from store.js fetchNar.
 // manifest: shell fragment the guest init sources (PATH and friends).
+// engine: { main, locate } — the versioned URL of the emscripten
+// module, and a resolver for whatever else it asks for by name.
 export async function bootVM({
   wasmBinary,
   guestFiles,
   closure,
   manifest,
   terminalElement,
+  engine,
   snapshot = null,
   onReady = null,
 }) {
@@ -100,8 +99,11 @@ export async function bootVM({
     // the terminal then stays blank for the whole run, guest console
     // included. QEMU's diagnostics arrive in the terminal instead.
     pty: slave,
-    mainScriptUrlOrBlob: new URL(`${QEMU_DIR}/out.js`, location.href).href,
-    locateFile: (file) => `${QEMU_DIR}/${file}`,
+    // Both of these must be the versioned URLs too: the worker is
+    // fetched by emscripten rather than by us, and a stale one is a
+    // stale engine.
+    mainScriptUrlOrBlob: new URL(engine.main, location.href).href,
+    locateFile: (file) => engine.locate(file),
     preRun: [
       (mod) => {
         // The -L directory: BIOS blobs, kernel, initramfs.
@@ -124,7 +126,7 @@ export async function bootVM({
     ],
   };
 
-  const initEmscriptenModule = (await import(`../${QEMU_DIR}/out.js`)).default;
+  const initEmscriptenModule = (await import(`../${engine.main}`)).default;
   await initEmscriptenModule(Module);
 
   // The xterm-pty poll workaround every qemu-wasm example carries: an
