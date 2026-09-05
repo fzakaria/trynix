@@ -28,7 +28,11 @@ READY_MARKER = b"trynix: waiting for the store"
 
 READY_TIMEOUT_SECONDS = 120
 MIGRATE_TIMEOUT_SECONDS = 300
-GUEST_RAM = "512M"
+
+# The machine definition the guest image carries (nix/guest/machine.json):
+# the page starts QEMU from the same file, which is what keeps the two
+# ends of the migration identical.
+MACHINE_FILE = "machine.json"
 
 
 def qmp(sock, command, **arguments):
@@ -80,24 +84,19 @@ def main():
         serial = os.path.join(work, "serial.log")
         monitor = os.path.join(work, "qmp.sock")
 
-        # These arguments must match the ones the page passes, device for
-        # device, or the resume rejects the stream.
+        # The machine is the page's, argument for argument, or the
+        # resume rejects the stream. No -serial is added: -nographic
+        # already puts the console on stdio, and a second serial backend
+        # would give the snapshot a device layout the browser cannot
+        # reproduce. The console is read by capturing stdout instead.
+        with open(os.path.join(args.guest, MACHINE_FILE)) as f:
+            machine = json.load(f)
         command = [
             args.qemu,
-            "-nographic",
-            "-m", GUEST_RAM,
-            "-accel", "tcg,tb-size=500",
-            "-L", f"{args.guest}/",
-            "-nic", "none",
-            "-kernel", f"{args.guest}/bzImage",
-            "-initrd", f"{args.guest}/initramfs.cpio.gz",
-            "-virtfs", f"local,path={share},mount_tag=store0,security_model=none,id=store0",
-            "-append", "console=ttyS0 rdinit=/init loglevel=4",
-            # No -serial here on purpose. -nographic already puts the
-            # console on stdio, and the page passes exactly that; adding
-            # a second serial backend would give the snapshot a device
-            # layout the browser cannot reproduce. The console is read
-            # by capturing stdout instead.
+            *(
+                arg.format(pack=args.guest, share=share, ram=machine["ram"])
+                for arg in machine["args"]
+            ),
             "-qmp", f"unix:{monitor},server,nowait",
         ]
 

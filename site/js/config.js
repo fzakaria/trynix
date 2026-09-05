@@ -40,6 +40,10 @@ export const GUEST_FILES = [
   "linuxboot_dma.bin",
 ];
 
+// The machine definition: guest RAM and QEMU's arguments, shared with
+// the snapshot tool (nix/guest/machine.json says why).
+export const MACHINE_URL = "guest/machine.json";
+
 // The qemu engine artifacts, served under qemu/. The wasm is fetched
 // by hand so the biggest download gets a progress bar; out.js and the
 // pthread worker are loaded by the module machinery, through the same

@@ -14,12 +14,12 @@ publishes in one day have already happened.
 
 Usage:
 
-    python3 tools/publish-engine.py --dir <directory holding the four files>
+    nix run .#publish-engine -- --dir <directory> --guest <guest image>
 
 The directory holds out.js, qemu-system-x86_64.wasm,
-qemu-system-x86_64.worker.js and vm.state. The guest image the pins
-record is `nix build .#guest` of the current tree, so run this from the
-commit whose guest the snapshot was taken against.
+qemu-system-x86_64.worker.js and vm.state; the guest image is the
+`nix build .#guest` output the snapshot was taken against, whose
+hashes the pins record.
 """
 
 import argparse
@@ -38,7 +38,7 @@ ENGINE_FILES = (
     "qemu-system-x86_64.worker.js",
     "vm.state",
 )
-GUEST_FILES = ("bzImage", "initramfs.cpio.gz")
+GUEST_FILES = ("bzImage", "initramfs.cpio.gz", "machine.json")
 
 TAG_PREFIX = "engine-"
 TAG_TIME_FORMAT = "%Y%m%d-%H%M"
@@ -54,19 +54,10 @@ def sri(path):
     ).stdout.strip()
 
 
-def guest_image():
-    """Build the guest of the current tree and return its store path."""
-    return subprocess.run(
-        ["nix", "build", ".#guest", "--no-link", "--print-out-paths"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", required=True, help="directory holding the four artifacts")
+    parser.add_argument("--guest", required=True, help="the guest image the snapshot was taken from")
     parser.add_argument(
         "--tag",
         default=TAG_PREFIX + datetime.datetime.now(datetime.timezone.utc).strftime(TAG_TIME_FORMAT),
@@ -83,7 +74,7 @@ def main():
     # Hash everything before touching the network, so a failure here
     # leaves no half-made release behind.
     files = {name: sri(path) for name, path in zip(ENGINE_FILES, paths)}
-    guest = guest_image()
+    guest = os.path.realpath(args.guest)
     guest_hashes = {name: sri(os.path.join(guest, name)) for name in GUEST_FILES}
 
     with open(PINS) as f:

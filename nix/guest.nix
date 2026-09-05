@@ -108,11 +108,13 @@ in
   inherit kernel initramfs;
 
   # The assembled -L directory plus kernel and initramfs: everything the
-  # page feeds into MEMFS before the VM starts.
+  # page feeds into MEMFS before the VM starts, and the machine
+  # definition both the page and the snapshot tool start QEMU from.
   guest = pkgs.runCommand "trynix-guest" { } ''
     mkdir -p $out
     cp ${kernel}/bzImage $out/bzImage
     cp ${initramfs}/initramfs.cpio.gz $out/initramfs.cpio.gz
+    cp ${./guest/machine.json} $out/machine.json
     ${pkgs.lib.concatStringsSep "\n" (
       pkgs.lib.mapAttrsToList (name: sha256: "cp ${biosFile name sha256} $out/${name}") biosFiles
     )}

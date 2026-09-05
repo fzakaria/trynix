@@ -1,0 +1,23 @@
+{
+  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
+  "ram": "512M",
+  "args": [
+    "-nographic",
+    "-m",
+    "{ram}",
+    "-accel",
+    "tcg,tb-size=500",
+    "-L",
+    "{pack}/",
+    "-nic",
+    "none",
+    "-kernel",
+    "{pack}/bzImage",
+    "-initrd",
+    "{pack}/initramfs.cpio.gz",
+    "-virtfs",
+    "local,path={share},mount_tag=store0,security_model=none,id=store0",
+    "-append",
+    "console=ttyS0 rdinit=/init loglevel=4 mitigations=off"
+  ]
+}

@@ -59,7 +59,6 @@ const GUEST_STORE_DIR = "/nix/store";
 // With nothing set, each binary loads its own and they coexist.
 const MANIFEST = `export PATH="${GUEST_BIN_DIR}:$PATH"\n`;
 
-const GUEST_RAM = "512M";
 const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 
 // What holds QEMU's main() back until the share is complete.
@@ -89,27 +88,16 @@ const HANDSHAKE_TIMEOUT_MS = 180000;
 // once in whatever fetched them.
 const OWN = { canOwn: true };
 
-// Device for device, these must match what took the snapshot
-// (tools/make-snapshot.py) or the resume rejects the stream.
-const QEMU_ARGS = [
-  "-nographic",
-  "-m",
-  GUEST_RAM,
-  "-accel",
-  "tcg,tb-size=500",
-  "-L",
-  `${PACK_DIR}/`,
-  "-nic",
-  "none",
-  "-kernel",
-  `${PACK_DIR}/bzImage`,
-  "-initrd",
-  `${PACK_DIR}/initramfs.cpio.gz`,
-  "-virtfs",
-  `local,path=${SHARE_DIR},mount_tag=store0,security_model=none,id=store0`,
-  "-append",
-  "console=ttyS0 rdinit=/init loglevel=4",
-];
+// QEMU's arguments, from the machine definition the guest image
+// carries (nix/guest/machine.json). The snapshot tool starts QEMU from
+// the same file, which is what keeps the two ends of the migration
+// identical, device for device.
+function qemuArgs(machine) {
+  const values = { pack: PACK_DIR, share: SHARE_DIR, ram: machine.ram };
+  return machine.args.map((arg) =>
+    arg.replace(/\{(\w+)\}/g, (_, name) => values[name]),
+  );
+}
 
 // The store share, as the page maintains it: which paths have been
 // written, what programs each one offers, and the farm of links.
@@ -159,6 +147,7 @@ function storeShare(FS) {
 }
 
 // guestFiles: Map of name -> Uint8Array (bzImage, initramfs, BIOS).
+// machine: the parsed machine definition (nix/guest/machine.json).
 // snapshot: the migration stream, or null to cold-boot.
 // engine: { main, locate } — the versioned URL of the emscripten
 // module, and a resolver for whatever else it asks for by name. The
@@ -170,6 +159,7 @@ function storeShare(FS) {
 // which is before QEMU runs anything.
 export async function startVM({
   guestFiles,
+  machine,
   snapshot = null,
   terminalElement,
   engine,
@@ -186,8 +176,8 @@ export async function startVM({
   // which by then is full. Without one, the same arguments cold-boot.
   const args =
     snapshot === null
-      ? QEMU_ARGS
-      : ["-incoming", `file:${SNAPSHOT_FILE}`, ...QEMU_ARGS];
+      ? qemuArgs(machine)
+      : ["-incoming", `file:${SNAPSHOT_FILE}`, ...qemuArgs(machine)];
 
   // preRun hands the module out once its filesystem exists.
   let onFilesystem;

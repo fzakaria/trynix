@@ -27,6 +27,7 @@ import {
   DIGEST_LENGTH,
   DIGEST_PATTERN,
   GUEST_FILES,
+  MACHINE_URL,
   NAR_CONCURRENCY,
   QEMU_MAIN,
   QEMU_WASM,
@@ -445,6 +446,13 @@ async function boot() {
       onBytes: (n) => engineRow.add(n),
     }).then(() => engineRow.done());
 
+    const machinePromise = fetch(await asset(MACHINE_URL)).then((res) => {
+      if (!res.ok) {
+        throw new Error(`${MACHINE_URL}: HTTP ${res.status}`);
+      }
+      return res.json();
+    });
+
     const guestPromise = Promise.all(
       GUEST_FILES.map(async (name) => [
         name,
@@ -480,15 +488,22 @@ async function boot() {
     const vmPromise = Promise.all([
       enginePromise,
       guestPromise,
+      machinePromise,
       snapshotPromise,
-    ]).then(([, guestFiles, snapshot]) => {
+    ]).then(([, guestFiles, machine, snapshot]) => {
       resuming = snapshot !== null;
       log(
         snapshot === null
           ? "no snapshot; the guest will cold boot"
           : "engine instantiated; the guest will resume from the snapshot",
       );
-      return startVM({ guestFiles, snapshot, terminalElement, engine });
+      return startVM({
+        guestFiles,
+        machine,
+        snapshot,
+        terminalElement,
+        engine,
+      });
     });
 
     // Each NAR goes into the share the moment it is parsed, and is
