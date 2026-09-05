@@ -543,7 +543,7 @@ async function boot() {
         consoleVeil.hidden = true;
       },
     });
-    log(`virtual machine running, terminal is ${vm.engine}`);
+    log("virtual machine running");
     vmRow.done("running");
     vmStarted = true;
     mounted = closure;

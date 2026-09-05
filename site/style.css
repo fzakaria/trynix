@@ -376,11 +376,38 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-/* The console, and the veil over it. Starting a guest means talking to
-   QEMU's monitor on the same console the guest uses, and that
-   conversation is plumbing, not output: the veil covers it until the
-   shell is ready. */
+/* The console: a title bar, the terminal, and the veil over it while
+   the guest is still being brought up — what happens in between is
+   plumbing, not output.
+
+   Everything is painted with --console-bg, which the terminal sets to
+   the background of its own palette (site/js/terminal.js). The grid of
+   cells never divides the box evenly, and the strip left over at the
+   right and the bottom is only invisible if the frame is the same
+   colour as the cells. The frame stays dark in both site themes. */
+:root {
+  --console-bg: #16181d;
+  --console-bar: #0f1013;
+  --console-fg: #9a9a9a;
+}
 #console {
+  margin-top: 0.8rem;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--console-bg);
+}
+#console-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--console-bar);
+  color: var(--console-fg);
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+}
+#console-body {
   position: relative;
 }
 #console-veil {
@@ -391,9 +418,8 @@ code {
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  border-radius: 6px;
-  background: #000;
-  color: #9a9a9a;
+  background: var(--console-bg);
+  color: var(--console-fg);
   font-size: 14px;
 }
 #console-veil[hidden] {
@@ -418,14 +444,13 @@ code {
   }
 }
 
-/* The serial console. xterm draws its own colors; the frame stays dark
-   in both themes. */
+/* The terminal itself: a fixed height, so the guest's rows are known
+   before it says anything, and no padding on the right, where the
+   leftover strip already is. */
 #terminal {
-  margin-top: 0.8rem;
-  background: #000;
-  border-radius: 6px;
-  padding: 0.5rem;
-  min-height: 24rem;
+  height: 30rem;
+  padding: 0.5rem 0 0.5rem 0.6rem;
+  background: var(--console-bg);
 }
 
 /* The debug log: closed until something goes wrong and the reader

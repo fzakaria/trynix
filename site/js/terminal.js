@@ -1,19 +1,30 @@
-// The console the guest talks to.
+// The console the guest talks to: ghostty.
 //
-// Two terminals can fill the role. Ghostty is the one to want: the
-// same VT parser that powers the native app, compiled to wasm, so
-// escape sequences, wide characters and RTL behave the way they do in
-// a real terminal rather than the way a JavaScript reimplementation
-// guesses. xterm.js is kept as the fallback for a browser where the
-// ghostty module will not load.
+// libghostty-vt — the same VT parser the native app uses — compiled to
+// wasm, with xterm.js-shaped bindings (ghostty-web). Escape sequences,
+// wide characters and RTL behave the way they do in a real terminal
+// rather than the way a JavaScript reimplementation guesses. There is
+// no fallback engine: one renderer means one set of key semantics and
+// one set of quirks to know about.
 //
 // The pty is bridged by hand rather than through xterm-pty's addon.
 // The addon subscribes to onData, onBinary and onResize; ghostty
 // implements the first and third but not onBinary, so activating it
-// throws. Everything the addon does is three lines, and doing them
-// here is what lets one bridge serve both terminals.
+// throws. Everything the addon does is three lines, below.
 
-/* global Terminal */
+// The palette the terminal draws with. The container is painted with
+// the same background (openTerminal sets it), so the strip the grid
+// leaves at the edges — cells do not divide a container evenly — is
+// invisible rather than a bar of a different black.
+export const THEME = {
+  background: "#16181d",
+  foreground: "#e6e6e6",
+  cursor: "#e6e6e6",
+  selectionBackground: "#3b4252",
+};
+const FONT_SIZE = 14;
+const SCROLLBACK_LINES = 5000;
+const BACKGROUND_PROPERTY = "--console-bg";
 
 // The bridge, in both directions: what the guest writes is drawn, what
 // is typed goes to the line discipline, and a resized terminal tells
@@ -24,77 +35,67 @@ function bridge(terminal, master) {
   terminal.onResize(({ cols, rows }) => master.notifyResize(rows, cols));
 }
 
-async function openGhostty(element) {
-  const {
-    init,
-    Terminal: GhosttyTerminal,
-    FitAddon,
-  } = await import("../vendor/ghostty-web.js");
-  await init();
-  const terminal = new GhosttyTerminal();
-  terminal.open(element);
-
-  // Without this the terminal keeps its default 80x24 and the rest of
-  // the container is dead black space beside it. The addon also
-  // watches the container, so a resized window refits.
-  const fit = new FitAddon();
-  terminal.loadAddon(fit);
-  fit.fit();
-  fit.observeResize();
-
-  return { terminal, engine: "ghostty" };
-}
-
-function openXterm(element) {
-  const terminal = new Terminal();
-  terminal.open(element);
-  return { terminal, engine: "xterm" };
-}
-
 // Ctrl-C over a selection is a copy, everywhere else in the browser.
 // Passing it through as well sends an interrupt to the guest and
 // leaves a stray prompt, so it is swallowed when there is something to
 // copy — and passed through untouched when there is not, because that
 // is how a shell is interrupted.
 //
-// The two engines read the return value in opposite directions, which
-// is worth stating plainly because getting it backwards swallows every
-// keystroke and leaves a terminal that draws but cannot be typed at:
-//
-//   xterm.js   true = the terminal should go on handling this key
-//   ghostty    true = the handler dealt with it, stop (preventDefault)
-//
-// The same intent therefore needs the opposite answer from each.
-function handleCopyKey(terminal, engine) {
-  const handledMeans = engine === "ghostty";
+// ghostty reads the handler's return value as "handled": true means
+// stop here, false means go on and send the key to the guest. (xterm.js
+// reads it the other way round, which is worth remembering if the
+// engine ever changes.)
+const HANDLED = true;
+const PASS_THROUGH = false;
 
-  terminal.attachCustomKeyEventHandler?.((event) => {
+function handleCopyKey(terminal) {
+  terminal.attachCustomKeyEventHandler((event) => {
     const isCopy =
       event.key === "c" && (event.ctrlKey || event.metaKey) && !event.altKey;
-    if (event.type === "keydown" && isCopy && terminal.hasSelection?.()) {
+    if (event.type === "keydown" && isCopy && terminal.hasSelection()) {
       navigator.clipboard?.writeText(terminal.getSelection()).catch(() => {});
-      terminal.clearSelection?.();
-      return handledMeans;
+      terminal.clearSelection();
+      return HANDLED;
     }
-    return !handledMeans;
+    return PASS_THROUGH;
   });
 }
 
-// Returns { terminal, engine, attach } — attach wires a pty master to
-// it. A ghostty that fails to load is not an error worth showing a
-// reader: the fallback renders the same bytes.
+// Returns { terminal, attach } — attach wires a pty master to it.
 export async function openTerminal(element) {
-  let opened;
-  try {
-    opened = await openGhostty(element);
-  } catch {
-    opened = openXterm(element);
-  }
+  const {
+    init,
+    Terminal: GhosttyTerminal,
+    FitAddon,
+  } = await import("../vendor/ghostty-web.js");
+  await init();
 
-  handleCopyKey(opened.terminal, opened.engine);
+  // The variable is site-wide: the frame around the terminal and the
+  // veil over it are painted with it too.
+  document.documentElement.style.setProperty(
+    BACKGROUND_PROPERTY,
+    THEME.background,
+  );
+  const terminal = new GhosttyTerminal({
+    theme: THEME,
+    fontSize: FONT_SIZE,
+    scrollback: SCROLLBACK_LINES,
+    cursorBlink: true,
+  });
+  terminal.open(element);
+
+  // Without this the terminal keeps its default 80x24 and the rest of
+  // the container is dead space beside it. The addon also watches the
+  // container, so a resized window refits.
+  const fit = new FitAddon();
+  terminal.loadAddon(fit);
+  fit.fit();
+  fit.observeResize();
+
+  handleCopyKey(terminal);
 
   return {
-    ...opened,
-    attach: (master) => bridge(opened.terminal, master),
+    terminal,
+    attach: (master) => bridge(terminal, master),
   };
 }

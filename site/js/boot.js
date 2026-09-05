@@ -4,7 +4,7 @@
 // preRun hook materialises it all into MEMFS and QEMU boots from there.
 //
 // xterm-pty is a vendored UMD script, so openpty is a global; the
-// terminal itself comes from terminal.js, which prefers ghostty.
+// terminal itself comes from terminal.js.
 /* global openpty */
 
 import { ensureDir, writeEntries } from "./store.js";
@@ -80,10 +80,9 @@ export async function bootVM({
   // gets its own name.
   let added = 0;
 
-  // Reachable from the browser console: the terminal, the pty pair and
-  // which engine is drawing. Debugging a guest that will not talk is
-  // otherwise guesswork.
-  window.trynix = { ...ui, master, slave };
+  // Reachable from the browser console: the terminal and the pty pair.
+  // Debugging a guest that will not talk is otherwise guesswork.
+  window.trynix = { terminal: ui.terminal, master, slave };
 
   // Resuming a snapshot skips the whole boot — BIOS, kernel, device
   // probe — and lands in a guest already spinning for the store share,
@@ -176,7 +175,6 @@ export async function bootVM({
 
   return {
     terminal: ui.terminal,
-    engine: ui.engine,
 
     // Add store paths to a VM that is already running.
     //
