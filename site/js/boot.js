@@ -81,15 +81,26 @@ const GUEST_STORE_DIR = "/nix/store";
 // since 2.35, so programs that insist on a UTF-8 locale (btop) get
 // one; a closure old enough to lack it falls back to C, and perl says
 // so.
-const MANIFEST = [
-  `export PATH="${GUEST_BIN_DIR}:$PATH"`,
-  "export TERM=xterm-256color",
-  "export LANG=C.UTF-8",
-  "stty -icanon min 0 time 2; cat >/dev/null; stty icanon min 1 time 0",
-  // stdout only: the cursor query goes out on stderr.
-  "resize >/dev/null",
-  "",
-].join("\n");
+function manifest({ rows, cols }) {
+  return [
+    `export PATH="${GUEST_BIN_DIR}:$PATH"`,
+    "export TERM=xterm-256color",
+    "export LANG=C.UTF-8",
+    // Tell the tty how big it is, rather than asking the terminal.
+    //
+    // A serial console has no window size until something sets one:
+    // TIOCGWINSZ answers 0x0 and a full-screen program refuses to start.
+    // `resize` is the traditional answer, but it asks the terminal where
+    // the cursor is and then blocks reading the reply, and nothing
+    // guarantees a reply comes back. When none did, init hung here --
+    // before it printed the line the page waits for -- and the boot sat
+    // out the page's whole handshake timeout. The page already knows the
+    // size it laid the terminal out at, so it states it instead. Later
+    // changes travel as SIGWINCH through the line discipline.
+    `stty rows ${rows} cols ${cols}`,
+    "",
+  ].join("\n");
+}
 
 const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 
@@ -104,6 +115,9 @@ const MOUNTED_MARKER = "trynix: welcome to the multiverse";
 const TRANSCRIPT_LIMIT = 65536;
 // How often the resuming guest is offered its newline.
 const RESUME_POLL_MS = 300;
+// How long the console must be quiet after the guest mounts before the
+// spare handshake newlines are taken to have all arrived.
+const SETTLE_MS = 400;
 
 // Ctrl-L: the shell's line editor clears its screen and draws the
 // prompt again. Clearing the terminal from this side wipes the prompt
@@ -307,7 +321,10 @@ export async function startVM({
     // at its prompt — or when the page has given up waiting for it.
     async run(roots) {
       share.linkAll(share.written(), roots, Precedence.KEEP);
-      mod.FS.writeFile(`${SHARE_DIR}/manifest`, MANIFEST);
+      mod.FS.writeFile(
+        `${SHARE_DIR}/manifest`,
+        manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }),
+      );
       mod.removeRunDependency(STORE_DEPENDENCY);
 
       // The handshake: init parks on a read until the page says the
@@ -386,20 +403,25 @@ async function coldBoot(console_, master, terminal) {
 // caught it, so one newline finishes the handshake — but a newline
 // sent while QEMU is still loading the stream is lost, and nothing
 // says when loading is done. So newlines are offered every
-// RESUME_POLL_MS until the guest says anything at all. Only the first
-// is actually lost (the UART it lands in is overwritten by the
-// restore); the rest queue in the UART and reach the guest together,
-// as the echo of the one it took plus spares, which the manifest
-// drains before anything reads the tty.
+// RESUME_POLL_MS until the guest has mounted the share and said so.
+//
+// Waiting for the console to show anything at all is not good enough,
+// and stopping on that is what wedged this: the line discipline echoes
+// every newline straight back, so the console has output before the
+// guest has read a byte. A poll stopped on the strength of that echo
+// leaves a guest still parked on its read with nothing left to wake
+// it, and the boot then sits out the page's whole handshake timeout.
+// The spare newlines queue in the UART and reach the shell as bare
+// prompts, which the clear below removes.
 async function resume(console_, master, terminal) {
   const poll = setInterval(() => sendLine(master), RESUME_POLL_MS);
   sendLine(master);
-  await console_.waitForOutput();
-  clearInterval(poll);
   await console_.waitFor(MOUNTED_MARKER);
+  clearInterval(poll);
 
   // Drop what the guest said on the way up; the reader starts at a
   // prompt.
+  await quiet(SETTLE_MS);
   terminal.clear();
   send(master, REDRAW_PROMPT);
 }
@@ -411,6 +433,8 @@ function send(master, data) {
 }
 
 const sendLine = (master) => send(master, "\n");
+
+const quiet = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Everything the guest has written, and a way to wait for a line in it.
 //

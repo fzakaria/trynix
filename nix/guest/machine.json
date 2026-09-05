@@ -1,5 +1,5 @@
 {
-  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. The 9p device is spelled out rather than written as -virtfs sugar so that ioeventfd can be turned off: with it on, a request is handed to the main loop through a pipe and the vCPU waits to be woken again, and under emscripten each of those hops is a synchronous call to the browser's main thread. Off, the handler runs on the vCPU thread inside the kick itself. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
+  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
   "ram": "512M",
   "args": [
     "-nographic",
@@ -15,10 +15,8 @@
     "{pack}/bzImage",
     "-initrd",
     "{pack}/initramfs.cpio.gz",
-    "-fsdev",
-    "local,id=store0,path={share},security_model=none",
-    "-device",
-    "virtio-9p-pci,fsdev=store0,mount_tag=store0,ioeventfd=off",
+    "-virtfs",
+    "local,path={share},mount_tag=store0,security_model=none,id=store0",
     "-append",
     "console=ttyS0 rdinit=/init loglevel=4 mitigations=off"
   ]
