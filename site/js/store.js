@@ -52,14 +52,36 @@ async function verifyCompressed(info, bytes) {
   return null;
 }
 
-// One NAR: fetch, verify, decompress, parse. onBytes hears compressed
-// chunk sizes as they arrive.
+// The unpacked archive against what the narinfo promised: NarSize,
+// then NarHash. Null means good; otherwise the reason.
 //
-// The unpacked archive is checked against NarSize as well. That is
-// the check that would have caught the first report of this failing:
-// a truncated archive decoded as far as it went, and the parser ran
-// off its end. The compressed copy is dropped from the cache and
-// fetched once more before giving up.
+// Both have caught real failures. A download that ended short decoded
+// as far as it went and the parser ran off its end (the size). And the
+// xz decoder handed out views into its own memory that the next chunk
+// overwrote, so the archive had the right length and wrong bytes, and
+// the parser found machine code where a NAR token should be (the
+// hash; patches/xzwasm/ fixes the decoder, and the hash is what says
+// so if it ever comes back).
+async function verifyUnpacked(info, nar) {
+  if (info.narSize > 0 && nar.byteLength !== info.narSize) {
+    return `unpacked to ${nar.byteLength} bytes, narinfo says ${info.narSize}`;
+  }
+  if (info.narHash !== undefined) {
+    const ok = await verifyHash(nar, info.narHash);
+    if (ok === false) {
+      return "unpacked archive's sha256 does not match the narinfo";
+    }
+  }
+  return null;
+}
+
+// One NAR: fetch, verify, decompress, verify again, parse. onBytes
+// hears compressed chunk sizes as they arrive.
+//
+// An archive that unpacks wrong is decoded once more from a fresh
+// download — the compressed copy is dropped from the cache first —
+// before the boot gives up with a message that names the path and
+// the reason.
 export async function fetchNar(info, onBytes) {
   if (!["xz", "zstd", "none"].includes(info.compression)) {
     throw new Error(`unsupported NAR compression "${info.compression}"`);
@@ -77,17 +99,27 @@ export async function fetchNar(info, onBytes) {
     });
     const nar = await decompress(info, compressed);
 
-    if (info.narSize === 0 || nar.byteLength === info.narSize) {
-      return parseNar(nar);
+    const problem = await verifyUnpacked(info, nar);
+    if (problem === null) {
+      return parse(info, nar);
     }
 
-    const problem = `${info.storePath}: unpacked to ${nar.byteLength} bytes, narinfo says ${info.narSize}`;
     await evictFromCache(url);
     if (attempt >= NAR_ATTEMPTS) {
-      throw new Error(problem);
+      throw new Error(`${info.storePath}: ${problem}`);
     }
-    log(`${problem}; fetching again`);
+    log(`${info.storePath}: ${problem}; fetching again`);
     onBytes(-compressed.byteLength);
+  }
+}
+
+// Parse, naming the path when the archive is malformed: the parser's
+// own message says where in the bytes, not which package.
+function parse(info, nar) {
+  try {
+    return parseNar(nar);
+  } catch (err) {
+    throw new Error(`${info.storePath}: ${err.message}`);
   }
 }
 

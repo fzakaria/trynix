@@ -33,8 +33,15 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/index.js $out/xterm-pty.js
   rm -r unpack/package
 
+  # The readable build rather than the minified one, so the patch
+  # applies: patches/xzwasm/ makes the decoder copy each chunk out of
+  # its own memory before handing it on (the file says what went wrong
+  # without it).
   tar -xzf ${xzwasm} -C unpack
-  cp unpack/package/dist/package/xzwasm.min.js $out/xzwasm.js
+  cp unpack/package/dist/package/xzwasm.js $out/xzwasm.js
+  for patch in ${../patches/xzwasm}/*.patch; do
+    patch -d $out -p1 < "$patch"
+  done
   rm -r unpack/package
 
   tar -xzf ${fzstd} -C unpack
