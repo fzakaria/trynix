@@ -36,7 +36,18 @@ mount -t devtmpfs devtmpfs /dev
 echo "trynix: waiting for the store"
 read -r _handshake
 
-mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576 store0 /share
+# cache=loose keeps the share's dentries, inodes and page cache in the
+# guest. Without it 9p runs as cache=none: a dentry is dropped the
+# moment nothing holds it and every lookup allocates a fresh inode, so
+# the page cache of a mapped library dies with the process that mapped
+# it, and the next exec walks every path component and reads glibc
+# over the wire all over again. Each round trip is a synchronous hop
+# through emscripten's proxied syscalls, which is where ruby's start-up
+# time went. The store is immutable, so nothing cached can go stale;
+# the paths and links the page adds later are names the guest has
+# never looked up, and 9p drops negative dentries in this mode, so a
+# name that was missing once is looked up again.
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose store0 /share
 ln -s /share/nix /nix
 if [ -f /share/manifest ]; then
   . /share/manifest
