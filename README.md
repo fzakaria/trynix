@@ -34,6 +34,10 @@ history they agreed.
    of symlinks the guest keeps on PATH, so adding a package to a
    running VM adds links and types nothing at the shell.
 
+The URL is the state: packages, store paths, extra binary caches with
+their keys, all in the query string, so an environment is a link to
+send (docs/design.md, "The link").
+
 Everything large — the engine, the guest image, the snapshot, every
 NAR and narinfo — is kept in the browser's cache, so a second boot of
 a package costs no download. On a warm cache a shell is up in about

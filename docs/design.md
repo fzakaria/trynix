@@ -46,6 +46,32 @@ The pieces already exist in sibling projects; trynix is the glue:
    app uses, compiled to wasm. The pty is xterm-pty's line discipline,
    which the engine was linked against, bridged by hand.
 
+## The link
+
+The URL is the page's state, so any environment is a link someone can
+send. Everything is in the query string, written back with
+`replaceState` as it changes, so the address bar is always the link
+for what is on screen:
+
+| parameter                          | meaning                                   |
+| ---------------------------------- | ----------------------------------------- |
+| `pkg=jujutsu@0.43.0`               | an attribute at a version, from the index |
+| `pkg=ripgrep`                      | the newest version the index has          |
+| `path=/nix/store/<digest>-name`    | a store path, verbatim                    |
+| `cache=https://x.cachix.org x-1:…` | an extra binary cache and its public key  |
+| `boot=1`                           | start without a click                     |
+
+Each parameter may repeat. `cache` is what makes a store path from
+someone's own cachix shareable: the path alone is not enough, since
+the walk needs a cache that holds it and a key that vouches for it,
+and both travel in the same link. Extra caches are tried after
+cache.nixos.org, in the order given, and nothing about them is kept in
+the browser — the link is the only place the list lives. A cache has
+to allow cross-origin reads for a page to fetch from it at all.
+
+`boot` stays out of a shared link on purpose: a link should offer the
+boot, and only the page's own reload wants it automatic.
+
 ## The store share
 
 The guest sees the page's directory `/share` through 9p, mounted at the
