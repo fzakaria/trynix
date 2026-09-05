@@ -242,82 +242,61 @@ laneNav.addEventListener("click", (event) => {
 
 // ---------- the boot ----------
 
-// The shell fragment the guest init sources. PATH, and deliberately
-// nothing else.
-//
-// An LD_LIBRARY_PATH covering the closure looks helpful and is
-// actively harmful here. Every nix binary already names its own
-// interpreter in PT_INTERP and its own libraries in DT_RUNPATH, by
-// absolute store path — that is what makes two eras able to share a
-// machine at all. But the loader searches LD_LIBRARY_PATH *before*
-// DT_RUNPATH, so setting it overrides all of that and hands each
-// binary whichever copy of a library happens to come first.
-//
-// Booting ripgrep beside lolcat is where that shows: their closures
-// carry glibc 2.42 and 2.30, and the mix died on
-// "ld-linux-x86-64.so.2: version `GLIBC_2.35' not found (required by
-// glibc-2.42/libc.so.6)" — the older loader, handed the newer libc.
-// With nothing set, each binary loads its own and they coexist.
-function buildManifest(closure, rootDigests, unpacked) {
-  const dirs = binAndLibDirs(closure, rootDigests, unpacked);
-  return `export PATH="${dirs.bin.join(":")}:$PATH"\n`;
-}
-
-// Selected digests, plus the `bin` output of any package that keeps
-// its programs in one. Booting jq means booting jq.out *and* jq.bin:
-// the two are separate store paths and neither references the other.
-async function withBinOutputs(digests) {
-  const roots = [...digests];
+// What the reader selected, each with the `bin` output of a package
+// that keeps its programs in one. Booting jq means booting jq.out *and*
+// jq.bin: the two are separate store paths and neither references the
+// other. Returns [{ digest, bin }], bin null when there is no such
+// sibling.
+async function rootsOf(digests) {
+  const roots = [];
   for (const digest of digests) {
     const bin = await binOutputOf(digest);
-    if (bin !== null && !roots.includes(bin)) {
-      roots.push(bin);
-    }
+    roots.push({ digest, bin: bin === digest ? null : bin });
   }
   return roots;
 }
 
-// Which directories a closure actually has, as guest paths.
-//
-// Only directories that exist may be named. A missing one is not
-// harmlessly skipped the way it would be on a normal filesystem: the
-// engine's 9p answers a lookup of something absent with ENOENT only
-// because patches/ makes it: without that patch it answers with
-// emscripten's WASI numbering, which the guest reads as ECHRNG, and
-// the dynamic loader gives up on the whole search.
-//
-// PATH leads with the selected roots so that what the reader asked for
-// wins a collision, then everything else in the closure — a package
-// whose programs live in a dependency still works.
-function binAndLibDirs(closure, rootDigests, unpacked) {
-  const byBasename = new Map(unpacked.map((p) => [p.basename, p]));
-  const has = (basename, directory) =>
-    byBasename
-      .get(basename)
-      ?.entries.some(
-        (entry) => entry.path === directory && entry.type === "directory",
-      ) ?? false;
+// Every store path the roots name, selection order, no duplicates.
+function digestsOf(roots) {
+  const digests = [];
+  for (const { digest, bin } of roots) {
+    for (const d of [digest, bin]) {
+      if (d !== null && !digests.includes(d)) {
+        digests.push(d);
+      }
+    }
+  }
+  return digests;
+}
 
-  const guestPath = (basename, directory) =>
-    `/nix/store/${basename}/${directory}`;
-  const basenames = (digests) =>
-    digests
-      .map((digest) => closure.get(digest))
-      .filter((info) => info !== undefined)
-      .map(basenameOf);
+// Basenames of the digests the closure knows, in the order given.
+function basenamesOf(closure, digests) {
+  return digests
+    .map((digest) => closure.get(digest))
+    .filter((info) => info !== undefined)
+    .map(basenameOf);
+}
 
-  const roots = basenames(rootDigests);
-  const rest = basenames([...closure.keys()]).filter((b) => !roots.includes(b));
-
-  return {
-    bin: [...roots, ...rest]
-      .filter((b) => has(b, "bin"))
-      .map((b) => guestPath(b, "bin")),
-    // Roots that ship no programs of their own: nixpkgs splits many
-    // packages so the binaries live in a separate output, and the
-    // index publishes the default one.
-    silentRoots: roots.filter((b) => !has(b, "bin")),
-  };
+// Say which selections put nothing on PATH. A root is silent when
+// neither it nor its bin sibling offers a program: nixpkgs splits many
+// packages so the binaries live in a separate output, the index
+// publishes the default one, and the sibling map does not know every
+// split.
+function reportSilent(vm, closure, roots) {
+  const silent = roots
+    .filter(({ digest, bin }) =>
+      basenamesOf(
+        closure,
+        [digest, bin].filter((d) => d !== null),
+      ).every((basename) => vm.programsOf(basename).length === 0),
+    )
+    .map(({ digest }) => basenamesOf(closure, [digest])[0] ?? digest);
+  if (silent.length === 0) {
+    return;
+  }
+  status.textContent =
+    `no programs in ${silent.join(", ")} — nixpkgs splits some packages so ` +
+    `their binaries live in a separate output, and the index publishes the default one`;
 }
 
 // The union of every selected root's runtime closure, in one map. Roots
@@ -418,7 +397,8 @@ async function boot() {
   const vmRow = panel.row("virtual machine");
 
   try {
-    const rootDigests = await withBinOutputs([...selection.keys()]);
+    const roots = await rootsOf([...selection.keys()]);
+    const rootDigests = digestsOf(roots);
     const closure = await walkRoots(rootDigests, (n) =>
       walkRow.note(`${n} narinfos`),
     );
@@ -510,17 +490,6 @@ async function boot() {
       snapshotPromise,
     ]);
 
-    const silent = binAndLibDirs(
-      closure,
-      rootDigests,
-      closurePaths,
-    ).silentRoots;
-    if (silent.length > 0) {
-      status.textContent =
-        `no programs in ${silent.join(", ")} — nixpkgs splits some packages so ` +
-        `their binaries live in a separate output, and the index publishes the default one`;
-    }
-
     log(
       snapshot === null
         ? "no snapshot; cold booting"
@@ -535,7 +504,7 @@ async function boot() {
       wasmBinary: wasmBytes.buffer,
       guestFiles,
       closure: closurePaths,
-      manifest: buildManifest(closure, rootDigests, closurePaths),
+      roots: basenamesOf(closure, rootDigests),
       terminalElement,
       engine,
       snapshot,
@@ -544,6 +513,7 @@ async function boot() {
       },
     });
     log("virtual machine running");
+    reportSilent(vm, closure, roots);
     vmRow.done("running");
     vmStarted = true;
     mounted = closure;
@@ -575,17 +545,19 @@ rebootLink.addEventListener("click", (event) => {
 
 // Add whatever is selected to the guest that is already running.
 //
-// Nothing is rebooted: the share is a directory in the emscripten
-// filesystem, and 9p passes the guest's lookups straight through to
-// it, so a store path written now is a store path the guest can run a
-// moment later. Only paths it does not already have are fetched.
+// Nothing is rebooted and nothing is typed at the guest: the share is
+// a directory in the emscripten filesystem, 9p passes the guest's
+// lookups straight through to it, and the programs land as links in
+// the one directory the guest already has on PATH. Only paths it does
+// not already have are fetched.
 async function addToRunningVM() {
   bootButton.disabled = true;
   const panel = new ProgressPanel(bootProgress);
   const row = panel.row("adding");
 
   try {
-    const rootDigests = await withBinOutputs([...selection.keys()]);
+    const roots = await rootsOf([...selection.keys()]);
+    const rootDigests = digestsOf(roots);
     const fresh = await walkRoots(
       rootDigests,
       (n) => row.note(`${n} narinfos`),
@@ -608,16 +580,11 @@ async function addToRunningVM() {
       }),
     );
 
-    const merged = new Map([...mounted, ...fresh]);
-    const dirs = binAndLibDirs(merged, rootDigests, unpacked);
-    if (dirs.silentRoots.length > 0) {
-      status.textContent = `no programs in ${dirs.silentRoots.join(", ")}`;
-    }
-
-    vm.addPaths(unpacked, dirs.bin);
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }
+    vm.add(unpacked, basenamesOf(mounted, rootDigests));
+    reportSilent(vm, mounted, roots);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
   } catch (err) {

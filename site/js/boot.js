@@ -7,7 +7,13 @@
 // terminal itself comes from terminal.js.
 /* global openpty */
 
-import { ensureDir, writeEntries } from "./store.js";
+import {
+  ensureDir,
+  linkPrograms,
+  Precedence,
+  programsOf,
+  writeEntries,
+} from "./store.js";
 import { openTerminal } from "./terminal.js";
 
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
@@ -15,6 +21,33 @@ import { openTerminal } from "./terminal.js";
 const PACK_DIR = "/pack";
 const SHARE_DIR = "/share";
 const STORE_DIR = `${SHARE_DIR}/nix/store`;
+
+// The farm: one directory of symlinks, one per program in the closure,
+// that the guest keeps on PATH for the life of the VM. Adding a package
+// later means adding links here, which the guest sees through 9p the
+// moment they exist — nothing has to be typed at its shell, and PATH
+// never grows past two entries.
+const BIN_DIR = `${SHARE_DIR}/bin`;
+const GUEST_BIN_DIR = BIN_DIR;
+const GUEST_STORE_DIR = "/nix/store";
+
+// The shell fragment the guest init sources. PATH, and deliberately
+// nothing else.
+//
+// An LD_LIBRARY_PATH covering the closure looks helpful and is
+// actively harmful here. Every nix binary already names its own
+// interpreter in PT_INTERP and its own libraries in DT_RUNPATH, by
+// absolute store path — that is what makes two eras able to share a
+// machine at all. But the loader searches LD_LIBRARY_PATH *before*
+// DT_RUNPATH, so setting it overrides all of that and hands each
+// binary whichever copy of a library happens to come first.
+//
+// Booting ripgrep beside lolcat is where that shows: their closures
+// carry glibc 2.42 and 2.30, and the mix died on
+// "ld-linux-x86-64.so.2: version `GLIBC_2.35' not found (required by
+// glibc-2.42/libc.so.6)" — the older loader, handed the newer libc.
+// With nothing set, each binary loads its own and they coexist.
+const MANIFEST = `export PATH="${GUEST_BIN_DIR}:$PATH"\n`;
 
 const GUEST_RAM = "512M";
 const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
@@ -50,16 +83,77 @@ const QEMU_ARGS = [
   "console=ttyS0 rdinit=/init loglevel=4",
 ];
 
+// The store share, as the page maintains it: which paths have been
+// written, what programs each one offers, and the farm of links.
+function storeShare(FS) {
+  const programs = new Map();
+
+  return {
+    // Materialise one parsed NAR. A path already there is left alone —
+    // a store path is immutable, so there is nothing to update.
+    write(basename, entries) {
+      if (programs.has(basename)) {
+        return;
+      }
+      writeEntries(FS, `${STORE_DIR}/${basename}`, entries);
+      programs.set(basename, programsOf(entries));
+    },
+
+    // Offer a written path's programs in the farm.
+    link(basename, precedence) {
+      linkPrograms(
+        FS,
+        BIN_DIR,
+        `${GUEST_STORE_DIR}/${basename}`,
+        programs.get(basename) ?? [],
+        precedence,
+      );
+    },
+
+    programsOf: (basename) => programs.get(basename) ?? [],
+  };
+}
+
+// Write a batch of paths and link their programs. The roots — what
+// the reader asked for — go first and win a collision; everything
+// else in the closure only fills names still free, so a dependency
+// never shadows a selection. `precedence` says whether a root may
+// replace a link an earlier batch made.
+//
+// The batch is consumed: each path is dropped from the array as it is
+// written. Every file exists twice while it is being copied — once as
+// the parsed NAR, once in the filesystem — and holding the whole
+// closure in both forms at once is what makes a large one fail: the
+// tab runs out of room and the next fetch dies with a bare "TypeError:
+// Failed to fetch". Releasing as we go keeps the peak at one path
+// rather than all of them.
+function populate(share, unpacked, roots, precedence) {
+  const written = [];
+  while (unpacked.length > 0) {
+    const { basename, entries } = unpacked.shift();
+    share.write(basename, entries);
+    written.push(basename);
+  }
+  for (const basename of roots) {
+    share.link(basename, precedence);
+  }
+  for (const basename of written) {
+    if (!roots.includes(basename)) {
+      share.link(basename, Precedence.KEEP);
+    }
+  }
+}
+
 // guestFiles: Map of name -> Uint8Array (bzImage, initramfs, BIOS).
 // closure: array of { basename, entries } from store.js fetchNar.
-// manifest: shell fragment the guest init sources (PATH and friends).
+// roots: the basenames the reader selected, in selection order.
 // engine: { main, locate } — the versioned URL of the emscripten
 // module, and a resolver for whatever else it asks for by name.
 export async function bootVM({
   wasmBinary,
   guestFiles,
   closure,
-  manifest,
+  roots,
   terminalElement,
   engine,
   snapshot = null,
@@ -71,10 +165,6 @@ export async function bootVM({
 
   // The console transcript, tapped before the terminal draws it.
   const console_ = watchConsole(master);
-
-  // Counts the environment files written for live additions, so each
-  // gets its own name.
-  let added = 0;
 
   // Reachable from the browser console: the terminal and the pty pair.
   // Debugging a guest that will not talk is otherwise guesswork.
@@ -88,6 +178,9 @@ export async function bootVM({
     snapshot === null
       ? QEMU_ARGS
       : ["-incoming", `file:${SNAPSHOT_FILE}`, ...QEMU_ARGS];
+
+  // Set up in preRun, once the module's filesystem exists.
+  let share = null;
 
   const Module = {
     arguments: args,
@@ -114,22 +207,12 @@ export async function bootVM({
           mod.FS.writeFile(SNAPSHOT_FILE, snapshot);
         }
 
-        // The store share: the fetched closure plus the manifest the
-        // guest init sources.
-        //
-        // Each path is dropped from the array as it is written. Every
-        // file exists twice while it is being copied — once as the
-        // parsed NAR, once in the filesystem — and holding the whole
-        // closure in both forms at once is what makes a large one fail:
-        // the tab runs out of room and the next fetch dies with a bare
-        // "TypeError: Failed to fetch". Releasing as we go keeps the
-        // peak at one path rather than all of them.
+        // The store share: the fetched closure, the farm of program
+        // links, and the manifest the guest init sources.
         ensureDir(mod.FS, STORE_DIR);
-        while (closure.length > 0) {
-          const { basename, entries } = closure.shift();
-          writeEntries(mod.FS, `${STORE_DIR}/${basename}`, entries);
-        }
-        mod.FS.writeFile(`${SHARE_DIR}/manifest`, manifest);
+        share = storeShare(mod.FS);
+        populate(share, closure, roots, Precedence.KEEP);
+        mod.FS.writeFile(`${SHARE_DIR}/manifest`, MANIFEST);
       },
     ],
   };
@@ -162,7 +245,7 @@ export async function bootVM({
   // caller should say so rather than waiting on a guest that might be
   // slow, or wedged, or built from a different commit. The console
   // stays veiled meanwhile, because what happens in between is
-  // plumbing — a kernel booting, or a monitor being told to continue.
+  // plumbing — a kernel booting, or a guest being handed its newline.
   const ready =
     snapshot === null
       ? coldBoot(console_, master, ui.terminal)
@@ -177,31 +260,15 @@ export async function bootVM({
     // The share is an ordinary directory in the emscripten filesystem
     // and 9p's local backend passes every lookup through to it, so
     // writing a new store path after boot is enough for the guest to
-    // find it — no remount, no reboot. What the guest cannot discover
-    // on its own is that its PATH should grow, so the new directories
-    // are typed at the shell the way a person would.
-    addPaths(unpacked, binDirs) {
-      for (const { basename, entries } of unpacked) {
-        const path = `${STORE_DIR}/${basename}`;
-        if (Module.FS.analyzePath(path).exists) {
-          continue;
-        }
-        writeEntries(Module.FS, path, entries);
-      }
-      if (binDirs.length === 0) {
-        return;
-      }
-
-      // The new PATH goes in a file, and only a short `.` command is
-      // typed. A closure of any size makes that variable thousands of
-      // characters long, and a line that long does not survive the
-      // terminal's line discipline: it arrives wrapped and truncated,
-      // and the shell tries to run the wreckage.
-      added += 1;
-      const file = `${SHARE_DIR}/env-${added}.sh`;
-      Module.FS.writeFile(file, `export PATH="${binDirs.join(":")}:$PATH"\n`);
-      send(master, `. ${file}\n`);
+    // find it — no remount, no reboot. The farm is what lets the
+    // guest's PATH stay as it was: the new roots replace any link of
+    // the same name, so the package added last wins.
+    add(unpacked, newRoots) {
+      populate(share, unpacked, newRoots, Precedence.REPLACE);
     },
+
+    // The programs a written path offers, by basename.
+    programsOf: (basename) => share.programsOf(basename),
   };
 }
 

@@ -160,8 +160,9 @@
         </a>
       </p>
       <p id="add-note" class="muted" hidden>
-        Packages added to a running VM go on the front of <code>PATH</code>, so the most recently
-        added one wins when two provide the same command.
+        Packages added to a running VM appear in the shell straight away; the most recently added
+        one wins when two provide the same command. A command the shell has already run once is
+        remembered at its old path until <code>hash -r</code>.
       </p>
     </section>
 

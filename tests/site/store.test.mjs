@@ -29,3 +29,47 @@ test("an absolute target is left alone: it names a store path", () => {
   const target = "/nix/store/xyz-hello-2.12.2/bin/hello";
   assert.equal(absoluteTarget(`${LIB}/hello`, target), target);
 });
+
+// Tests which entries of a NAR count as programs: the files under bin/
+// that a PATH lookup would run. They become the symlinks in the
+// guest's /share/bin, so a data file or a nested directory must not
+// be offered as a command.
+import { programsOf } from "../../site/js/store.js";
+
+test("executables and symlinks directly under bin/ are programs", () => {
+  const entries = [
+    { path: "", type: "directory" },
+    { path: "bin", type: "directory" },
+    {
+      path: "bin/rg",
+      type: "regular",
+      executable: true,
+      data: new Uint8Array(),
+    },
+    { path: "bin/python", type: "symlink", target: "python3.10" },
+    {
+      path: "bin/README",
+      type: "regular",
+      executable: false,
+      data: new Uint8Array(),
+    },
+    { path: "bin/sub", type: "directory" },
+    {
+      path: "bin/sub/tool",
+      type: "regular",
+      executable: true,
+      data: new Uint8Array(),
+    },
+    {
+      path: "lib/libz.so",
+      type: "regular",
+      executable: true,
+      data: new Uint8Array(),
+    },
+  ];
+  assert.deepEqual(programsOf(entries), ["rg", "python"]);
+});
+
+test("a package without a bin directory has no programs", () => {
+  assert.deepEqual(programsOf([{ path: "", type: "directory" }]), []);
+});

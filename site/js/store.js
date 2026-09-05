@@ -121,6 +121,61 @@ export function absoluteTarget(linkPath, target) {
   return parts.join("/");
 }
 
+// The programs a store path offers: the names directly under bin/ that
+// a PATH lookup would run — executables and symlinks, not data files
+// and not nested directories.
+const PROGRAM_PATH = /^bin\/[^/]+$/;
+const BIN_PREFIX = "bin/";
+
+export function programsOf(entries) {
+  return entries
+    .filter(
+      (entry) =>
+        PROGRAM_PATH.test(entry.path) &&
+        (entry.type === "symlink" ||
+          (entry.type === "regular" && entry.executable)),
+    )
+    .map((entry) => entry.path.slice(BIN_PREFIX.length));
+}
+
+// What a program link does when the farm already has one by that name:
+// replace it (the package the reader just asked for wins) or leave it
+// (a dependency never shadows what is already there).
+export const Precedence = Object.freeze({
+  REPLACE: "replace",
+  KEEP: "keep",
+});
+
+// Link a store path's programs into the farm directory the guest keeps
+// on PATH. `storePath` is the guest's view of the package
+// (/nix/store/...), which is what the link has to name: the guest
+// reaches it through its own /nix symlink.
+export function linkPrograms(FS, binDir, storePath, programs, precedence) {
+  ensureDir(FS, binDir);
+  for (const name of programs) {
+    const link = `${binDir}/${name}`;
+    if (exists(FS, link)) {
+      if (precedence === Precedence.KEEP) {
+        continue;
+      }
+      FS.unlink(link);
+    }
+    FS.symlink(`${storePath}/${BIN_PREFIX}${name}`, link);
+  }
+}
+
+// Whether a path exists in the emscripten FS, the link itself rather
+// than what it points at: a farm link names a guest path that does not
+// exist on this side.
+function exists(FS, path) {
+  try {
+    FS.lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Write one parsed NAR under root. Entries arrive directories-first
 // (archive order), so plain mkdir suffices below the root.
 export function writeEntries(FS, root, entries) {
