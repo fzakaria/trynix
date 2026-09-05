@@ -14,7 +14,10 @@ let
   tag = "data-20260903";
   system = "x86_64-linux";
 
-  artifact = pkgs.fetchurl {
+  # A builtin fetch, not pkgs.fetchurl: this file is an index *of* store
+  # paths, so nix's reference scanner sees thousands of them and refuses
+  # to build a fixed-output derivation that mentions them.
+  artifact = builtins.fetchurl {
     url = "https://github.com/fzakaria/nixpkgs-multiverse/releases/download/${tag}/outs-${system}.json";
     sha256 = "10cdq37w3mi1v0bgdihld6j114n25c9wsmqw51qzibqzrvjnx3y7";
   };
