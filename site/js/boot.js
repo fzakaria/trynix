@@ -154,7 +154,9 @@ export async function bootVM({
   // stays veiled meanwhile, because what happens in between is
   // plumbing — a kernel booting, or a monitor being told to continue.
   const ready =
-    snapshot === null ? coldBoot(console_, master) : resume(console_, master);
+    snapshot === null
+      ? coldBoot(console_, master, ui.terminal)
+      : resume(console_, master, ui.terminal);
   ready.then(() => onReady?.());
 
   return {
@@ -185,10 +187,11 @@ export async function bootVM({
 }
 
 // A cold boot announces itself, takes one newline, and mounts.
-async function coldBoot(console_, master) {
+async function coldBoot(console_, master, terminal) {
   await console_.waitFor(READY_MARKER);
   sendLine(master);
   await console_.waitFor(MOUNTED_MARKER);
+  terminal.clear();
 }
 
 // Bring a resumed guest back to life and hand it the handshake.
@@ -201,7 +204,7 @@ async function coldBoot(console_, master) {
 // The order matters: the monitor conversation has to finish before the
 // guest is offered a newline, or the newlines land in the monitor and
 // leave a bare prompt each.
-async function resume(console_, master) {
+async function resume(console_, master, terminal) {
   await delay(MONITOR_SETTLE_MS);
   send(master, MONITOR_TOGGLE);
   await delay(MONITOR_SETTLE_MS);
@@ -218,6 +221,9 @@ async function resume(console_, master) {
   sendLine(master);
   await console_.waitFor(MOUNTED_MARKER);
   clearInterval(retry);
+
+  // Drop the monitor conversation; the reader starts at a prompt.
+  terminal.clear();
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -239,8 +245,14 @@ function watchConsole(master) {
   let transcript = "";
   const waiters = [];
 
+  const decoder = new TextDecoder();
+
   master.onWrite(([data]) => {
-    transcript += data;
+    // The pty emits either a string or raw bytes depending on what the
+    // guest wrote; concatenating the bytes directly would stringify the
+    // array and match no marker ever again.
+    transcript +=
+      typeof data === "string" ? data : decoder.decode(data, { stream: true });
     if (transcript.length > TRANSCRIPT_LIMIT) {
       transcript = transcript.slice(-TRANSCRIPT_LIMIT);
     }
