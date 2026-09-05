@@ -191,9 +191,10 @@ export async function startVM({
   machine,
   snapshot = null,
   terminalElement,
+  keyBarElement,
   engine,
 }) {
-  const ui = await openTerminal(terminalElement);
+  const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
   ui.attach(master);
 

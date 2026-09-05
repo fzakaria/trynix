@@ -456,6 +456,42 @@ code {
   }
 }
 
+/* The key bar under the console: Esc, Tab, Ctrl, Alt, arrows — what a
+   phone's keyboard lacks. Only a coarse pointer gets it; a keyboard
+   has all of these. It scrolls sideways rather than wrapping, so it
+   costs one row. An armed modifier is lit until the next key uses it. */
+#keybar {
+  display: none;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  overflow-x: auto;
+  background: var(--console-bar);
+  scrollbar-width: none;
+}
+@media (pointer: coarse) {
+  #keybar {
+    display: flex;
+  }
+}
+#keybar button {
+  flex: 0 0 auto;
+  min-width: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  font:
+    13px ui-monospace,
+    monospace;
+  color: var(--console-fg);
+  background: var(--console-bg);
+  border: 1px solid #2a2d35;
+  border-radius: 4px;
+  touch-action: manipulation;
+}
+#keybar button.armed {
+  color: var(--console-bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* The terminal itself: a fixed height, so the guest's rows are known
    before it says anything, and no padding on the right, where the
    leftover strip already is. */

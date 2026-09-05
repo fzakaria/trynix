@@ -10,7 +10,11 @@
 // The pty is bridged by hand rather than through xterm-pty's addon.
 // The addon subscribes to onData, onBinary and onResize; ghostty
 // implements the first and third but not onBinary, so activating it
-// throws. Everything the addon does is three lines, below.
+// throws. Everything the addon does is three lines, below — and doing
+// it here is what lets the key bar's sticky modifiers apply to what
+// the keyboard types.
+
+import { KeyBar } from "./keybar.js";
 
 // The palette the terminal draws with. The container is painted with
 // the same background (openTerminal sets it), so the strip the grid
@@ -27,11 +31,13 @@ const SCROLLBACK_LINES = 5000;
 const BACKGROUND_PROPERTY = "--console-bg";
 
 // The bridge, in both directions: what the guest writes is drawn, what
-// is typed goes to the line discipline, and a resized terminal tells
-// the guest its new size.
-function bridge(terminal, master) {
+// is typed goes through the key bar's modifiers to the line
+// discipline, and a resized terminal tells the guest its new size.
+function bridge(terminal, master, keyBar) {
   master.onWrite(([data, callback]) => terminal.write(data, callback));
-  terminal.onData((data) => master.ldisc.writeFromLower(data));
+  terminal.onData((data) =>
+    master.ldisc.writeFromLower(keyBar.transform(data)),
+  );
   terminal.onResize(({ cols, rows }) => master.notifyResize(rows, cols));
 }
 
@@ -62,7 +68,8 @@ function handleCopyKey(terminal) {
 }
 
 // Returns { terminal, attach } — attach wires a pty master to it.
-export async function openTerminal(element) {
+// keyBarElement holds the touch key bar (keybar.js).
+export async function openTerminal(element, keyBarElement) {
   const {
     init,
     Terminal: GhosttyTerminal,
@@ -96,6 +103,12 @@ export async function openTerminal(element) {
 
   return {
     terminal,
-    attach: (master) => bridge(terminal, master),
+    attach: (master) => {
+      const keyBar = new KeyBar(keyBarElement, {
+        send: (data) => master.ldisc.writeFromLower(data),
+        focus: () => terminal.focus(),
+      });
+      bridge(terminal, master, keyBar);
+    },
   };
 }

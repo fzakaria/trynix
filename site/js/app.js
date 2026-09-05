@@ -52,6 +52,7 @@ const bootButton = document.getElementById("boot-button");
 const bootSection = document.getElementById("boot");
 const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
+const keyBarElement = document.getElementById("keybar");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const rebootLink = document.getElementById("reboot-link");
@@ -503,6 +504,7 @@ async function boot() {
         machine,
         snapshot,
         terminalElement,
+        keyBarElement,
         engine,
       });
     });
