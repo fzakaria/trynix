@@ -141,9 +141,10 @@
 
       <div class="lane" data-lane="caches" hidden>
         <p class="muted">
-          Extra binary caches, one per line, as a URL and its public key — signatures are checked
-          against these keys as the closure is walked. A cache has to allow cross-origin reads for
-          a page to fetch from it at all.
+          Extra binary caches, one per line, as a URL and its public key. They go into this page's
+          link with the selection, so a store path from your cachix and the key that vouches for it
+          are one link to send. Signatures are checked against these keys as the closure is walked;
+          a cache has to allow cross-origin reads for a page to fetch from it at all.
         </p>
         <textarea
           id="caches-input"
@@ -151,7 +152,6 @@
           spellcheck="false"
           placeholder="https://example.cachix.org example.cachix.org-1:base64key="
         ></textarea>
-        <button type="button" id="caches-save">Save</button>
         <p id="caches-status" class="muted"></p>
       </div>
 

@@ -4,17 +4,22 @@
 //   ?pkg=jujutsu@0.43.0&pkg=hello@2.12.3   attribute at a version
 //   ?pkg=ripgrep                           newest version in the index
 //   ?path=/nix/store/<digest>-name         a store path, verbatim
+//   &cache=https://x.cachix.org x-1:key=   an extra binary cache
 //   &boot=1                                start without a click
 //
-// Selections are written back with replaceState as they change, so the
-// address bar is always the link for what is on screen.
+// Everything is written back with replaceState as it changes, so the
+// address bar is always the link for what is on screen — a store path
+// from someone's cachix and the key that vouches for it travel in the
+// same link as the selection.
 
 const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
+const PARAM_CACHE = "cache";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
-// { pkgs: [{attr, version|null}], paths: [string], boot: boolean }
+// { pkgs: [{attr, version|null}], paths: [string],
+//   caches: [{url, key}], boot: boolean }
 export function readUrl() {
   const params = new URLSearchParams(location.search);
 
@@ -35,13 +40,21 @@ export function readUrl() {
     .getAll(PARAM_PATH)
     .flatMap((p) => p.split(",").filter(Boolean));
 
-  return { pkgs, paths, boot: params.get(PARAM_BOOT) === "1" };
+  // "url key", whitespace between; a value without a key is dropped
+  // rather than trusted.
+  const caches = params
+    .getAll(PARAM_CACHE)
+    .map((value) => value.trim().split(/\s+/))
+    .filter((parts) => parts.length === 2)
+    .map(([url, key]) => ({ url: url.replace(/\/$/, ""), key }));
+
+  return { pkgs, paths, caches, boot: params.get(PARAM_BOOT) === "1" };
 }
 
 // Rewrite the address bar to describe the current selection. `boot`
 // stays out unless asked for: a shared link should offer the boot, and
 // only the reload path wants it automatic.
-export function writeUrl({ pkgs, paths }, { boot = false } = {}) {
+export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
   const params = new URLSearchParams();
   for (const { attr, version } of pkgs) {
     params.append(
@@ -51,6 +64,9 @@ export function writeUrl({ pkgs, paths }, { boot = false } = {}) {
   }
   for (const path of paths) {
     params.append(PARAM_PATH, path);
+  }
+  for (const { url, key } of caches) {
+    params.append(PARAM_CACHE, `${url} ${key}`);
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");

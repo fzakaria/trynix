@@ -16,11 +16,10 @@ import { versionsOf } from "./multiverse.js";
 import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
-  DEFAULT_SUBSTITUTERS,
   parseSubstituters,
   readSubstituters,
+  setExtraSubstituters,
   verify,
-  writeSubstituters,
 } from "./substituters.js";
 import { humanBytes } from "./format.js";
 import {
@@ -88,6 +87,24 @@ function deselect(digest) {
   render();
 }
 
+// The extra caches in effect: the page's copy of what the caches lane
+// says, and what the link carries.
+let extraCaches = [];
+
+// The link for what is on screen: the selection and the caches.
+function urlState() {
+  const entries = [...selection.values()];
+  return {
+    pkgs: entries
+      .filter((e) => e.attr !== undefined)
+      .map((e) => ({ attr: e.attr, version: e.version })),
+    paths: entries
+      .filter((e) => e.attr === undefined)
+      .map((e) => e.storePath ?? e.digest),
+    caches: extraCaches,
+  };
+}
+
 // The chips, the status line, and the address bar all describe the same
 // selection, so they are redrawn together.
 function render() {
@@ -109,16 +126,9 @@ function render() {
   status.textContent = entries.length === 0 ? "nothing selected yet" : "";
 
   // A package with an attribute is shareable by name; a raw store path
-  // rides as a path. Either way the link reproduces this screen.
-  const url = writeUrl({
-    pkgs: entries
-      .filter((e) => e.attr !== undefined)
-      .map((e) => ({ attr: e.attr, version: e.version })),
-    paths: entries
-      .filter((e) => e.attr === undefined)
-      .map((e) => e.storePath ?? e.digest),
-  });
-  history.replaceState(null, "", url);
+  // rides as a path, and the caches ride along. Either way the link
+  // reproduces this screen.
+  history.replaceState(null, "", writeUrl(urlState()));
 }
 
 // The debug pane mirrors the log as it is written.
@@ -211,18 +221,26 @@ walkForm.addEventListener("submit", (event) => {
   storePathInput.value = "";
 });
 
-// The cache list: extra substituters and their keys, kept per reader.
+// The cache list: extra substituters and their keys. Every edit that
+// parses goes straight into the link; one that does not is said so and
+// leaves the last good list in effect.
 const cachesInput = document.getElementById("caches-input");
 const cachesStatus = document.getElementById("caches-status");
-cachesInput.value = readSubstituters()
-  .slice(DEFAULT_SUBSTITUTERS.length)
-  .map((s) => `${s.url} ${s.key}`)
-  .join("\n");
 
-document.getElementById("caches-save").addEventListener("click", () => {
+function applyCaches(list) {
+  extraCaches = list;
+  setExtraSubstituters(list);
+  cachesInput.value = list.map((s) => `${s.url} ${s.key}`).join("\n");
+  render();
+}
+
+cachesInput.addEventListener("input", () => {
   try {
-    writeSubstituters(parseSubstituters(cachesInput.value));
-    cachesStatus.textContent = "saved";
+    extraCaches = parseSubstituters(cachesInput.value);
+    setExtraSubstituters(extraCaches);
+    cachesStatus.textContent =
+      extraCaches.length === 0 ? "" : "in the link above";
+    render();
   } catch (err) {
     cachesStatus.textContent = String(err);
   }
@@ -370,18 +388,7 @@ let mounted = new Map();
 let bootMode = "not started";
 
 function reboot() {
-  const entries = [...selection.values()];
-  location.href = writeUrl(
-    {
-      pkgs: entries
-        .filter((e) => e.attr !== undefined)
-        .map((e) => ({ attr: e.attr, version: e.version })),
-      paths: entries
-        .filter((e) => e.attr === undefined)
-        .map((e) => e.storePath ?? e.digest),
-    },
-    { boot: true },
-  );
+  location.href = writeUrl(urlState(), { boot: true });
   location.reload();
 }
 
@@ -703,6 +710,7 @@ async function prefetch() {
 }
 
 const initial = readUrl();
+applyCaches(initial.caches);
 
 // Not while a boot is already starting. A reboot lands on ?boot=1 and
 // the boot fetches these itself; racing it only doubles ~75 MB of

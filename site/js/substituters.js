@@ -8,14 +8,14 @@
 // middle, which costs the no-server-anywhere property the whole
 // project is built on.
 //
-// Extra caches are kept per reader in localStorage, tried in the order
-// listed after the default.
+// Extra caches are part of the page's state and ride in its link
+// (url.js), tried in the order listed after the default. Nothing is
+// kept in the browser: a link is the way to share a cachix store path,
+// and the key that vouches for it has to travel with it.
 
 import { CACHE_URL } from "./config.js";
 import { parseNarinfo } from "./closure.js";
 import { cachedResponse, storeInCache } from "./cache.js";
-
-const STORAGE_KEY = "trynix:substituters";
 
 // Nix's own key for cache.nixos.org, so the default path verifies
 // without the reader configuring anything.
@@ -26,22 +26,15 @@ export const DEFAULT_SUBSTITUTERS = [
   },
 ];
 
+// The extra caches in effect, as the page last set them.
+let extra = [];
+
 export function readSubstituters() {
-  let extra = [];
-  try {
-    extra = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-  } catch {
-    // unreadable or absent storage: the defaults still work
-  }
   return [...DEFAULT_SUBSTITUTERS, ...extra];
 }
 
-export function writeSubstituters(extra) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(extra));
-  } catch {
-    // a reader in a private window keeps their list for this page only
-  }
+export function setExtraSubstituters(list) {
+  extra = list;
 }
 
 // "https://host cache-name-1:base64key" per line, blanks ignored.
