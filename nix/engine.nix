@@ -1,5 +1,6 @@
-# The qemu-wasm engine and the migration snapshot, fetched from this
-# repository's `engine` release and pinned by hash in engine-pins.json.
+# The qemu-wasm engine and the migration snapshot, fetched from one of
+# this repository's dated engine releases and pinned by hash in
+# engine-pins.json.
 #
 # They are not built here: the engine needs docker and a pinned
 # emscripten SDK, and the snapshot needs a native build of the same
@@ -7,9 +8,9 @@
 # `nix build .#site` still produce the entire deployable tree, so the
 # pages workflow only has to upload what nix built.
 #
-# A tag whose assets were replaced in place would fail these hashes,
-# which is the intended behaviour: publish new artifacts, then update
-# the pins in the same commit.
+# A release tag is never reused: tools/publish-engine.py creates a new
+# one per publish and rewrites the pins in the same step, so an older
+# commit still resolves the bytes it was pinned to.
 { pkgs }:
 let
   pins = builtins.fromJSON (builtins.readFile ./engine-pins.json);

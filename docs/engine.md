@@ -20,8 +20,9 @@ None of them are in this repository and none are built by CI. The
 engine needs docker and a pinned emscripten SDK and takes tens of
 minutes; the snapshot needs a _native_ build of the same fork. Both
 change only when the qemu-wasm pin, the patches, or the guest image
-move — so they are built by hand and uploaded to the `engine` release
-tag, which the pages workflow downloads whole into `qemu/`.
+move — so they are built by hand and published as a release by
+`tools/publish-engine.py`, which the site build fetches by hash into
+`qemu/` (nix/engine.nix).
 
 ## Building
 
@@ -50,13 +51,8 @@ matter (`-sASYNCIFY`, `-pthread -sPROXY_TO_PTHREAD`,
 and the configure line must keep `--enable-virtfs`, which is what makes
 the 9p store share possible.
 
-Rename `qemu-system-x86_64` (the JS glue) to `out.js`, keep the other
-two names, and upload all three:
-
-```console
-$ gh release create engine --title "qemu-wasm engine" --notes "qemu-wasm 0ef7b4e2, x86_64-softmmu"
-$ gh release upload engine out.js qemu-system-x86_64.wasm qemu-system-x86_64.worker.js --clobber
-```
+Rename `qemu-system-x86_64` (the JS glue) to `out.js` and keep the
+other two names. They are published together with the snapshot, below.
 
 ## Taking the snapshot
 
@@ -71,11 +67,30 @@ rules out nixpkgs' QEMU. Build it with the fork's own
 $ nix build .#guest
 $ python3 tools/make-snapshot.py --qemu ./qemu-system-x86_64 \
     --guest ./result --out vm.state
-$ gh release upload engine vm.state --clobber
 ```
 
 Retake it whenever the guest image changes: the snapshot holds that
-kernel and initramfs in its RAM.
+kernel and initramfs in its RAM, and `checks.snapshot` fails when the
+guest the tree builds is not the one the pins say the snapshot came
+from.
+
+## Publishing
+
+Put the three engine files and `vm.state` in one directory and run
+
+```console
+$ python3 tools/publish-engine.py --dir <directory>
+```
+
+It creates a release tagged `engine-<UTC date>-<UTC time>`, uploads
+the four files, and rewrites `nix/engine-pins.json` with the tag, the
+hash of each file, and the hashes of the guest image the current tree
+builds. Commit the pins with the change that needed them.
+
+A tag is never reused. The pins of every commit in the history resolve
+against the release they name, so replacing an asset in place would
+break `nix build` on all of them; a fresh tag per publish costs some
+release storage and nothing else.
 
 ## Serving locally
 
