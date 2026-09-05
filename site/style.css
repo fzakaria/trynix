@@ -85,13 +85,13 @@ a {
   font-weight: 600;
 }
 
-/* The closing claim. A dotted accent rule, offset tight enough that the
-   line box does not grow. Dotted rather than solid because every link in
-   this paragraph is a solid accent underline, and a solid rule under
-   body-coloured text reads as a link that lost its colour. */
+/* The closing claim. A hairline rule in the muted grey, offset tight
+   enough that the line box does not grow. Grey rather than the accent
+   because every link in this paragraph is a solid accent underline, and
+   an accent rule under body-coloured text reads as a link. */
 .claim {
-  text-decoration: underline dotted var(--accent);
-  text-decoration-thickness: 2px;
+  text-decoration: underline var(--muted);
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 code {
