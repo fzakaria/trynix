@@ -85,9 +85,23 @@ let
         cp -a ${pkgs.pkgsStatic.busybox}/bin/. root/bin/
         install -m755 ${./guest/init} root/init
 
+        # Every step below exists to make the archive byte-identical on
+        # any machine, which matters more here than it usually would:
+        # the migration snapshot holds this initramfs in its RAM, so an
+        # image that differs between two builders cannot be resumed
+        # against the published snapshot (checks.snapshot catches it).
+        #
+        # The sources of drift are readdir order, the timestamps on the
+        # directories created just above, the builder's own uid, and —
+        # the one that is easy to miss — the inode and device numbers
+        # the newc format records for every entry, which are whatever
+        # the builder's filesystem handed out. --reproducible zeroes
+        # those; the rest is handled here.
+        touch -h -d @1 $(find root -mindepth 1)
         mkdir -p $out
-        (cd root && find . -print0 | cpio --null -o --format=newc --quiet) |
-          gzip -9 > $out/initramfs.cpio.gz
+        (cd root && find . -mindepth 1 -print0 | LC_ALL=C sort -z |
+          cpio --null --create --format=newc --quiet --reproducible --owner=+0:+0) |
+          gzip -9 --no-name > $out/initramfs.cpio.gz
       '';
 in
 {
