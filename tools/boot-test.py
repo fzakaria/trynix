@@ -96,10 +96,19 @@ class Browser:
         # process group: killing the parent alone leaves renderers
         # running a guest, which starves the next boot and makes the
         # measurement a lie.
+        #
+        # --no-sandbox: GitHub's ubuntu-latest (24.04) forbids unprivileged
+        # user namespaces, and chromium's sandbox exits at launch without
+        # them, before the debugging port ever opens. The page under test
+        # is this repository's own. stderr is kept, so a launch that fails
+        # says why instead of timing out in silence.
+        self.stderr = tempfile.NamedTemporaryFile(prefix="chromium-", suffix=".log")
         self.process = subprocess.Popen(
             [
                 binary,
                 "--headless=new",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
                 f"--remote-debugging-port={self.port}",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -110,7 +119,7 @@ class Browser:
                 "about:blank",
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=self.stderr,
             start_new_session=True,
         )
         self.socket = websocket.create_connection(self._page_socket(), max_size=None, timeout=60)
@@ -121,6 +130,10 @@ class Browser:
     def _page_socket(self):
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                raise SystemExit(
+                    f"the browser exited with status {self.process.returncode}:\n{self._stderr_tail()}"
+                )
             try:
                 targets = json.load(
                     urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json", timeout=2)
@@ -131,7 +144,13 @@ class Browser:
             except Exception:
                 pass
             time.sleep(0.25)
-        raise SystemExit("the browser never opened a debugging port")
+        raise SystemExit(f"the browser never opened a debugging port:\n{self._stderr_tail()}")
+
+    def _stderr_tail(self):
+        """The last of what chromium said, for a launch that went wrong."""
+        self.stderr.flush()
+        with open(self.stderr.name, errors="replace") as f:
+            return "".join(f.readlines()[-20:])
 
     def send(self, method, **params):
         self.message_id += 1
