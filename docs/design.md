@@ -21,133 +21,171 @@ The pieces already exist in sibling projects; trynix is the glue:
 
 ## The pipeline
 
-1. **Resolve.** Attribute (and optionally a version range, via grail's
-   solver) to one or more store-path digests, from static index shards.
-2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the full
-   runtime closure. The cache serves `access-control-allow-origin: *`
-   (verified 2026-09-04 on nix-cache-info, narinfo and NAR URLs come off
-   the same S3/Fastly config), so plain `fetch` works from any origin.
-   Implemented: `site/js/closure.js`.
-3. **Fetch and unpack.** A NAR arrives xz or zstd compressed depending
-   on when it was built; both decoders are vendored. The tree is
-   written into emscripten's filesystem via `Module.FS` under the
-   share. Compressed NARs are kept in the Cache API — a store path is
-   immutable, so a cached NAR can never be stale.
-4. **Boot.** qemu-wasm with a prebuilt guest kernel and a tiny initramfs.
-   The store enters the guest over virtio-9p; init mounts it, symlinks
-   `/nix/store`, puts the selected outputs' `bin/` on PATH, and execs a
-   shell on the serial console.
+1. **Resolve.** Attribute (and optionally a version range) to one or
+   more store-path digests, from static index shards. A package split
+   across outputs gets its `bin` sibling too, from a digest-keyed map
+   the site build shards out of a multiverse release artifact
+   (nix/outputs.nix).
+2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the
+   full runtime closure, and verify every signature against the
+   configured keys. The cache serves `access-control-allow-origin: *`,
+   so plain `fetch` works from any origin. Narinfos are kept in the
+   Cache API like everything else immutable, so a walk done once costs
+   no network again.
+3. **Fetch and unpack, streaming.** A NAR arrives xz or zstd compressed
+   depending on when it was built; both decoders are vendored. Each is
+   parsed and written into emscripten's filesystem under the share the
+   moment it lands, while the rest are still downloading and the engine
+   is still compiling. Compressed NARs are kept in the Cache API — a
+   store path is immutable, so a cached NAR can never be stale.
+4. **Resume.** qemu-wasm with a prebuilt guest kernel and initramfs,
+   resumed from a migration snapshot rather than booted (below). The
+   store enters the guest over virtio-9p; init mounts it, sources the
+   manifest the page wrote, and execs a shell on the serial console.
 5. **Terminal.** [ghostty-web] — libghostty-vt, the parser the native
-   app uses, compiled to wasm — with xterm.js as the fallback. The pty
-   is bridged by hand, because xterm-pty's addon wants an `onBinary`
-   ghostty does not implement.
+   app uses, compiled to wasm. The pty is xterm-pty's line discipline,
+   which the engine was linked against, bridged by hand.
 
-## What the qemu-wasm survey established
+## The store share
 
-Surveyed 2026-09-04 at ktock/qemu-wasm (fork of QEMU 8.2.0, last commit
-2026-09; the wasm TCG JIT is not yet upstream — QEMU 10.1 has only the
-TCI interpreter for 32-bit guests).
+The guest sees the page's directory `/share` through 9p, mounted at the
+same path, with `/nix` a symlink into it:
 
-- **virtio-9p is the JS-to-guest file channel, and it works.** Every
-  documented build passes `--enable-virtfs`. The chain: JS `Module.FS`
-  writes into emscripten MEMFS → QEMU's 9p `local` passthrough backend →
-  `mount -t 9p -o trans=virtio share0 /mnt -oversion=9p2000.L` in the
-  guest. Bidirectional. All examples populate the share in
-  `Module.preRun`, before boot — which is all trynix needs, since the
-  closure is known before the VM starts.
-- **Everything is eager and in-memory.** Guest images arrive as
-  emscripten `file_packager` `.data` blobs into MEMFS; there is no lazy
-  block device, no fetch-on-demand, and the build pins
-  `-sTOTAL_MEMORY=2300MB`. Closure size is bounded by tab memory: fine
-  for CLI packages, a real ceiling for GUI-sized closures.
-- **No prebuilt artifacts.** No npm package, no releases, no CI. The
-  build is `emconfigure`/`emmake` inside a pinned `emscripten/emsdk`
-  3.1.50 docker container that first builds zlib, libffi, glib and
-  pixman for wasm32. Artifacts: `out.js` (ES6 module), `out.wasm`,
-  `out.worker.js`.
-- **COOP/COEP required.** Pthreads mean SharedArrayBuffer, which needs
-  `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`. GitHub Pages cannot set
-  response headers; the standard workaround is the coi-serviceworker
-  shim, which replays the page through a service worker that injects
-  them. Cross-origin fetches to cache.nixos.org then need CORP/CORS —
-  satisfied, since the cache sends `access-control-allow-origin: *`
-  (use `credentialless` COEP if `require-corp` fights the NAR fetches).
-- **Console** is xterm.js 5.3 + xterm-pty, wired at link time
-  (`--js-library emscripten-pty.js`), plus a small `Module.TTY.stream_ops.poll`
-  monkey-patch every example carries.
-- **Performance**: translation blocks start on a ported TCI interpreter
-  and hot blocks (1500 executions) are JIT-compiled to little wasm
-  modules installed in the function table. MTTCG (`thread=multi -smp 4`)
-  works but examples ship it off.
-- **Networking** (later, optional): emscripten maps sockets to
-  WebSockets; the in-browser path runs container2wasm's
-  `c2w-net-proxy.wasm` behind an MSW service-worker interception, egress
-  over Fetch — HTTP(S) only, CORS-bound. Not needed to boot a shell.
+```
+/share/nix/store/<basename>/...   the fetched closure
+/share/bin/<program> -> /nix/store/<basename>/bin/<program>
+/share/manifest                   export PATH="/share/bin:$PATH"
+```
 
-## The guest image
+`/share/bin` is a farm of symlinks, one per program in the closure, and
+the one directory the guest keeps on PATH. What the reader selected is
+linked first and wins a name collision; the rest of the closure only
+fills names still free, so a dependency never shadows a selection. It
+is what makes adding a package to a running VM silent: the page writes
+the new store paths and links, 9p shows them to the guest the moment
+they exist, and the new selection's links replace old ones so the most
+recent choice runs. Nothing is typed at the guest's shell. (The shell
+remembers a command it has already run at its old path until
+`hash -r`.)
 
-The examples build Linux v6.1 + busybox by hand in docker; trynix should
-build both with nix instead — the flake is on NixOS's side of the fence:
-
-- an x86_64 kernel with virtio, 9p and serial built in (nixpkgs
-  `linuxKernel` with a trimmed structured config);
-- a busybox (pkgsStatic) initramfs whose init mounts the 9p share at
-  `/share`, symlinks `/nix` into it, sources the manifest the page
-  wrote, and execs `sh` on ttyS0;
-- packed with `file_packager` (or fed through `Module.FS` directly —
-  the kernel and initramfs are files in MEMFS like everything else).
-
-One kernel + initramfs serves every package, cached by the browser.
+The manifest sets PATH and deliberately nothing else. An
+LD_LIBRARY_PATH over the closure would override every binary's own
+DT_RUNPATH, and hand two eras of glibc to each other's loader — that
+is how ripgrep beside lolcat died before it was removed.
 
 ## Start time
 
-Booting under emulation is the slow path — the upstream Alpine demo
-pays for a big eager download, then a full BIOS/kernel/OpenRC boot on
-a cold JIT (blocks are interpreted until their 1500th execution, and
-boot code runs once). The fix is in the fork already:
-`examples/migration/` snapshots a VM on a _native_ build of the same
-tree (`migrate file:vm.state` in the monitor) and the browser build
-resumes it with `-incoming file:vm.state`, skipping boot entirely.
+Everything is measured in headless Chromium on a warm cache. Page open
+to a shell prompt is about 3 seconds:
 
-The trynix shape — one generic snapshot serves every package
-selection, because the selection rides the 9p share, not the snapshot:
+| stage                                             | about  |
+| ------------------------------------------------- | ------ |
+| closure walk (cached narinfos)                    | 0.1 s  |
+| engine instantiated (wasm from the HTTP cache)    | 1.0 s  |
+| QEMU up, migration stream loaded, guest answering | +1.5 s |
+| guest mounts the share and starts the shell       | +0.5 s |
 
-1. At image-build time, boot the guest natively
-   (`--with-coroutine=ucontext`, no emscripten) to the point where init
-   has done the one-time work and waits — deliberately before mounting
-   the 9p share, so the snapshot holds no open filesystem state against
-   a share whose contents change per session. Snapshot and compress; a
-   just-booted minimal guest is mostly zero pages, which the migration
-   stream elides.
-2. On page load, fetch qemu artifacts and snapshot (service-worker /
-   OPFS cached — warm visits skip the download) in parallel with the
-   closure NARs going into the MEMFS share via `Module.FS`.
-3. Start with `-incoming`: resume is RAM-load plus device restore,
-   seconds rather than a boot.
-4. The page signals the guest (a line on the serial console), init
-   mounts the share, reads the manifest the page wrote (store paths,
-   what goes on PATH), and execs the shell.
+What got it there, and what was tried and dropped:
 
-Two details the implementation forced. QEMU refuses to migrate a VM
-that has a virtfs export mounted, so init has to wait for the
-handshake _before_ mounting rather than polling a mounted share — which
-is also why the first mount always sees a finished share. And a VM
-restored from a migration stream arrives stopped: `-nographic` muxes
-the monitor onto the guest's console, so the page types `cont` there
-(Ctrl-A c toggles) before handing the guest its newline.
-
-Measured: a resume reaches a shell in about 17 seconds against a cold
-boot's minute-plus, and that is before the engine and snapshot are
-served from the browser cache.
+- **The snapshot.** Booting under emulation is the slow path — BIOS,
+  kernel and init on a cold JIT take a minute. The fork's
+  `examples/migration/` snapshots a VM on a _native_ build of the same
+  tree and the browser build resumes it with `-incoming`. The guest
+  image boots to the point where init has done its one-time work and
+  parks on a `read`, deliberately before mounting the share: QEMU
+  refuses to migrate a VM with a virtfs export mounted, and it also
+  means one snapshot serves every package selection. On resume the
+  page hands the guest a newline and it mounts whatever share the page
+  built.
+- **No monitor conversation.** A restored VM whose source was running
+  starts running; the migration stream carries the runstate. The page
+  used to toggle to QEMU's monitor, type `cont`, and toggle back, with
+  a settling delay around each keystroke — three seconds of nothing.
+- **Polling the handshake.** A newline sent while QEMU is still
+  loading the stream is lost, and nothing says when loading is done.
+  Retrying after four seconds was most of the remaining time; the page
+  now offers a newline every 300 ms until the guest answers, then
+  clears the console once it has been quiet for a moment (the strays
+  each left a bare prompt) and has the shell redraw its prompt with
+  Ctrl-L.
+- **Streaming instantiation.** The wasm is not fetched by the page.
+  emscripten streams it from its URL, which compiles while downloading
+  and lets the browser keep the compiled code across visits — neither
+  happens for a buffer the page passes in. The page only warms the
+  HTTP cache, with a progress bar. On GitHub Pages the COOP/COEP
+  service worker synthesises the response, which loses the compiled
+  code cache; a host that sets the headers itself would keep it.
+- **Guest RAM.** A 256M guest resumes about 0.3 s faster than 512M
+  (the migration load touches every page) and its snapshot is 5 MB
+  smaller. Not worth halving the guest for; 512M stays.
 
 Migration demands that snapshotter and restorer agree exactly — QEMU
-version, machine type, device config, RAM size. A liability for a
-hand-run flow; a non-issue here, where both builds come from the same
-pinned fork in the same flake.
+version, machine type, device config, RAM size. `nix/guest/machine.json`
+is the one description of the machine; the page and the snapshot tool
+both start QEMU from it, and its hash rides in the pins.
 
-Budget: cold visit ≈ parallel downloads + a few seconds of resume;
-warm visit ≈ closure download only, itself OPFS-cached per NAR.
+## Memory
+
+The closure lives once, in emscripten's in-memory filesystem, as the
+decompressed NAR buffers themselves: MEMFS is told to keep the views
+it is handed (`canOwn`) rather than copy them. The page never holds
+more than the few NARs in flight, and once the guest is at its prompt
+the kernel, initramfs and snapshot copies in `/pack` are unlinked
+(QEMU has read them; the snapshot alone is 35 MB). Before this the
+whole closure existed three times over — compressed, decompressed,
+and copied into MEMFS — and a large one ran the tab out of room, which
+surfaces as a bare "TypeError: Failed to fetch".
+
+The ceiling that remains is the closure's unpacked size, in the tab.
+The way past it is a share that decompresses a NAR on the guest's
+first touch of it rather than up front, keeping the compressed bytes
+until then. Fetching lazily is not possible against cache.nixos.org,
+which serves compressed NARs only; decompressing lazily is, and needs
+an emscripten filesystem node whose contents are produced on first
+read.
+
+## Speed
+
+The guest runs on the fork's wasm TCG backend: a translation block is
+interpreted until its 1500th execution, then compiled to a small wasm
+module. Measured in the guest, both loops of ten:
+
+| workload                        | before | after |
+| ------------------------------- | ------ | ----- |
+| exec of `hello` (dynamic, 9p)   | 8.6 s  | 1.1 s |
+| exec of busybox `true`          | —      | 0.3 s |
+| `cat` of a file on the share    | —      | 0.7 s |
+| 20 000 iterations of `$((i+1))` | 7.7 s  | 7.7 s |
+
+Where the exec time went, and what was done:
+
+- **9p with no cache.** The share was mounted `cache=none`: every exec
+  walked every path component and read glibc over the wire again.
+  `cache=loose` keeps dentries, inodes and page cache in the guest; the
+  store is immutable so nothing cached goes stale, and 9p drops
+  negative dentries so a name that was missing once is looked up
+  again — which is what lets packages be added later.
+- **Mitigations.** Page-table isolation and friends make every syscall
+  flush the emulated TLB. The guest has nothing to protect from itself
+  and runs with `mitigations=off`.
+- **One syscall per 9p operation.** Under emscripten every filesystem
+  syscall is a synchronous round trip to the browser's main thread,
+  and QEMU's local backend opened a path one component at a time to
+  keep a symlink from escaping the export. The share is a private
+  in-memory directory; `patches/0002` opens and stats a path in one
+  call. Worth 10–25% on file operations once the guest caches.
+- **A lower JIT threshold** (300 instead of 1500) was built and
+  measured: slower on both loops, since short-lived processes pay the
+  compile and never amortise it. Not adopted.
+
+What is left is emulation itself: a shell loop runs about 400 µs per
+iteration, and a fork-plus-exec about 30 ms even with nothing on 9p.
+Nothing in a browser accelerates that — there is no KVM — so the
+levers are the emulator's. JSLinux's x86 engine (the one that boasts
+AVX-512 and APX) is unreleased, TinyEMU has no x86_64, v86 is 32-bit;
+an aarch64 guest on qemu-wasm's aarch64 target is the one untried
+experiment with any chance of a different constant, and the multiverse
+has aarch64-linux data to feed it.
 
 ## Where emscripten and the guest disagree
 
@@ -180,33 +218,23 @@ stderr away from the xterm-pty js-library linked into the build, and
 the console stays blank for the whole run — guest output included.
 QEMU's diagnostics arrive in the terminal instead.
 
+And one thing that is not a bug: busybox's `clear` sends only the
+erase-screen sequence, so the terminal's scrollback survives it. The
+`clear` from ncurses sends erase-scrollback too, and a guest with it
+on PATH behaves as expected.
+
 ## Repository layout
 
-- `site/` — the static site (vanilla ES modules today; the multiverse
-  chrome and tokens, so the family of sites reads as one).
+- `site/` — the static site (vanilla ES modules; the multiverse chrome
+  and tokens, so the family of sites reads as one).
 - `nix/` — the flake's pieces: `site.nix` assembles the deployable tree
-  with the multiverse js.<hash> cache-busting trick, `formatter.nix` is
-  `nix fmt`.
+  with the multiverse js.<hash> cache-busting trick, `guest.nix` builds
+  the kernel and initramfs, `engine.nix` fetches the pinned engine,
+  `formatter.nix` is `nix fmt`.
+- `patches/` — what the engine is built with.
+- `tools/` — the engine tools, each a flake app (docs/engine.md).
 - `tests/` — node test suite; run by `checks.tests`, offline.
-- `docs/` — this file and what follows it.
-
-## Milestones
-
-1. **Closure walk** (done): store path in, closure table and download
-   price out, live from cache.nixos.org.
-2. **NAR unpack** (done): xz and zstd decode in the browser, the Cache
-   API holding the compressed NARs.
-3. **Boot** (done): qemu-wasm artifacts + a nix-built kernel and
-   initramfs; a shell over 9p with the selection on PATH. The
-   migration snapshot (see "Start time") makes starting a resume.
-4. **Resolve** (done): the multiverse index read live — search over
-   every attribute, versions with their closure sizes, the census
-   hiding paths the cache no longer serves, and a version-range lane.
-5. **Terminal** (done): libghostty-vt, with xterm.js as the fallback.
-6. **Next**: lazy per-NAR 9p so a boot fetches only what the guest
-   touches; grail's clingo solver embedded for real coexistence
-   answers; networking via c2w-net-proxy; and sending the errno patch
-   upstream.
+- `docs/` — this file and docs/engine.md.
 
 ## Alternatives considered
 
@@ -230,27 +258,20 @@ decides everything:
 
 JSLinux still contributes the design worth stealing: vfsync faults the
 root filesystem in over HTTP per file as the guest touches it, which is
-why it boots instantly. The equivalent here — a 9p backend that fetches
-and unpacks a store path's NAR on the guest's first access to it,
-instead of downloading the whole closure before boot — is the intended
-future shape of pipeline step 3; per-NAR granularity is coarser than
-vfsync's per-file, but a closure's cold-boot cost drops to the paths a
-command actually touches. qemu-wasm has no such hook, so lazy 9p means
-writing an emscripten FS backend (or a QEMU fsdev) ourselves; the eager
-walk-fetch-unpack path stays as milestone 2-3 and the lazy backend
-replaces it underneath, invisible to the rest.
+why it boots instantly. The equivalent here is the lazy-decompressing
+share described under Memory.
 
 ## Open questions
 
-- Where do the qemu-wasm artifacts build? The emsdk docker container is
-  the upstream path; a nix-native emscripten build of the fork would fit
-  this repo better but is unproven. Until one lands, artifacts are built
-  out-of-band and vendored or fetched at site-build time.
-- Runtime (post-boot) writes into the 9p share are plausible per the
-  emscripten FS proxying model but unexercised upstream; milestone 3
-  avoids depending on them.
-- xz decode: a wasm liblzma vs the smaller decoder-only ports; measured
-  against the closure sizes that matter (glibc's NAR is ~6 MiB xz).
+- A nix-native emscripten build of the fork, so the engine is a
+  derivation rather than a docker recipe (docs/engine.md).
+- The compiled-code cache on GitHub Pages: the COOP/COEP service worker
+  costs it. A host that sends the headers (Cloudflare Pages takes a
+  `_headers` file) would drop the worker and keep the cache.
+- Autocompleting store paths in the store-path lane needs an index
+  keyed by digest, which the multiverse does not publish; its shards
+  are keyed by attribute.
+- An aarch64 guest, as the one emulation experiment left.
 
 [nixpkgs-multiverse]: https://github.com/fzakaria/nixpkgs-multiverse
 [grail]: https://github.com/fzakaria/grail
