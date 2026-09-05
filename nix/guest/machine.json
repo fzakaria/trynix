@@ -1,8 +1,12 @@
 {
-  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. The 9p device is spelled out rather than left as -virtfs sugar so ioeventfd can be turned off. With it on, a request is handed to QEMU's main loop through a pipe; that loop now sleeps on its own deadline rather than spinning, so every request would wait on it. Off, the handler runs on the vCPU thread inside the kick that raised it, and the main loop is free to sleep. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
+  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. The 9p device is spelled out rather than left as -virtfs sugar so ioeventfd can be turned off. With it on, a request is handed to QEMU's main loop through a pipe; that loop now sleeps on its own deadline rather than spinning, so every request would wait on it. Off, the handler runs on the vCPU thread inside the kick that raised it, and the main loop is free to sleep. The guest is given a source of randomness two ways, because without one the kernel's pool starts empty after a resume and the first caller of getrandom() spins in a TSC-jitter loop for fifteen seconds: +rdrand lets the pool initialise at once (the kernel is built to trust it), and virtio-rng-pci keeps feeding it afterwards so each visitor reseeds from their own browser's randomness rather than from whatever the shared snapshot froze. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
   "ram": "512M",
   "args": [
     "-nographic",
+    "-cpu",
+    "qemu64,+rdrand",
+    "-device",
+    "virtio-rng-pci",
     "-m",
     "{ram}",
     "-accel",
