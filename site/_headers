@@ -1,0 +1,35 @@
+# Response headers for hosts that read a _headers file (Cloudflare Pages,
+# Netlify). GitHub Pages cannot set headers and ignores this file.
+#
+# Real cross-origin isolation from the host, so SharedArrayBuffer works
+# without the coi-serviceworker shim. index.html still loads that shim,
+# but it registers nothing once the page is already cross-origin isolated
+# (it checks window.crossOriginIsolated first), so it becomes a no-op
+# here. That matters for speed: a registered service worker sits in front
+# of every response and defeats the browser's compiled-WebAssembly cache,
+# so the ~13 MB engine is recompiled on every visit. Serving the headers
+# from the host instead keeps the compiled engine across visits.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# The module tree is renamed js.<hash>/ per deploy, and the engine, guest
+# and vendor files are fetched with a content-hash query string, so the
+# bytes behind any one URL never change. Cache them forever.
+/js.*
+  Cache-Control: public, max-age=31536000, immutable
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+/qemu/*
+  Cache-Control: public, max-age=31536000, immutable
+/guest/*
+  Cache-Control: public, max-age=31536000, immutable
+/outs/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The entry point and the manifest name those hashes, so they must be
+# revalidated on every load or a new deploy would never be seen.
+/index.html
+  Cache-Control: no-cache
+/assets.json
+  Cache-Control: no-cache
