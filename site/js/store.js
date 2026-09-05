@@ -178,6 +178,15 @@ function exists(FS, path) {
 
 // Write one parsed NAR under root. Entries arrive directories-first
 // (archive order), so plain mkdir suffices below the root.
+//
+// File contents are views into the decompressed archive, and MEMFS is
+// told to keep those views rather than copy them (canOwn). The
+// archive then lives on exactly once, as the filesystem's storage for
+// its files, instead of once there and once as the buffer it was
+// parsed from — for a closure of any size, that is the difference
+// between fitting in the tab and not.
+const OWN = { canOwn: true };
+
 export function writeEntries(FS, root, entries) {
   const MODE_EXECUTABLE = 0o755;
 
@@ -194,7 +203,7 @@ export function writeEntries(FS, root, entries) {
     }
 
     if (entry.type === "regular") {
-      FS.writeFile(path, entry.data);
+      FS.writeFile(path, entry.data, OWN);
       if (entry.executable) {
         FS.chmod(path, MODE_EXECUTABLE);
       }

@@ -81,6 +81,24 @@ export async function fetchWithProgress(url, options = {}) {
   }
 }
 
+// Download a URL into the browser's HTTP cache and throw the bytes
+// away, reporting progress on the way.
+//
+// This is for the engine's wasm, which the page deliberately does not
+// hold: emscripten fetches it by URL and hands the response to
+// WebAssembly.instantiateStreaming, which compiles as the bytes arrive
+// and lets the browser keep the compiled code across visits — neither
+// of which happens for a buffer the page passes in. What the page can
+// still do is get the download on its way with a progress bar, so
+// that later fetch is answered from the HTTP cache.
+export async function warmHttpCache(url, options = {}) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`${url}: HTTP ${res.status}`);
+  }
+  await drain(res, options);
+}
+
 // Run tasks with a bounded number in flight, preserving result order.
 export async function mapConcurrent(items, limit, fn) {
   const results = new Array(items.length);

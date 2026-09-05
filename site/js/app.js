@@ -7,8 +7,8 @@
 
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
-import { bootVM } from "./boot.js";
-import { fetchWithProgress, mapConcurrent } from "./net.js";
+import { startVM } from "./boot.js";
+import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
 import { parseSpecs, resolveSpecs } from "./ranges.js";
@@ -379,8 +379,12 @@ function reboot() {
   location.reload();
 }
 
-// The boot flow: engine, guest image and closure download in parallel
-// under one progress panel, then the VM starts and the terminal is live.
+// The boot flow. The engine, the guest image, the snapshot and the
+// closure download in parallel under one progress panel; the engine
+// is instantiated the moment its inputs are in, and every NAR is
+// written into the share as it lands, while the rest are still on
+// their way. When the last one is in, QEMU is released and the
+// terminal goes live.
 async function boot() {
   bootSection.hidden = false;
   bootButton.disabled = true;
@@ -433,13 +437,13 @@ async function boot() {
       locate: (file) => engineUrls.get(`qemu/${file}`) ?? `qemu/${file}`,
     };
 
-    const enginePromise = fetchWithProgress(engineUrls.get(QEMU_WASM), {
+    // The wasm is not held by the page: the engine streams it from
+    // the URL and the browser compiles it as it arrives (net.js says
+    // why). This download only fills the HTTP cache, and the bar.
+    const enginePromise = warmHttpCache(engineUrls.get(QEMU_WASM), {
       onTotal: (n) => engineRow.setTotal(n),
       onBytes: (n) => engineRow.add(n),
-    }).then((bytes) => {
-      engineRow.done();
-      return bytes;
-    });
+    }).then(() => engineRow.done());
 
     const guestPromise = Promise.all(
       GUEST_FILES.map(async (name) => [
@@ -451,20 +455,6 @@ async function boot() {
     ).then((entries) => {
       guestRow.done();
       return new Map(entries);
-    });
-
-    const infos = [...closure.values()];
-    closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
-    const closurePromise = mapConcurrent(
-      infos,
-      NAR_CONCURRENCY,
-      async (info) => ({
-        basename: basenameOf(info),
-        entries: await fetchNar(info, (n) => closureRow.add(n)),
-      }),
-    ).then((paths) => {
-      closureRow.done();
-      return paths;
     });
 
     // The snapshot is optional: published, a visit resumes a guest that
@@ -483,44 +473,61 @@ async function boot() {
       },
     );
 
-    const [wasmBytes, guestFiles, closurePaths, snapshot] = await Promise.all([
+    // The engine starts as soon as its own inputs are in, without
+    // waiting for the closure; the guest files and the snapshot are
+    // handed over rather than kept.
+    let resuming = false;
+    const vmPromise = Promise.all([
       enginePromise,
       guestPromise,
-      closurePromise,
       snapshotPromise,
-    ]);
-
-    log(
-      snapshot === null
-        ? "no snapshot; cold booting"
-        : "resuming from the snapshot",
-    );
-    consoleNote.textContent =
-      snapshot === null ? "booting the guest…" : "resuming the guest…";
-    // bootVM consumes closurePaths as it writes them, and the engine
-    // and snapshot buffers are handed over rather than kept: between
-    // them they are the largest things this page ever holds.
-    vm = await bootVM({
-      wasmBinary: wasmBytes.buffer,
-      guestFiles,
-      closure: closurePaths,
-      roots: basenamesOf(closure, rootDigests),
-      terminalElement,
-      engine,
-      snapshot,
-      onReady: () => {
-        consoleVeil.hidden = true;
-      },
+    ]).then(([, guestFiles, snapshot]) => {
+      resuming = snapshot !== null;
+      log(
+        snapshot === null
+          ? "no snapshot; the guest will cold boot"
+          : "engine instantiated; the guest will resume from the snapshot",
+      );
+      return startVM({ guestFiles, snapshot, terminalElement, engine });
     });
-    log("virtual machine running");
-    reportSilent(vm, closure, roots);
-    vmRow.done("running");
+
+    // Each NAR goes into the share the moment it is parsed, and is
+    // dropped from the page's hands right after. Nothing here ever
+    // holds more than the few NARs in flight.
+    const infos = [...closure.values()];
+    closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
+    const closurePromise = mapConcurrent(
+      infos,
+      NAR_CONCURRENCY,
+      async (info) => {
+        const entries = await fetchNar(info, (n) => closureRow.add(n));
+        const vm = await vmPromise;
+        vm.share.write(basenameOf(info), entries);
+      },
+    ).then(() => closureRow.done());
+
+    vm = await vmPromise;
+    await closurePromise;
+
+    consoleNote.textContent = resuming
+      ? "resuming the guest…"
+      : "booting the guest…";
+    vmRow.note("running");
     vmStarted = true;
     mounted = closure;
+
+    const ready = vm.run(basenamesOf(closure, rootDigests));
+    log("virtual machine running");
+    reportSilent(vm, closure, roots);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
     addNote.hidden = false;
     bootButton.disabled = false;
+
+    await ready;
+    log("guest at its prompt");
+    vmRow.done("running");
+    consoleVeil.hidden = true;
   } catch (err) {
     log(`boot failed: ${err.message}`);
     vmRow.fail(String(err));
@@ -634,17 +641,19 @@ async function restore({ pkgs, paths }) {
 // instantly. Failures are ignored: this is an optimisation, and the
 // boot does its own fetching either way.
 async function prefetch() {
-  const warm = async (path) => {
+  const warm = async (path, fetcher) => {
     try {
-      await fetchWithProgress(await asset(path));
+      await fetcher(await asset(path));
     } catch {
       // an optimisation that failed is not an error
     }
   };
-  warm(QEMU_WASM);
-  warm(SNAPSHOT_URL);
+  // The wasm goes to the HTTP cache, where the engine's own fetch
+  // finds it; the rest to the Cache API, where the page's do.
+  warm(QEMU_WASM, warmHttpCache);
+  warm(SNAPSHOT_URL, fetchWithProgress);
   for (const name of GUEST_FILES) {
-    warm(`guest/${name}`);
+    warm(`guest/${name}`, fetchWithProgress);
   }
 }
 
