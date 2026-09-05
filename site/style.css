@@ -496,7 +496,9 @@ code {
   background: var(--console-bg);
   border: 1px solid #2a2d35;
   border-radius: 4px;
-  touch-action: manipulation;
+  /* A touch that starts on a key may drag the bar sideways, and must
+     not pan the page: that is what scrolled the terminal away. */
+  touch-action: pan-x;
 }
 #keybar button.armed {
   color: var(--console-bg);
@@ -513,11 +515,9 @@ code {
   background: var(--console-bg);
 }
 
-/* On a touch device the terminal takes what is left of the viewport
-   above the soft keyboard, minus the console bar and the key bar, so
-   the keys are always on screen. The viewport meta asks the browser to
-   shrink the layout when the keyboard opens, which is what makes dvh
-   track it. */
+/* On a touch device the terminal's height is set from the visual
+   viewport by site/js/terminal.js, so the key bar stays on screen
+   above the soft keyboard; this is only the starting point. */
 @media (pointer: coarse) {
   #terminal {
     height: max(12rem, calc(100dvh - 7rem));

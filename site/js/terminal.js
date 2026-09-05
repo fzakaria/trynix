@@ -31,8 +31,42 @@ export const THEME = {
 // (80 columns wants the phone turned sideways.)
 const FONT_SIZE = 14;
 const FONT_SIZE_TOUCH = 12;
+const FONT_SIZE_MIN = 6;
+const FONT_SIZE_MAX = 24;
 const SCROLLBACK_LINES = 5000;
 const touch = matchMedia("(pointer: coarse)");
+
+// On a touch device the terminal is sized from the visual viewport —
+// what is actually on screen above the soft keyboard — rather than
+// from CSS. The viewport meta asks the browser to shrink the layout
+// when the keyboard opens, but a phone that ignores it shrinks only
+// the visual viewport, and then a terminal laid out for the whole
+// screen keeps its key bar under the keyboard and every tap scrolls
+// the page back to the terminal's top. Measuring what is visible and
+// keeping the console at the top of it works either way.
+const TERMINAL_MIN_HEIGHT = 120;
+const VIEWPORT_MARGIN = 8;
+
+function fitToViewport(element) {
+  const viewport = window.visualViewport;
+  const console_ = element.closest("#console");
+  if (viewport === undefined || console_ === null) {
+    return;
+  }
+
+  const apply = () => {
+    const chrome = console_.offsetHeight - element.offsetHeight;
+    const height = Math.max(
+      TERMINAL_MIN_HEIGHT,
+      Math.floor(viewport.height - chrome - VIEWPORT_MARGIN),
+    );
+    element.style.height = `${height}px`;
+    console_.scrollIntoView({ block: "start" });
+  };
+
+  viewport.addEventListener("resize", apply);
+  apply();
+}
 const BACKGROUND_PROPERTY = "--console-bg";
 
 // The bridge, in both directions: what the guest writes is drawn, what
@@ -104,6 +138,22 @@ export async function openTerminal(element, keyBarElement) {
   fit.fit();
   fit.observeResize();
 
+  if (touch.matches) {
+    fitToViewport(element);
+  }
+
+  // A smaller face on a phone is how a full-screen program gets its
+  // 80 columns in portrait; ghostty takes the new size at runtime and
+  // the grid is refitted to it.
+  const zoom = (delta) => {
+    const size = Math.min(
+      FONT_SIZE_MAX,
+      Math.max(FONT_SIZE_MIN, terminal.options.fontSize + delta),
+    );
+    terminal.options.fontSize = size;
+    fit.fit();
+  };
+
   handleCopyKey(terminal);
 
   // Focus without scrolling: ghostty's own focus() lets the browser
@@ -121,6 +171,7 @@ export async function openTerminal(element, keyBarElement) {
         send: (data) => master.ldisc.writeFromLower(data),
         focus,
         size: () => ({ rows: terminal.rows, cols: terminal.cols }),
+        zoom,
       });
       bridge(terminal, master, keyBar);
     },
