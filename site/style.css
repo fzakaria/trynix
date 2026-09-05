@@ -68,10 +68,6 @@ nav.site a {
 nav.site a:hover {
   text-decoration: underline;
 }
-nav.site a.active {
-  color: var(--fg);
-  font-weight: 600;
-}
 h2 {
   font-size: 1.1rem;
   margin: 1rem 0 0.3rem;
@@ -81,6 +77,15 @@ h2 {
 }
 a {
   color: var(--accent);
+}
+
+/* The two claims the intro rests on: what the page boots, and where it
+   runs. A wavy accent underline marks them without a callout box. */
+.squiggle {
+  font-weight: 600;
+  text-decoration: underline wavy var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
 }
 code {
   font:

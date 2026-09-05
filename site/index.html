@@ -43,7 +43,6 @@
     <header class="site">
       <h1><a href=".">trynix</a></h1>
       <nav class="site">
-        <a class="active" href=".">Boot</a>
         <a href="https://nixmultiverse.com/" title="the index trynix resolves packages against">
           Multiverse
         </a>
@@ -51,18 +50,24 @@
           href="https://fzakaria.github.io/grail/"
           title="grail: solve version-range queries over this index"
         >
-          grail
+          Version ranges
+        </a>
+        <a href="https://omniflake.com/" title="omniflake: thousands of Nix flakes from one flake input">
+          Omniflake
         </a>
         <a href="https://github.com/fzakaria/trynix">GitHub</a>
       </nav>
     </header>
 
     <p>
-      Boot any package nixpkgs ever shipped, in this tab. Pick a package and a version from
+      <strong class="squiggle">Boot any package nixpkgs ever shipped, in this tab.</strong> Pick a
+      package and a version from
       <a href="https://github.com/fzakaria/nixpkgs-multiverse">13 years of nixpkgs history</a>; its
-      closure is fetched from <code>cache.nixos.org</code> into an x86_64 Linux virtual machine
+      closure is fetched from <a href="https://cache.nixos.org">cache.nixos.org</a> into an x86_64
+      Linux virtual machine
       (<a href="https://github.com/ktock/qemu-wasm">QEMU compiled to WebAssembly</a>) and you get a
-      shell with the package on <code>PATH</code>. Nothing runs on a server.
+      shell with the package on <code>PATH</code>.
+      <strong class="squiggle">Nothing runs on a server.</strong>
     </p>
 
     <p class="examples muted">
