@@ -165,9 +165,10 @@ rangesForm.addEventListener("submit", async (event) => {
   rangesResults.textContent = lines.join(" · ");
 });
 
-// Autocomplete for the range box, and a live grail link for the line —
-// grail answers the coexistence question this lane deliberately does
-// not.
+// Autocomplete for the range box, and a live grail link for the line.
+// grail answers a question this lane does not ask: whether one moment
+// in nixpkgs history satisfied every spec at once, so the versions were
+// built against each other.
 const grailLink = document.getElementById("grail-link");
 const GRAIL_URL = "https://fzakaria.github.io/grail/";
 
@@ -179,10 +180,10 @@ function renderGrailLink() {
   }
   const link = document.createElement("a");
   link.href = `${GRAIL_URL}?q=${encodeURIComponent(query)}`;
-  link.textContent = "solve this line in grail";
+  link.textContent = "Check in grail whether these versions ever coexisted";
   link.rel = "noopener";
   link.target = "_blank";
-  grailLink.append("Want these versions to have coexisted? ", link);
+  grailLink.append(link);
 }
 
 new RangeComplete({

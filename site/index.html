@@ -58,12 +58,11 @@
     </header>
 
     <p>
-      trynix boots packages from
-      <a href="https://github.com/fzakaria/nixpkgs-multiverse">nixpkgs history</a> inside a
-      <a href="https://github.com/ktock/qemu-wasm">qemu-wasm</a> virtual machine, entirely in this
-      tab. Pick any package nixpkgs ever shipped and its closure is fetched from
-      <code>cache.nixos.org</code> and mounted into an x86_64 Linux guest over virtio-9p — a shell
-      with everything on <code>PATH</code>, no server anywhere.
+      Boot any package nixpkgs ever shipped, in this tab. Pick a package and a version from
+      <a href="https://github.com/fzakaria/nixpkgs-multiverse">13 years of nixpkgs history</a>; its
+      closure is fetched from <code>cache.nixos.org</code> into an x86_64 Linux virtual machine
+      (<a href="https://github.com/ktock/qemu-wasm">QEMU compiled to WebAssembly</a>) and you get a
+      shell with the package on <code>PATH</code>. Nothing runs on a server.
     </p>
 
     <p class="examples muted">
@@ -108,15 +107,9 @@
         </form>
         <ul id="ranges-complete" hidden></ul>
         <p class="muted">
-          Each spec resolves on its own to the newest matching build.
-          <a href="https://fzakaria.github.io/grail/">grail</a> answers the harder question — which
-          versions all held at one moment in nixpkgs history, so they were built against each other
-          — and its plans paste in here. For example
-          <a
-            href="https://fzakaria.github.io/grail/?q=python3%40%3E%3D3.10+%5Eopenssl%401.1.*"
-            >python3@&gt;=3.10 ^openssl@1.1.*</a
-          >
-          lands on 2022-09-12, the last moment those two coexisted.
+          Each spec resolves on its own to the newest build that matches; the versions need not
+          have coexisted in one nixpkgs. Booted side by side, each package brings its own
+          dependencies, so a mix that never coexisted still runs.
         </p>
         <p id="grail-link" class="muted"></p>
         <div id="ranges-results"></div>
