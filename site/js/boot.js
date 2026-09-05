@@ -24,10 +24,6 @@ const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 const READY_MARKER = "trynix: waiting for the store";
 const MOUNTED_MARKER = "trynix: welcome to the multiverse";
 
-// Ctrl-A c toggles the -nographic console between the guest and QEMU's
-// monitor, and each step needs a moment to land.
-const MONITOR_TOGGLE = "\x01c";
-const MONITOR_SETTLE_MS = 800;
 const TRANSCRIPT_LIMIT = 65536;
 const RESUME_RETRY_MS = 4000;
 const HANDSHAKE_TIMEOUT_MS = 180000;
@@ -217,39 +213,30 @@ async function coldBoot(console_, master, terminal) {
   terminal.clear();
 }
 
-// Bring a resumed guest back to life and hand it the handshake.
+// Hand a resumed guest the handshake.
 //
-// A VM restored from a migration stream arrives stopped, and a stopped
-// VM answers nothing at all — no console, no keystrokes. -nographic
-// muxes QEMU's monitor onto this same console, so `cont` is typed at
-// the monitor, with Ctrl-A c toggling there and back.
+// The guest arrives running. The snapshot was taken while the source
+// VM ran (tools/make-snapshot.py), the migration stream records that
+// runstate, and QEMU starts a restored VM whose source was running
+// without being told to — the fork's own migration example resumes
+// with -incoming and nothing else. An earlier version of this typed
+// `cont` at the monitor first, with a settling delay around each
+// keystroke, and spent three seconds of every resume on it.
 //
-// The order matters: the monitor conversation has to finish before the
-// guest is offered a newline, or the newlines land in the monitor and
-// leave a bare prompt each.
+// The guest is parked on init's read, exactly where the snapshot
+// caught it, so one newline finishes the handshake. Retries are slow
+// on purpose: every extra newline arriving after the read is
+// satisfied reaches the shell instead and leaves a bare prompt.
 async function resume(console_, master, terminal) {
-  await delay(MONITOR_SETTLE_MS);
-  send(master, MONITOR_TOGGLE);
-  await delay(MONITOR_SETTLE_MS);
-  send(master, "cont\n");
-  await delay(MONITOR_SETTLE_MS);
-  send(master, MONITOR_TOGGLE);
-  await delay(MONITOR_SETTLE_MS);
-
-  // The guest is parked on init's read, exactly where the snapshot
-  // caught it, so one newline finishes the handshake. Retries are slow
-  // on purpose: every extra newline arriving after the read is
-  // satisfied reaches the shell instead and leaves a bare prompt.
   const retry = setInterval(() => sendLine(master), RESUME_RETRY_MS);
   sendLine(master);
   await console_.waitFor(MOUNTED_MARKER);
   clearInterval(retry);
 
-  // Drop the monitor conversation; the reader starts at a prompt.
+  // Drop what the guest said on the way up; the reader starts at a
+  // prompt.
   terminal.clear();
 }
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Input goes in the way a keystroke does: the line discipline the
 // terminal addon feeds when someone types.
