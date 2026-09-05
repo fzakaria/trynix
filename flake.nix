@@ -94,6 +94,13 @@
               pkgs.chromium
             ];
 
+          # publish the example package into the site as a binary cache
+          make-example-cache = tool "make-example-cache" ./tools/make-example-cache.sh [
+            pkgs.curl
+            pkgs.git
+            pkgs.nix
+          ];
+
           # publish engine and snapshot as a dated release and repin
           publish-engine = tool "publish-engine" "${pkgs.python3}/bin/python3 ${./tools/publish-engine.py}" [
             pkgs.gh
