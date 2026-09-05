@@ -54,7 +54,7 @@ same path, with `/nix` a symlink into it:
 ```
 /share/nix/store/<basename>/...   the fetched closure
 /share/bin/<program> -> /nix/store/<basename>/bin/<program>
-/share/manifest                   export PATH="/share/bin:$PATH"
+/share/manifest                   PATH, TERM, LANG, and `resize`
 ```
 
 `/share/bin` is a farm of symlinks, one per program in the closure, and
@@ -68,10 +68,17 @@ recent choice runs. Nothing is typed at the guest's shell. (The shell
 remembers a command it has already run at its old path until
 `hash -r`.)
 
-The manifest sets PATH and deliberately nothing else. An
-LD_LIBRARY_PATH over the closure would override every binary's own
-DT_RUNPATH, and hand two eras of glibc to each other's loader — that
-is how ripgrep beside lolcat died before it was removed.
+The manifest sets PATH, and the three things a serial console session
+lacks: a window size (`resize` asks the terminal where a cursor parked
+in the far corner landed and sets the tty from the answer; nothing
+else carries the browser's resize events into a 16550), a TERM
+(`xterm-256color`, the one name every era's ncurses knows; ghostty's
+own `xterm-ghostty` needs a terminfo only very recent ncurses
+carries), and a locale (`C.UTF-8`, built into glibc since 2.35; an
+older closure falls back to C, and perl says so). Deliberately not an
+LD_LIBRARY_PATH: one over the closure would override every binary's
+own DT_RUNPATH and hand two eras of glibc to each other's loader —
+that is how ripgrep beside lolcat died before it was removed.
 
 ## Start time
 
@@ -101,13 +108,14 @@ What got it there, and what was tried and dropped:
   starts running; the migration stream carries the runstate. The page
   used to toggle to QEMU's monitor, type `cont`, and toggle back, with
   a settling delay around each keystroke — three seconds of nothing.
-- **Polling the handshake.** A newline sent while QEMU is still
-  loading the stream is lost, and nothing says when loading is done.
-  Retrying after four seconds was most of the remaining time; the page
-  now offers a newline every 300 ms until the guest answers, then
-  clears the console once it has been quiet for a moment (the strays
-  each left a bare prompt) and has the shell redraw its prompt with
-  Ctrl-L.
+- **Polling the handshake.** The first newline of a resume is lost —
+  the UART it lands in is overwritten by the restore — and nothing
+  says when the restore is done. Retrying after four seconds was most
+  of the remaining time; the page now offers a newline every 300 ms
+  until the guest says anything. The spares queue in the UART and
+  reach the guest together, so the manifest drains them before
+  anything reads the tty, and the page has the shell redraw its prompt
+  with Ctrl-L after clearing the console.
 - **Streaming instantiation.** The wasm is not fetched by the page.
   emscripten streams it from its URL, which compiles while downloading
   and lets the browser keep the compiled code across visits — neither
