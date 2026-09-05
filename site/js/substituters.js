@@ -13,6 +13,7 @@
 
 import { CACHE_URL } from "./config.js";
 import { parseNarinfo } from "./closure.js";
+import { cachedResponse, storeInCache } from "./cache.js";
 
 const STORAGE_KEY = "trynix:substituters";
 
@@ -116,22 +117,53 @@ export async function verify(info, substituters) {
 // The first substituter holding this digest, with the narinfo it
 // served. The NAR that follows must come from the same one, since a
 // narinfo's URL is relative to the cache that served it.
+//
+// Narinfos are kept in the persistent cache like the NARs: a store
+// path's narinfo describes immutable bytes, so a cached one is never
+// stale, and a closure walk that has been done before then costs no
+// network at all. (A path a cache has since dropped would still walk;
+// the NAR fetch is where that surfaces.) A cache that cannot be
+// reached is skipped rather than fatal: the next one in the list may
+// hold the path, and the reasons are reported together only if none
+// does.
 export async function fetchNarinfo(digest, substituters) {
+  const failures = [];
   for (const substituter of substituters) {
-    let res;
+    const url = `${substituter.url}/${digest}.narinfo`;
+    let text;
     try {
-      res = await fetch(`${substituter.url}/${digest}.narinfo`);
+      text = await fetchNarinfoText(url);
     } catch (err) {
       // A cross-origin refusal lands here with no status to inspect.
-      throw new Error(
-        `${substituter.url} refused a browser read (no CORS headers?): ${err.message}`,
-      );
+      failures.push(`${substituter.url}: ${err.message} (no CORS headers?)`);
+      continue;
     }
-    if (res.ok) {
-      const info = parseNarinfo(await res.text());
-      return { info: { ...info, substituter: substituter.url }, substituter };
+    if (text === null) {
+      continue;
     }
+    const info = parseNarinfo(text);
+    return { info: { ...info, substituter: substituter.url }, substituter };
   }
 
+  if (failures.length > 0) {
+    throw new Error(`${digest}: ${failures.join("; ")}`);
+  }
   throw new Error(`${digest}: no configured cache holds it`);
+}
+
+// The narinfo text, or null when the cache answers that it has no
+// such path. Throws when the cache cannot be asked at all.
+async function fetchNarinfoText(url) {
+  const hit = await cachedResponse(url);
+  if (hit !== null) {
+    return hit.text();
+  }
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    return null;
+  }
+  const text = await res.text();
+  await storeInCache(url, new TextEncoder().encode(text));
+  return text;
 }
