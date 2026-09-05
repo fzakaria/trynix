@@ -235,15 +235,32 @@ laneNav.addEventListener("click", (event) => {
 // directory holding it and the loader falls back to a system path this
 // guest does not have. Naming the whole closure costs a longer variable
 // and fixes that class of failure outright.
-function buildManifest(closure, rootDigests) {
-  const path = rootDigests
-    .filter((digest) => closure.has(digest))
-    .map((digest) => `/nix/store/${basenameOf(closure.get(digest))}/bin`)
-    .join(":");
+function buildManifest(closure, rootDigests, unpacked) {
+  // Only directories that exist may be named. A missing one is not
+  // harmlessly skipped here the way it would be on a normal
+  // filesystem: 9p hands the guest emscripten's errno rather than a
+  // Linux one, so a lookup of a directory that is not there fails with
+  // an errno glibc does not recognise ("Error 44"), and the dynamic
+  // loader gives up on the whole search instead of moving to the next
+  // entry. One bogus entry made every package whose libraries are
+  // found by search — rather than by RPATH — fail to start.
+  const has = (basename, directory) =>
+    unpacked
+      .find((p) => p.basename === basename)
+      ?.entries.some(
+        (entry) => entry.path === directory && entry.type === "directory",
+      ) ?? false;
 
-  const libraryPath = [...closure.values()]
-    .map((info) => `${info.storePath}/lib`)
-    .join(":");
+  const dirs = (digests, directory) =>
+    digests
+      .map((digest) => closure.get(digest))
+      .filter((info) => info !== undefined)
+      .map((info) => basenameOf(info))
+      .filter((basename) => has(basename, directory))
+      .map((basename) => `/nix/store/${basename}/${directory}`);
+
+  const path = dirs(rootDigests, "bin").join(":");
+  const libraryPath = dirs([...closure.keys()], "lib").join(":");
 
   return `export PATH="${path}:$PATH"\nexport LD_LIBRARY_PATH="${libraryPath}"\n`;
 }
@@ -423,7 +440,7 @@ async function boot() {
       wasmBinary: wasmBytes.buffer,
       guestFiles,
       closure: closurePaths,
-      manifest: buildManifest(closure, rootDigests),
+      manifest: buildManifest(closure, rootDigests, closurePaths),
       terminalElement,
       snapshot,
     });

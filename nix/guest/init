@@ -2,8 +2,18 @@
 # trynix guest init: bring up the pseudo-filesystems, mount the 9p store
 # share the page populated, apply its manifest, and hand the serial
 # console a shell. The share layout is the page's contract:
-#   /mnt/share/nix/store/...   the fetched closure
-#   /mnt/share/manifest        shell fragment: PATH and friends
+#   /share/nix/store/...   the fetched closure
+#   /share/manifest        shell fragment: PATH and friends
+#
+# The mount point is /share to match the directory the page builds in
+# the emscripten filesystem, and that is load-bearing rather than
+# cosmetic. emscripten's FS.readlink resolves a symlink against its
+# parent and returns an absolute path, so every relative symlink in a
+# NAR — libruby-3.4.9.so.3.4 -> libruby-3.4.9.so.3.4.9, and thousands
+# like it — reaches the guest rewritten as /share/nix/store/... . That
+# resolves only if the guest agrees with the host about where /share
+# is. Mounting anywhere else leaves those links dangling and the
+# packages that need them failing to load their own libraries.
 export PATH=/bin
 
 mount -t proc proc /proc
@@ -26,10 +36,10 @@ mount -t devtmpfs devtmpfs /dev
 echo "trynix: waiting for the store"
 read -r _handshake
 
-mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576 store0 /mnt/share
-ln -s /mnt/share/nix /nix
-if [ -f /mnt/share/manifest ]; then
-  . /mnt/share/manifest
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576 store0 /share
+ln -s /share/nix /nix
+if [ -f /share/manifest ]; then
+  . /share/manifest
 fi
 
 echo

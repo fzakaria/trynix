@@ -54,6 +54,40 @@ export function ensureDir(FS, path) {
   }
 }
 
+// Where a symlink should point, written the way the guest can use it.
+//
+// A relative target is resolved here, against the link's own directory,
+// into an absolute path. That is not tidying: emscripten's FS.readlink
+// resolves the target itself and returns an absolute path, while the
+// stat it reports keeps the *relative* target's length. The 9p client
+// in the guest sees a link whose declared size is shorter than the
+// string it reads back, and a lookup through it fails — the dynamic
+// loader reports the library as missing even though `ls` shows it and
+// `cat` reads it. Storing the absolute target makes size and content
+// agree, and the guest resolves it because the share is mounted at the
+// same path the page built it at.
+//
+// A target that is already absolute is left alone: it names a store
+// path, which the guest reaches through its own /nix symlink.
+export function absoluteTarget(linkPath, target) {
+  if (target.startsWith("/")) {
+    return target;
+  }
+
+  const parts = linkPath.split("/").slice(0, -1);
+  for (const part of target.split("/")) {
+    if (part === "" || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
 // Write one parsed NAR under root. Entries arrive directories-first
 // (archive order), so plain mkdir suffices below the root.
 export function writeEntries(FS, root, entries) {
@@ -79,6 +113,6 @@ export function writeEntries(FS, root, entries) {
       continue;
     }
 
-    FS.symlink(entry.target, path);
+    FS.symlink(absoluteTarget(path, entry.target), path);
   }
 }

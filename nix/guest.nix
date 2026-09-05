@@ -81,7 +81,7 @@ let
         ];
       }
       ''
-        mkdir -p root/bin root/proc root/sys root/dev root/mnt/share root/tmp root/etc
+        mkdir -p root/bin root/proc root/sys root/dev root/share root/tmp root/etc
         cp -a ${pkgs.pkgsStatic.busybox}/bin/. root/bin/
         install -m755 ${./guest/init} root/init
 

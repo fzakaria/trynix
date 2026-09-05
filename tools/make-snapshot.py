@@ -93,12 +93,17 @@ def main():
             "-initrd", f"{args.guest}/initramfs.cpio.gz",
             "-virtfs", f"local,path={share},mount_tag=store0,security_model=none,id=store0",
             "-append", "console=ttyS0 rdinit=/init loglevel=4",
-            "-serial", f"file:{serial}",
+            # No -serial here on purpose. -nographic already puts the
+            # console on stdio, and the page passes exactly that; adding
+            # a second serial backend would give the snapshot a device
+            # layout the browser cannot reproduce. The console is read
+            # by capturing stdout instead.
             "-qmp", f"unix:{monitor},server,nowait",
         ]
 
         print(" ".join(command), flush=True)
-        vm = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        with open(serial, "wb") as console:
+            vm = subprocess.Popen(command, stdout=console, stderr=subprocess.STDOUT)
 
         try:
             deadline = time.monotonic() + READY_TIMEOUT_SECONDS
@@ -112,9 +117,10 @@ def main():
             sock.recv(65536)  # the greeting
             qmp(sock, "qmp_capabilities")
 
-            # Stopping first keeps the snapshot from racing the guest's
-            # own poll loop while the state is written.
-            qmp(sock, "stop")
+            # Migrate the guest while it is running. Stopping it first
+            # would record a paused runstate, and the browser would
+            # resume into a VM that never runs a single instruction —
+            # with no monitor on that side to say `cont`.
             reply = qmp(sock, "migrate", uri=f"file:{args.out}")
             if "error" in reply:
                 sys.exit(f"migrate failed: {reply['error']}")
