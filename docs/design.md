@@ -231,6 +231,12 @@ erase-screen sequence, so the terminal's scrollback survives it. The
 `clear` from ncurses sends erase-scrollback too, and a guest with it
 on PATH behaves as expected.
 
+## Performance
+
+Where a first run's time actually goes, what would move it, and the
+things that looked like they would and did not:
+[docs/performance.md](./performance.md).
+
 ## Repository layout
 
 - `site/` — the static site (vanilla ES modules; the multiverse chrome

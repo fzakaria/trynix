@@ -52,7 +52,8 @@ three seconds; the design doc has the numbers and where the time goes.
 - `tests/` — the node test suite, offline.
 - `docs/` — [design.md](docs/design.md) for the architecture and what
   was measured, [engine.md](docs/engine.md) for building and publishing
-  the engine and the snapshot.
+  the engine and the snapshot, [performance.md](docs/performance.md) for
+  where a first run's time goes and which optimisations were dead ends.
 
 ## Running
 
