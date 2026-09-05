@@ -20,6 +20,16 @@ const SHARE_DIR = "/share";
 const STORE_DIR = `${SHARE_DIR}/nix/store`;
 
 const GUEST_RAM = "512M";
+const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
+
+// What init prints when it is parked waiting for the share, and how
+// long the page will watch for it.
+const READY_MARKER = "trynix: waiting for the store";
+const HANDSHAKE_POLL_MS = 250;
+const HANDSHAKE_TIMEOUT_MS = 180000;
+
+// Device for device, these must match what took the snapshot
+// (tools/make-snapshot.py) or the resume rejects the stream.
 const QEMU_ARGS = [
   "-nographic",
   "-m",
@@ -49,14 +59,24 @@ export async function bootVM({
   closure,
   manifest,
   terminalElement,
+  snapshot = null,
 }) {
   const xterm = new Terminal();
   xterm.open(terminalElement);
   const { master, slave } = openpty();
   xterm.loadAddon(master);
 
+  // Resuming a snapshot skips the whole boot — BIOS, kernel, device
+  // probe — and lands in a guest already spinning for the store share,
+  // which the preRun hook has just filled. Without one, the same
+  // arguments cold-boot instead.
+  const args =
+    snapshot === null
+      ? QEMU_ARGS
+      : ["-incoming", `file:${SNAPSHOT_FILE}`, ...QEMU_ARGS];
+
   const Module = {
-    arguments: QEMU_ARGS,
+    arguments: args,
     wasmBinary,
     pty: slave,
     mainScriptUrlOrBlob: new URL(`${QEMU_DIR}/out.js`, location.href).href,
@@ -67,6 +87,9 @@ export async function bootVM({
         ensureDir(mod.FS, PACK_DIR);
         for (const [name, bytes] of guestFiles) {
           mod.FS.writeFile(`${PACK_DIR}/${name}`, bytes);
+        }
+        if (snapshot !== null) {
+          mod.FS.writeFile(SNAPSHOT_FILE, snapshot);
         }
 
         // The store share: the fetched closure plus the manifest the
@@ -94,5 +117,55 @@ export async function bootVM({
     return oldPoll.call(stream, timeout);
   };
 
+  // The handshake: init parks on a read until the page says the share
+  // is populated (nix/guest/init). Mounting only after this is what
+  // makes the snapshot possible to take at all, since QEMU refuses to
+  // migrate a VM with a virtfs export mounted.
+  //
+  // A resumed guest is already parked on that read, so the newline can
+  // go immediately. A cold boot has to reach it first, and the marker
+  // it prints on the way is the signal — one that a resumed guest never
+  // shows, because it was printed into the snapshotting VM's console
+  // long before this page existed.
+  if (snapshot === null) {
+    await sendOnMarker(xterm, READY_MARKER);
+  } else {
+    sendLine(xterm);
+  }
+
   return { xterm };
+}
+
+// Type a newline into the guest. xterm.js exposes no public `input`,
+// but `paste` raises the same onData the master addon listens on, which
+// is what carries terminal input into the pty.
+function sendLine(xterm) {
+  xterm.paste("\n");
+}
+
+// Watch the terminal for a line, then answer it. Gives up quietly after
+// HANDSHAKE_TIMEOUT_MS: a guest that never printed the marker has a
+// worse problem than a missing newline, and its console is on screen.
+function sendOnMarker(xterm, marker) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const buffer = xterm.buffer.active;
+      let text = "";
+      for (let i = 0; i < buffer.length; i += 1) {
+        text += buffer.getLine(i)?.translateToString(true) ?? "";
+      }
+
+      if (text.includes(marker)) {
+        clearInterval(timer);
+        sendLine(xterm);
+        resolve();
+        return;
+      }
+      if (Date.now() - started > HANDSHAKE_TIMEOUT_MS) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, HANDSHAKE_POLL_MS);
+  });
 }

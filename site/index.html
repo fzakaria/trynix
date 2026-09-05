@@ -72,7 +72,8 @@
       <a href="?pkg=ripgrep&pkg=jq">ripgrep and jq</a> ·
       <a href="?pkg=python3@3.6.2">python 3.6.2 from 2017</a> ·
       <a href="?pkg=jujutsu@0.43.0">jujutsu</a> ·
-      <a href="?pkg=hello@2.10&pkg=hello@2.12.2">two eras of hello at once</a>
+      <a href="?pkg=hello@2.10&pkg=hello@2.12.2">two eras of hello at once</a> ·
+      <a href="?pkg=python3@3.10.6&pkg=openssl@1.1.1q">python 3.10 with openssl 1.1</a>
     </p>
 
     <section id="pick">
@@ -94,7 +95,7 @@
         <div id="search-results"></div>
       </div>
 
-      <div class="lane" data-lane="ranges" hidden>
+      <div class="lane" data-lane="ranges" id="ranges-lane" hidden>
         <form id="ranges-form">
           <input
             id="ranges-input"
@@ -105,11 +106,19 @@
           />
           <button type="submit">Resolve</button>
         </form>
+        <ul id="ranges-complete" hidden></ul>
         <p class="muted">
           Each spec resolves on its own to the newest matching build.
-          <a href="https://github.com/fzakaria/grail">grail</a> answers the harder question — which
-          versions all held at one moment in nixpkgs history — and its plans paste in here.
+          <a href="https://fzakaria.github.io/grail/">grail</a> answers the harder question — which
+          versions all held at one moment in nixpkgs history, so they were built against each other
+          — and its plans paste in here. For example
+          <a
+            href="https://fzakaria.github.io/grail/?q=python3%40%3E%3D3.10+%5Eopenssl%401.1.*"
+            >python3@&gt;=3.10 ^openssl@1.1.*</a
+          >
+          lands on 2022-09-12, the last moment those two coexisted.
         </p>
+        <p id="grail-link" class="muted"></p>
         <div id="ranges-results"></div>
       </div>
 
@@ -134,7 +143,7 @@
         </p>
         <textarea
           id="caches-input"
-          rows="3"
+          rows="6"
           spellcheck="false"
           placeholder="https://example.cachix.org example.cachix.org-1:base64key="
         ></textarea>

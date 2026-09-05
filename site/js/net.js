@@ -1,16 +1,10 @@
 // Fetch helpers shared by the boot flow.
 
-import { cachedFetch } from "./cache.js";
+import { cachedResponse, storeInCache } from "./cache.js";
 
-// Fetch a URL into bytes, through the persistent cache. onTotal hears
-// the Content-Length once (null when the server does not say); onBytes
-// hears each chunk's size.
-export async function fetchWithProgress(url, { onBytes, onTotal } = {}) {
-  const { response: res } = await cachedFetch(url);
-  if (!res.ok) {
-    throw new Error(`${url}: HTTP ${res.status}`);
-  }
-
+// Read a response body into one buffer, reporting chunk sizes as they
+// arrive.
+async function drain(res, { onBytes, onTotal } = {}) {
   const length = res.headers.get("Content-Length");
   onTotal?.(length === null ? null : Number(length));
 
@@ -33,6 +27,24 @@ export async function fetchWithProgress(url, { onBytes, onTotal } = {}) {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return bytes;
+}
+
+// Fetch a URL into bytes, through the persistent cache. A hit is read
+// from storage (and still reports its size, so a progress row fills);
+// a miss is fetched, returned, and stored once it is complete.
+export async function fetchWithProgress(url, options = {}) {
+  const hit = await cachedResponse(url);
+  if (hit !== null) {
+    return drain(hit, options);
+  }
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`${url}: HTTP ${res.status}`);
+  }
+  const bytes = await drain(res, options);
+  await storeInCache(url, bytes);
   return bytes;
 }
 

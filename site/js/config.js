@@ -12,8 +12,10 @@ export const CACHE_URL = "https://cache.nixos.org";
 // from GitHub Pages with open CORS, so the browser reads it directly.
 export const MULTIVERSE_URL = "https://nixmultiverse.com";
 
-// How many attribute matches the search list shows at once.
+// How many attribute matches the search list shows at once, and how
+// many completions the range box's dropdown offers.
 export const SEARCH_LIMIT = 12;
+export const RANGE_COMPLETIONS = 12;
 
 // A store basename is <digest>-<name>; the digest is 32 characters of
 // nix base32, which draws from lowercase letters and digits.
@@ -42,3 +44,8 @@ export const GUEST_FILES = [
 // are loaded by the module machinery; the wasm is prefetched by hand so
 // the biggest download gets a progress bar.
 export const QEMU_WASM = "qemu/qemu-system-x86_64.wasm";
+
+// The migration snapshot: a guest already booted to the point of
+// waiting for the store share, so a visit resumes rather than boots.
+// Optional — the page cold-boots when it is not published.
+export const SNAPSHOT_URL = "qemu/vm.state";

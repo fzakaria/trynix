@@ -13,6 +13,7 @@ import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
 import { parseSpecs, resolveSpecs } from "./ranges.js";
 import { versionsOf } from "./multiverse.js";
+import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
   DEFAULT_SUBSTITUTERS,
@@ -28,6 +29,7 @@ import {
   GUEST_FILES,
   NAR_CONCURRENCY,
   QEMU_WASM,
+  SNAPSHOT_URL,
 } from "./config.js";
 
 const STORE_PREFIX = "/nix/store/";
@@ -145,6 +147,33 @@ rangesForm.addEventListener("submit", async (event) => {
   ];
   rangesResults.textContent = lines.join(" · ");
 });
+
+// Autocomplete for the range box, and a live grail link for the line —
+// grail answers the coexistence question this lane deliberately does
+// not.
+const grailLink = document.getElementById("grail-link");
+const GRAIL_URL = "https://fzakaria.github.io/grail/";
+
+function renderGrailLink() {
+  const query = rangesInput.value.trim();
+  grailLink.replaceChildren();
+  if (query === "") {
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = `${GRAIL_URL}?q=${encodeURIComponent(query)}`;
+  link.textContent = "solve this line in grail";
+  link.rel = "noopener";
+  link.target = "_blank";
+  grailLink.append("Want these versions to have coexisted? ", link);
+}
+
+new RangeComplete({
+  input: rangesInput,
+  dropdown: document.getElementById("ranges-complete"),
+  onAccept: renderGrailLink,
+});
+rangesInput.addEventListener("input", renderGrailLink);
 
 walkForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -302,6 +331,7 @@ async function boot() {
   const signatureRow = panel.row("signatures");
   const engineRow = panel.row("qemu engine");
   const guestRow = panel.row("guest image");
+  const snapshotRow = panel.row("snapshot");
   const closureRow = panel.row("closure");
   const vmRow = panel.row("virtual machine");
 
@@ -366,10 +396,27 @@ async function boot() {
       return paths;
     });
 
-    const [wasmBytes, guestFiles, closurePaths] = await Promise.all([
+    // The snapshot is optional: published, a visit resumes a guest that
+    // is already up; absent, the same arguments cold-boot.
+    const snapshotPromise = fetchWithProgress(SNAPSHOT_URL, {
+      onTotal: (n) => snapshotRow.setTotal(n),
+      onBytes: (n) => snapshotRow.add(n),
+    }).then(
+      (bytes) => {
+        snapshotRow.done();
+        return bytes;
+      },
+      () => {
+        snapshotRow.done("none published — cold boot");
+        return null;
+      },
+    );
+
+    const [wasmBytes, guestFiles, closurePaths, snapshot] = await Promise.all([
       enginePromise,
       guestPromise,
       closurePromise,
+      snapshotPromise,
     ]);
 
     await bootVM({
@@ -378,6 +425,7 @@ async function boot() {
       closure: closurePaths,
       manifest: buildManifest(closure, rootDigests),
       terminalElement,
+      snapshot,
     });
     vmRow.done("running");
     vmStarted = true;

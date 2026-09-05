@@ -10,41 +10,35 @@
 /* global xzwasm, fzstd */
 
 import { CACHE_URL } from "./config.js";
-
 import { parseNar } from "./nar.js";
-import { cachedFetch } from "./cache.js";
+import { fetchWithProgress } from "./net.js";
 
 // One NAR: fetch, count, decompress, parse. onBytes hears compressed
 // chunk sizes as they arrive.
 export async function fetchNar(info, onBytes) {
-  // The NAR comes from whichever cache served the narinfo: a narinfo's
-  // URL is relative to its own cache.
-  const { response: res } = await cachedFetch(
-    `${info.substituter ?? CACHE_URL}/${info.url}`,
-  );
-  if (!res.ok) {
-    throw new Error(`${info.url}: HTTP ${res.status}`);
-  }
-
-  const counter = new TransformStream({
-    transform(chunk, controller) {
-      onBytes(chunk.byteLength);
-      controller.enqueue(chunk);
-    },
-  });
-
-  let stream = res.body.pipeThrough(counter);
-  if (info.compression === "xz") {
-    stream = new xzwasm.XzReadableStream(stream);
-  } else if (info.compression !== "zstd" && info.compression !== "none") {
+  if (!["xz", "zstd", "none"].includes(info.compression)) {
     throw new Error(`unsupported NAR compression "${info.compression}"`);
   }
 
-  let bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-  if (info.compression === "zstd") {
-    bytes = fzstd.decompress(bytes);
+  // The NAR comes from whichever cache served the narinfo: a narinfo's
+  // URL is relative to its own cache. The compressed bytes are what get
+  // cached, so a second visit skips the network but still decompresses.
+  const compressed = await fetchWithProgress(
+    `${info.substituter ?? CACHE_URL}/${info.url}`,
+    {
+      onBytes,
+    },
+  );
+
+  if (info.compression === "none") {
+    return parseNar(compressed);
   }
-  return parseNar(bytes);
+  if (info.compression === "zstd") {
+    return parseNar(fzstd.decompress(compressed));
+  }
+
+  const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
+  return parseNar(new Uint8Array(await new Response(stream).arrayBuffer()));
 }
 
 // mkdir -p against the emscripten FS: existing components are fine.

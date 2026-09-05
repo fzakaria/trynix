@@ -10,11 +10,24 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 
-# The store share; the tag matches the -virtfs id the page passes. A
-# large msize cuts round-trips on the synchronous 9p backend.
+# Block until the page says the share is populated, then mount it.
+#
+# This read is where the migration snapshot is taken (see
+# docs/design.md): the snapshotting VM boots with an empty share and
+# parks here, so one snapshot serves every package selection — the
+# selection arrives later, in whatever share the resuming page built.
+#
+# Waiting must happen with nothing mounted. QEMU refuses to migrate a
+# VM that has a virtfs export mounted ("Migration is disabled when
+# VirtFS export path ... is mounted in the guest"), so a poll loop that
+# mounted to look would make the snapshot impossible to take. Mounting
+# strictly after the handshake also means the first mount always sees
+# the finished share, with no chance of a cached empty lookup.
+echo "trynix: waiting for the store"
+read -r _handshake
+
 mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576 store0 /mnt/share
 ln -s /mnt/share/nix /nix
-
 if [ -f /mnt/share/manifest ]; then
   . /mnt/share/manifest
 fi

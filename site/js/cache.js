@@ -1,15 +1,23 @@
 // A persistent cache for the bytes that never change: the qemu engine,
-// the guest image, and every NAR (a store path is immutable by
-// construction — its digest is the hash of its contents, so a cached
-// NAR can never be stale).
+// the guest image, the snapshot, and every NAR (a store path is
+// immutable by construction — its digest is the hash of its contents,
+// so a cached NAR can never be stale).
 //
 // The Cache API is used rather than OPFS because these are all plain
 // GETs and the entries are whole HTTP responses. Cross-origin NARs are
 // storable because cache.nixos.org sends CORS headers, which keeps the
 // responses non-opaque.
 //
-// Every call degrades to a plain fetch: a private window, blocked site
-// data, or an evicted entry costs a download, never an error.
+// Reads and writes are deliberately separate calls. Handing `put` a
+// `response.clone()` while streaming the original tees one body into
+// two branches, and a rejected write — hitting the storage quota is the
+// ordinary way that happens — errors the branch still being read, which
+// surfaces as a bare "TypeError: Failed to fetch" partway through a
+// download. So callers buffer the bytes themselves and store them
+// afterwards, when nothing depends on the stream any more.
+//
+// Every call degrades to no caching at all: a private window, blocked
+// site data, or a full quota costs a download, never an error.
 
 const CACHE_NAME = "trynix-v1";
 
@@ -19,28 +27,28 @@ function openCache() {
   return cachePromise;
 }
 
-// Returns { response, cached }. The caller streams the response as
-// usual; `cached` says whether it came off disk, so the UI can tell the
-// reader why a stage finished instantly.
-export async function cachedFetch(url) {
+// The cached response for a URL, or null.
+export async function cachedResponse(url) {
   const cache = await openCache();
-
-  if (cache !== null) {
-    try {
-      const hit = await cache.match(url);
-      if (hit !== undefined) {
-        return { response: hit, cached: true };
-      }
-    } catch {
-      // an unreadable cache is a cache miss
-    }
+  if (cache === null) {
+    return null;
   }
-
-  const response = await fetch(url);
-  if (response.ok && cache !== null) {
-    // The clone is drained by the cache while the caller streams the
-    // original; a failed write costs nothing but a future download.
-    cache.put(url, response.clone()).catch(() => {});
+  try {
+    return (await cache.match(url)) ?? null;
+  } catch {
+    return null;
   }
-  return { response, cached: false };
+}
+
+// Keep bytes for next time. Failure is silent and harmless.
+export async function storeInCache(url, bytes) {
+  const cache = await openCache();
+  if (cache === null) {
+    return;
+  }
+  try {
+    await cache.put(url, new Response(bytes));
+  } catch {
+    // out of quota, or storage denied: the next visit re-downloads
+  }
 }

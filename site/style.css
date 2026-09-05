@@ -196,9 +196,43 @@ code {
   border-radius: 4px;
   cursor: pointer;
 }
+/* Autocomplete under the range box: a vertical dropdown, the way
+   grail's is — attributes while typing a name, versions after "@". */
+#ranges-lane {
+  position: relative;
+}
+#ranges-complete {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+}
+#ranges-complete li {
+  padding: 0.3rem 0.6rem;
+  font:
+    13px ui-monospace,
+    monospace;
+  cursor: pointer;
+}
+#ranges-complete li:hover,
+#ranges-complete li.selected {
+  background: var(--code-bg);
+}
+
 #caches-input {
   width: 100%;
-  padding: 0.5rem;
+  min-height: 7rem;
+  resize: vertical;
+  padding: 0.6rem;
   font:
     13px/1.5 ui-monospace,
     monospace;
