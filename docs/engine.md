@@ -5,7 +5,7 @@ emscripten. Three artifacts make up the engine:
 
 ```
 out.js                        the ES6 module the page imports
-qemu-system-x86_64.wasm       ~40 MB
+qemu-system-x86_64.wasm       ~13 MB, stripped of its DWARF
 qemu-system-x86_64.worker.js  the pthread bootstrap
 ```
 
@@ -109,26 +109,31 @@ engine and snapshot included. `TRYNIX_QEMU_DIR=<directory>` overlays
 a locally built engine (and a `vm.state` beside it) over `qemu/`, for
 trying a build before publishing it.
 
-## Hosting and the code cache
+## Hosting and cross-origin isolation
 
 The page is cross-origin isolated (COOP/COEP), which SharedArrayBuffer
 needs. GitHub Pages cannot set response headers, so the site loads
-`coi-serviceworker.js`, a shim that reloads the page through a service
-worker that injects the two headers.
+`coi-serviceworker.js`, a shim that registers a service worker and
+reloads the page so that worker can inject the two headers.
 
-That shim has a cost. A registered service worker sits in front of every
-response, and it defeats the browser's compiled-WebAssembly cache: the
-13 MB engine is recompiled on every visit instead of being served warm
-from the cache. A host that sets the headers itself removes the shim and
-keeps the compiled engine across visits.
+`site/_headers` sets the headers directly on a host that reads such a
+file (Cloudflare Pages, Netlify). It is inert on GitHub Pages, and the
+shim registers nothing once the page is already cross-origin isolated,
+so the tag stays in `index.html` as the fallback for both.
 
-`site/_headers` sets them for a host that reads such a file (Cloudflare
-Pages, Netlify). It is inert on GitHub Pages. The `coi-serviceworker.js`
-tag stays in `index.html`: the shim registers nothing once the page is
-already cross-origin isolated, so it is a no-op on a host that sets the
-headers and the fallback on one that does not. Moving `trynix.dev` to
-Cloudflare Pages (build command `nix build .#site`, output `result/`) is
-the whole change; the DNS move is the only manual step.
+What the move is worth, measured on localhost with the 13 MB engine
+booting hello, page load to the guest prompt:
+
+    coi shim        3.42 s cold    2.25 s warm
+    real headers    2.95 s cold    2.28 s warm
+
+So the shim costs about half a second on a first-ever visit, which is
+the extra reload, and nothing afterwards. Compiling the engine is 56 ms
+either way, so the browser's compiled-WebAssembly cache is not a reason
+to move: an earlier note held that a service worker defeats that cache,
+and these numbers do not support it. Move `trynix.dev` to Cloudflare
+Pages (build `nix build .#site`, output `result/`) for control over
+headers and caching, not for speed.
 
 ## Why not build it with nix
 

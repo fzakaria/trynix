@@ -4,11 +4,10 @@
 # Real cross-origin isolation from the host, so SharedArrayBuffer works
 # without the coi-serviceworker shim. index.html still loads that shim,
 # but it registers nothing once the page is already cross-origin isolated
-# (it checks window.crossOriginIsolated first), so it becomes a no-op
-# here. That matters for speed: a registered service worker sits in front
-# of every response and defeats the browser's compiled-WebAssembly cache,
-# so the ~13 MB engine is recompiled on every visit. Serving the headers
-# from the host instead keeps the compiled engine across visits.
+# (it checks window.crossOriginIsolated first), so it is a no-op here and
+# the fallback on GitHub Pages. Measured, that is worth about half a
+# second on a first-ever visit -- the reload the shim performs -- and
+# nothing afterwards; docs/engine.md carries the numbers.
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
