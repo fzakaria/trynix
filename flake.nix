@@ -50,8 +50,43 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+
+          # The engine tools (docs/engine.md), each a command with its
+          # dependencies on PATH: `nix run .#<name> -- <arguments>`.
+          # docker is the host's; the client here only talks to it.
+          tool = name: script: runtimeInputs: {
+            type = "app";
+            program = "${
+              pkgs.writeShellApplication {
+                inherit name runtimeInputs;
+                text = ''exec ${script} "$@"'';
+              }
+            }/bin/${name}";
+          };
         in
         {
+          # build the qemu-wasm engine from a checkout of the fork
+          build-engine = tool "build-engine" ./tools/build-engine.sh [
+            pkgs.docker
+            pkgs.rsync
+            pkgs.gnupatch
+          ];
+
+          # build the native QEMU the snapshot is taken on
+          build-native-qemu = tool "build-native-qemu" ./tools/build-native-qemu.sh [
+            pkgs.docker
+            pkgs.rsync
+          ];
+
+          # take the migration snapshot: --qemu, --guest, --out
+          make-snapshot = tool "make-snapshot" "${pkgs.python3}/bin/python3 ${./tools/make-snapshot.py}" [ ];
+
+          # publish engine and snapshot as a dated release and repin
+          publish-engine = tool "publish-engine" "${pkgs.python3}/bin/python3 ${./tools/publish-engine.py}" [
+            pkgs.gh
+            pkgs.nix
+          ];
+
           # serve the built site, exactly the tree pages deploys —
           # engine, snapshot and guest image included, since the
           # derivation carries them. $TRYNIX_QEMU_DIR overlays a

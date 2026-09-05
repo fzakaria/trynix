@@ -9,8 +9,7 @@ qemu-system-x86_64.wasm       ~40 MB
 qemu-system-x86_64.worker.js  the pthread bootstrap
 ```
 
-A fourth file rides along in the same release, built by
-`tools/make-snapshot.py`:
+A fourth file rides along in the same release:
 
 ```
 vm.state                      the migration snapshot, ~35 MB
@@ -18,74 +17,85 @@ vm.state                      the migration snapshot, ~35 MB
 
 None of them are in this repository and none are built by CI. The
 engine needs docker and a pinned emscripten SDK and takes tens of
-minutes; the snapshot needs a _native_ build of the same fork. Both
+minutes; the snapshot needs a _native_ build of the same fork. They
 change only when the qemu-wasm pin, the patches, or the guest image
-move — so they are built by hand and published as a release by
-`tools/publish-engine.py`, which the site build fetches by hash into
-`qemu/` (nix/engine.nix).
+move, so they are built by hand with the tools below and published as
+a release, which the site build fetches by hash into `qemu/`
+(nix/engine.nix).
 
-## Building
+Every tool is a flake app. Each needs a checkout of [qemu-wasm] at the
+pinned commit (`0ef7b4e2`, a fork of QEMU 8.2.0) and docker on the
+host.
 
-Clone [qemu-wasm] (this was written against `0ef7b4e2`, a fork of QEMU
-8.2.0) and run its documented x86_64 recipe. Two deviations are needed:
+## The engine
 
-1. **Build from a writable copy of the tree.** The README mounts the
-   checkout read-only (`-v $(pwd):/qemu/:ro`), but meson runs
-   `git init` for the `dtc` subproject inside it and fails on a
-   read-only mount. Mount it writable, or `rsync` the tree somewhere
-   scratch first.
-2. **Fetch zlib from the GitHub mirror.** The Dockerfile pulls
-   `https://zlib.net/zlib-$ZLIB_VERSION.tar.xz`, which answers curl with
-   a bot-wall HTML page rather than the tarball; the release mirror
-   (`https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/...`)
-   serves the same file.
+```console
+$ nix run .#build-engine -- ~/src/qemu-wasm ./engine
+```
 
-3. **Apply `patches/`.** `0001-9pfs-translate-emscripten-errnos-to-linux.patch`
-   makes 9p report Linux errno numbers instead of emscripten's WASI
-   ones. Without it no package can find a library by search; see
-   docs/design.md.
+This is the fork's own recipe, with three deviations that
+`tools/build-engine.sh` carries so nobody has to remember them: the
+tree is copied somewhere writable first (meson runs `git init` for the
+`dtc` subproject and fails on the read-only mount the fork's README
+suggests), zlib is fetched from the GitHub release mirror (zlib.net
+answers curl with a bot-wall page), and `patches/` are applied.
 
-Otherwise the recipe is upstream's verbatim — the emscripten flags
-matter (`-sASYNCIFY`, `-pthread -sPROXY_TO_PTHREAD`,
-`-sTOTAL_MEMORY=2300MB`, the xterm-pty `--js-library`, `-sEXPORT_ES6`)
-and the configure line must keep `--enable-virtfs`, which is what makes
-the 9p store share possible.
+The patches matter more than the build flags:
 
-Rename `qemu-system-x86_64` (the JS glue) to `out.js` and keep the
-other two names. They are published together with the snapshot, below.
+- `0001-9pfs-translate-emscripten-errnos-to-linux.patch` makes 9p
+  report Linux errno numbers instead of emscripten's WASI ones.
+  Without it no package can find a library by search (docs/design.md).
+- `0002-9p-local-resolve-a-path-in-one-syscall-under-emscripten.patch`
+  opens and stats a path in one syscall instead of one per component.
+  Under emscripten each syscall is a round trip to the browser's main
+  thread, and the share is a private in-memory directory with nothing
+  for the component walk to protect.
 
-## Taking the snapshot
+Otherwise the emscripten flags are upstream's verbatim (`-sASYNCIFY`,
+`-pthread -sPROXY_TO_PTHREAD`, `-sTOTAL_MEMORY=2300MB`, the xterm-pty
+`--js-library`, `-sEXPORT_ES6`), and the configure line keeps
+`--enable-virtfs`, which is what makes the 9p store share possible.
+
+## The native QEMU
+
+```console
+$ nix run .#build-native-qemu -- ~/src/qemu-wasm ./native
+```
 
 The browser resumes a VM rather than booting one, and the snapshot has
-to come from a _native_ build of the same fork — both ends of a
-migration must agree on QEMU version, machine type and devices, which
-rules out nixpkgs' QEMU. Build it with the fork's own
-`examples/x86_64/image/Dockerfile.qemu` and `--with-coroutine=ucontext
---enable-virtfs --enable-attr`, then:
+to come from a native build of the same fork: both ends of a migration
+must agree on QEMU version, machine type and devices, which rules out
+nixpkgs' QEMU. The binary is static, so it runs on a NixOS host.
+
+## The snapshot
 
 ```console
 $ nix build .#guest
-$ python3 tools/make-snapshot.py --qemu ./qemu-system-x86_64 \
-    --guest ./result --out vm.state
+$ nix run .#make-snapshot -- --qemu ./native/qemu-system-x86_64 \
+    --guest ./result --out ./engine/vm.state
 ```
 
-Retake it whenever the guest image changes: the snapshot holds that
-kernel and initramfs in its RAM, and `checks.snapshot` fails when the
-guest the tree builds is not the one the pins say the snapshot came
-from.
+The tool boots the guest natively, waits for init to park on its
+handshake, and migrates the running VM to a file. QEMU's arguments
+come from the guest image's `machine.json`, which the page starts QEMU
+from as well; that file is the one description of the machine.
+
+Retake the snapshot whenever the guest image changes — a new kernel,
+initramfs or machine definition. The snapshot holds the kernel and
+initramfs in its RAM, and `checks.snapshot` fails when the guest the
+tree builds is not the one the pins say the snapshot came from.
 
 ## Publishing
 
-Put the three engine files and `vm.state` in one directory and run
-
 ```console
-$ python3 tools/publish-engine.py --dir <directory>
+$ nix run .#publish-engine -- --dir ./engine --guest ./result
 ```
 
-It creates a release tagged `engine-<UTC date>-<UTC time>`, uploads
-the four files, and rewrites `nix/engine-pins.json` with the tag, the
-hash of each file, and the hashes of the guest image the current tree
-builds. Commit the pins with the change that needed them.
+The directory holds the three engine files and `vm.state`. The tool
+creates a release tagged `engine-<UTC date>-<UTC time>`, uploads the
+four files, and rewrites `nix/engine-pins.json` with the tag, the hash
+of each file, and the hashes of the guest image. Commit the pins with
+the change that needed them.
 
 A tag is never reused. The pins of every commit in the history resolve
 against the release they name, so replacing an asset in place would
@@ -94,10 +104,10 @@ release storage and nothing else.
 
 ## Serving locally
 
-`nix run .#serve` overlays the engine from `vendor/qemu-wasm` in the
-working directory (`$TRYNIX_QEMU_DIR` overrides), so put the three files
-there and the local site boots exactly as the deployed one does.
-`vendor/` is gitignored.
+`nix run .#serve` serves exactly the tree `nix build .#site` produces,
+engine and snapshot included. `TRYNIX_QEMU_DIR=<directory>` overlays
+a locally built engine (and a `vm.state` beside it) over `qemu/`, for
+trying a build before publishing it.
 
 ## Why not build it with nix
 
