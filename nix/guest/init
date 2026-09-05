@@ -33,6 +33,15 @@ mount -t devtmpfs devtmpfs /dev
 # mounted to look would make the snapshot impossible to take. Mounting
 # strictly after the handshake also means the first mount always sees
 # the finished share, with no chance of a cached empty lookup.
+# Name the clocksource the kernel settled on. Calibrating the TSC
+# against the PIT sometimes fails under emulation, and the fallback
+# (refined-jiffies, 10 ms) pushes clock_gettime out of the vDSO into a
+# real syscall for the life of the VM. The snapshot freezes whichever
+# one this boot picked, so tools/make-snapshot.py reads this line and
+# refuses to publish a boot that lost the TSC. The kernel's own
+# messages cannot serve: loglevel=4 keeps them off the console.
+echo "trynix: clocksource $(cat /sys/devices/system/clocksource/clocksource0/current_clocksource)"
+
 echo "trynix: waiting for the store"
 read -r _handshake
 

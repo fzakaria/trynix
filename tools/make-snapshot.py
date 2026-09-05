@@ -29,6 +29,22 @@ READY_MARKER = b"trynix: waiting for the store"
 READY_TIMEOUT_SECONDS = 120
 MIGRATE_TIMEOUT_SECONDS = 300
 
+# The kernel calibrates its TSC against the PIT during boot, and under
+# emulation that calibration sometimes fails. The kernel then marks the
+# TSC unstable and falls back to refined-jiffies, whose 10 ms resolution
+# pushes clock_gettime out of the vDSO and into a real syscall. A
+# snapshot freezes whichever clocksource the boot settled on, so a bad
+# boot published once makes every visitor resume onto it -- which is
+# what happened to the engine-20260905-0359 release. The boot is a
+# lottery, so the fix is to refuse to snapshot a losing ticket.
+#
+# The kernel's own clocksource messages cannot be used for this: the
+# machine boots with loglevel=4, which keeps everything below an error
+# off the console. init prints the name instead (nix/guest/init).
+CLOCKSOURCE_PREFIX = b"trynix: clocksource "
+CLOCKSOURCE_GOOD = b"tsc"
+CLOCKSOURCE_TIMEOUT_SECONDS = 60
+
 # The machine definition the guest image carries (nix/guest/machine.json):
 # the page starts QEMU from the same file, which is what keeps the two
 # ends of the migration identical.
@@ -67,6 +83,29 @@ def wait_for_ready(serial_path, deadline):
             pass
         time.sleep(0.5)
     return False
+
+
+def clocksource_complaint(serial_path, deadline):
+    """Return why the guest's clocksource is unusable, or None if it is fine."""
+    while time.monotonic() < deadline:
+        try:
+            with open(serial_path, "rb") as f:
+                log = f.read()
+        except FileNotFoundError:
+            log = b""
+
+        at = log.find(CLOCKSOURCE_PREFIX)
+        if at != -1:
+            name = log[at + len(CLOCKSOURCE_PREFIX):].split(b"\n", 1)[0].strip()
+            # tsc-early counts: the TSC is working and the kernel
+            # promotes it to plain tsc on its own. A jiffies fallback
+            # means the calibration failed.
+            if CLOCKSOURCE_GOOD in name:
+                return None
+            return name.decode(errors="replace")
+        time.sleep(0.5)
+
+    return "init never named a clocksource"
 
 
 def main():
@@ -110,6 +149,18 @@ def main():
                 vm.kill()
                 sys.exit(f"guest never reached the ready marker; see {serial}")
             print("guest is up and waiting for the store", flush=True)
+
+            # Snapshotting a guest that lost its TSC would publish that
+            # loss to every visitor, so fail and let the caller retry.
+            deadline = time.monotonic() + CLOCKSOURCE_TIMEOUT_SECONDS
+            complaint = clocksource_complaint(serial, deadline)
+            if complaint is not None:
+                vm.kill()
+                sys.exit(
+                    f"this boot lost the tsc clocksource ({complaint}); a snapshot "
+                    f"would freeze that in for every visitor. Run again; see {serial}"
+                )
+            print("guest settled on the tsc clocksource", flush=True)
 
             sock = socket.socket(socket.AF_UNIX)
             sock.connect(monitor)
