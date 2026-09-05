@@ -55,6 +55,19 @@ let
     # is configured; harmless otherwise.
     requiredSystemFeatures = [ "big-parallel" ];
 
+    # A kernel records when, where and by whom it was built, and prints
+    # the lot in `uname -a`. Those three strings land in the bzImage, so
+    # the same source compiled on two machines gives two different
+    # images. That matters more here than it usually would, for the same
+    # reason the initramfs below is built reproducibly: the snapshot is
+    # pinned to the hash of this image, and a builder that cannot
+    # reproduce it byte for byte fails checks.snapshot. Pin them.
+    env = {
+      KBUILD_BUILD_TIMESTAMP = "Thu Jan  1 00:00:00 UTC 1970";
+      KBUILD_BUILD_USER = "trynix";
+      KBUILD_BUILD_HOST = "trynix";
+    };
+
     configurePhase = ''
       cat ${./guest/linux_x86_config} ${./guest/kernel-fragment.config} > .config
       make olddefconfig

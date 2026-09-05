@@ -1,6 +1,6 @@
 --- a/emscripten-pty.js	2026-09-05 07:57:06.227159575 -0700
-+++ b2/emscripten-pty.js	2026-09-05 08:10:39.667574560 -0700
-@@ -78,6 +78,21 @@
++++ b3/emscripten-pty.js	2026-09-05 08:23:33.616894561 -0700
+@@ -78,6 +78,24 @@
  
      $PTY_pollTimeout: 0,
  
@@ -13,16 +13,19 @@
 +
 +    // And never sleep longer than this. Asking the TTY to wait throws,
 +    // which abandons the scan of the caller's remaining descriptors, so
-+    // a descriptor that becomes ready while the terminal is quiet is
-+    // only noticed once poll returns. Returning early from poll is
-+    // always allowed, so a cap costs nothing but keeps such an event
-+    // from waiting on a keystroke that may never come.
-+    $PTY_maxPollSleep: 50,
++    // one that becomes ready while the terminal is quiet is only noticed
++    // once poll returns. Returning early from poll is always allowed, so
++    // a cap costs nothing but keeps such an event from waiting on a
++    // keystroke that may never come. 10 ms rather than something larger
++    // because the boot handshake runs through this loop: at 50 ms it
++    // cost about 0.2 s of the boot, and at 10 ms it costs nothing
++    // measurable while the idle tab stays near a third of a core.
++    $PTY_maxPollSleep: 10,
 +
      $PTY_askToWaitAgain__deps: ['$PTY_pollTimeout', '$FS'],
      $PTY_askToWaitAgain: (timeout) => {
          PTY_pollTimeout = timeout;
-@@ -206,16 +221,22 @@
+@@ -206,16 +224,22 @@
          }
      }),
  
@@ -51,7 +54,7 @@
  #if !PROXY_TO_PTHREAD
      __syscall_poll__async: true,
  #endif
-@@ -223,7 +244,7 @@
+@@ -223,7 +247,7 @@
  
  // Override default TTY ops to use our PTY.
  // Doing this at compile-time reduces amount of generated unused JS.
@@ -60,7 +63,7 @@
  
  let outputTtyOps = {
      put_char: () => {
-@@ -295,7 +316,10 @@
+@@ -295,7 +319,10 @@
  
      poll: (stream, timeout) => {
          if (!PTY.readable && timeout) {

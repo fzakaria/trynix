@@ -244,6 +244,34 @@ export async function startVM({
         }
         ensureDir(mod.FS, STORE_DIR);
 
+        // Keep QEMU out of the pty's blocking poll.
+        //
+        // patches/xterm-pty/0001 makes that poll wait on the deadline
+        // QEMU computed rather than on a keystroke, which stops the
+        // main loop spinning and takes the idle tab from about 1.45
+        // cores to a third of one. What it cannot fix from inside the
+        // terminal is the wait underneath: the worker asks the browser's
+        // main thread to watch the pty and then sits in an Atomics.wait
+        // with no timeout of its own, because the timeout is applied on
+        // the main thread by setTimeout. While that thread is busy --
+        // unpacking NARs into the share during a boot, say -- the
+        // request queues, nothing notifies, and QEMU's main loop stops
+        // for as long as it takes. The guest then never sees the newline
+        // that finishes the resume handshake, and the page waits out its
+        // full timeout: about one boot in ten took three minutes instead
+        // of three seconds.
+        //
+        // So the poll is answered here instead of blocking. The engine
+        // keeps the patch, and this can go once the wait beneath it is
+        // bounded on the worker's own side.
+        const oldPoll = mod.TTY.stream_ops.poll;
+        mod.TTY.stream_ops.poll = function (stream, timeout) {
+          if (!slave.readable) {
+            return (slave.readable ? 1 : 0) | (slave.writable ? 4 : 0);
+          }
+          return oldPoll.call(stream, timeout);
+        };
+
         onFilesystem(mod);
       },
     ],
