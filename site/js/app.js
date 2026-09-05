@@ -541,7 +541,9 @@ async function boot() {
     consoleNote.textContent = resuming
       ? "resuming the guest…"
       : "booting the guest…";
-    vmRow.note("running");
+    // The bar fills when the guest is at its prompt; until then the row
+    // says what the guest is doing, not that it is done.
+    vmRow.note(resuming ? "resuming…" : "booting…");
     vmStarted = true;
     mounted = closure;
 
