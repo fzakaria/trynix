@@ -1,0 +1,83 @@
+From: Farid Zakaria <farid.m.zakaria@gmail.com>
+Subject: [PATCH] 9p-local: resolve a path in one syscall under emscripten
+
+Under emscripten every filesystem syscall is proxied synchronously
+from the pthread running QEMU to the browser's main thread, so the
+local backend's component-by-component openat walk turns one guest
+lookup deep in a store path into a dozen cross-thread round trips.
+The export is a directory in emscripten's in-memory filesystem that
+only this QEMU can see, so the walk's purpose - keeping a symlink
+from escaping the export - has nothing to protect. Open the path in
+one openat, still O_NOFOLLOW on the last component, and stat it in
+one fstatat.
+
+---
+--- a/hw/9pfs/9p-local.c	2026-09-04 22:19:37.042054136 -0700
++++ b/hw/9pfs/9p-local.c	2026-09-04 22:20:24.975453904 -0700
+@@ -57,6 +57,35 @@
+     int mountfd;
+ } LocalData;
+ 
++#ifdef EMSCRIPTEN
++/*
++ * Resolve the whole path in one openat.
++ *
++ * The component walk below exists to stop a symlink in the export
++ * from escaping it: one O_NOFOLLOW openat per component. Under
++ * emscripten every one of those is a syscall proxied synchronously
++ * to the browser's main thread, so a lookup deep in a store path
++ * costs a dozen cross-thread round trips. The export here is a
++ * directory in emscripten's in-memory filesystem that nothing but
++ * this QEMU can see, so there is nothing to escape into, and the
++ * guest resolves symlinks itself (a 9p walk is one component per
++ * fid), so the last component is still opened O_NOFOLLOW and the
++ * rest is left to the filesystem's own lookup: one round trip.
++ */
++int local_open_nofollow(FsContext *fs_ctx, const char *path, int flags,
++                        mode_t mode)
++{
++    LocalData *data = fs_ctx->private;
++    int fd;
++
++    /* Only relative paths without consecutive slashes */
++    assert(*path && *path != '/');
++
++    fd = openat_file(data->mountfd, path, flags, mode);
++    assert(fd != data->mountfd);
++    return fd;
++}
++#else
+ int local_open_nofollow(FsContext *fs_ctx, const char *path, int flags,
+                         mode_t mode)
+ {
+@@ -93,6 +122,7 @@
+     assert(fd != data->mountfd);
+     return fd;
+ }
++#endif
+ 
+ int local_opendir_nofollow(FsContext *fs_ctx, const char *path)
+ {
+@@ -189,6 +219,22 @@
+     char *name = g_path_get_basename(fs_path->data);
+     int dirfd;
+ 
++#ifdef EMSCRIPTEN
++    /*
++     * A stat is the request a guest makes most, and the reasoning of
++     * local_open_nofollow applies: the models that keep credentials
++     * in the file itself have nothing more to fetch, so one fstatat
++     * from the mount resolves the path.
++     */
++    if (!(fs_ctx->export_flags & (V9FS_SM_MAPPED | V9FS_SM_MAPPED_FILE))) {
++        LocalData *data = fs_ctx->private;
++
++        err = qemu_fstatat(data->mountfd, fs_path->data, stbuf,
++                           AT_SYMLINK_NOFOLLOW);
++        goto out;
++    }
++#endif
++
+     dirfd = local_opendir_nofollow(fs_ctx, dirpath);
+     if (dirfd == -1) {
+         goto out;
