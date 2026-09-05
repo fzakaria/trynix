@@ -3,11 +3,12 @@
 // files, the parsed closure — so nothing here touches the network; the
 // preRun hook materialises it all into MEMFS and QEMU boots from there.
 //
-// xterm and xterm-pty are vendored UMD scripts: Terminal and openpty
-// are globals.
-/* global Terminal, openpty */
+// xterm-pty is a vendored UMD script, so openpty is a global; the
+// terminal itself comes from terminal.js, which prefers ghostty.
+/* global openpty */
 
 import { ensureDir, writeEntries } from "./store.js";
+import { openTerminal } from "./terminal.js";
 
 // Where the qemu artifacts live relative to the page; the worker
 // re-imports the main script by absolute URL.
@@ -26,12 +27,12 @@ const SNAPSHOT_FILE = `${PACK_DIR}/vm.state`;
 // long the page will watch for it.
 const READY_MARKER = "trynix: waiting for the store";
 const MOUNTED_MARKER = "trynix: welcome to the multiverse";
-const HANDSHAKE_POLL_MS = 500;
 
 // Ctrl-A c toggles the -nographic console between the guest and QEMU's
 // monitor, and each step needs a moment to land.
 const MONITOR_TOGGLE = "\x01c";
 const MONITOR_SETTLE_MS = 800;
+const TRANSCRIPT_LIMIT = 65536;
 const RESUME_RETRY_MS = 4000;
 const HANDSHAKE_TIMEOUT_MS = 180000;
 
@@ -67,16 +68,19 @@ export async function bootVM({
   manifest,
   terminalElement,
   snapshot = null,
+  onReady = null,
 }) {
-  const xterm = new Terminal();
-  xterm.open(terminalElement);
+  const ui = await openTerminal(terminalElement);
   const { master, slave } = openpty();
-  xterm.loadAddon(master);
+  ui.attach(master);
 
-  // Reachable from the console: the terminal, the pty pair, and (below)
-  // whatever QEMU wrote to stderr. Debugging a guest that will not talk
-  // is otherwise guesswork.
-  window.trynix = { xterm, master, slave };
+  // The console transcript, tapped before the terminal draws it.
+  const console_ = watchConsole(master);
+
+  // Reachable from the browser console: the terminal, the pty pair and
+  // which engine is drawing. Debugging a guest that will not talk is
+  // otherwise guesswork.
+  window.trynix = { ...ui, master, slave };
 
   // Resuming a snapshot skips the whole boot — BIOS, kernel, device
   // probe — and lands in a guest already spinning for the store share,
@@ -139,22 +143,52 @@ export async function bootVM({
   // makes the snapshot possible to take at all, since QEMU refuses to
   // migrate a VM with a virtfs export mounted.
   //
-  // A resumed guest is already parked on that read, so the newline can
-  // go immediately. A cold boot has to reach it first, and the marker
-  // it prints on the way is the signal — one that a resumed guest never
-  // shows, because it was printed into the snapshotting VM's console
-  // long before this page existed.
-  // The handshake runs in the background: the VM is running either way,
-  // and the caller should say so rather than waiting on a guest that
-  // might be slow, or wedged, or built from a different commit.
-  if (snapshot === null) {
-    // Cold boot: the marker is on its way, and one newline answers it.
-    watchFor(xterm, READY_MARKER, { send: "once" });
-  } else {
-    resume(xterm);
-  }
+  // Markers are matched against the console stream rather than against
+  // the terminal's screen. A screen scrolls, wraps and gets cleared,
+  // and reading one ties this to a particular terminal's buffer API;
+  // the stream is what the guest actually said.
+  //
+  // It runs in the background: the VM is running either way, and the
+  // caller should say so rather than waiting on a guest that might be
+  // slow, or wedged, or built from a different commit. The console
+  // stays veiled meanwhile, because what happens in between is
+  // plumbing — a kernel booting, or a monitor being told to continue.
+  const ready =
+    snapshot === null ? coldBoot(console_, master) : resume(console_, master);
+  ready.then(() => onReady?.());
 
-  return { xterm };
+  return {
+    terminal: ui.terminal,
+    engine: ui.engine,
+
+    // Add store paths to a VM that is already running.
+    //
+    // The share is an ordinary directory in the emscripten filesystem
+    // and 9p's local backend passes every lookup through to it, so
+    // writing a new store path after boot is enough for the guest to
+    // find it — no remount, no reboot. What the guest cannot discover
+    // on its own is that its PATH should grow, so the new directories
+    // are typed at the shell the way a person would.
+    addPaths(unpacked, binDirs) {
+      for (const { basename, entries } of unpacked) {
+        const path = `${STORE_DIR}/${basename}`;
+        if (Module.FS.analyzePath(path).exists) {
+          continue;
+        }
+        writeEntries(Module.FS, path, entries);
+      }
+      if (binDirs.length > 0) {
+        send(master, `export PATH="${binDirs.join(":")}:$PATH"\n`);
+      }
+    },
+  };
+}
+
+// A cold boot announces itself, takes one newline, and mounts.
+async function coldBoot(console_, master) {
+  await console_.waitFor(READY_MARKER);
+  sendLine(master);
+  await console_.waitFor(MOUNTED_MARKER);
 }
 
 // Bring a resumed guest back to life and hand it the handshake.
@@ -166,76 +200,79 @@ export async function bootVM({
 //
 // The order matters: the monitor conversation has to finish before the
 // guest is offered a newline, or the newlines land in the monitor and
-// print a prompt each. The screen is wiped afterwards so the reader
-// sees a console, not the plumbing.
-async function resume(xterm) {
+// leave a bare prompt each.
+async function resume(console_, master) {
   await delay(MONITOR_SETTLE_MS);
-  xterm.paste(MONITOR_TOGGLE);
+  send(master, MONITOR_TOGGLE);
   await delay(MONITOR_SETTLE_MS);
-  xterm.paste("cont\n");
+  send(master, "cont\n");
   await delay(MONITOR_SETTLE_MS);
-  xterm.paste(MONITOR_TOGGLE);
+  send(master, MONITOR_TOGGLE);
   await delay(MONITOR_SETTLE_MS);
-  xterm.clear();
 
   // The guest is parked on init's read, exactly where the snapshot
   // caught it, so one newline finishes the handshake. Retries are slow
-  // on purpose: every extra newline that arrives after the read is
+  // on purpose: every extra newline arriving after the read is
   // satisfied reaches the shell instead and leaves a bare prompt.
-  await watchFor(xterm, MOUNTED_MARKER, {
-    send: "repeatedly",
-    sendEveryMs: RESUME_RETRY_MS,
-  });
+  const retry = setInterval(() => sendLine(master), RESUME_RETRY_MS);
+  sendLine(master);
+  await console_.waitFor(MOUNTED_MARKER);
+  clearInterval(retry);
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Type a newline into the guest. xterm.js exposes no public `input`,
-// but `paste` raises the same onData the master addon listens on, which
-// is what carries terminal input into the pty.
-function sendLine(xterm) {
-  xterm.paste("\n");
+// Input goes in the way a keystroke does: the line discipline the
+// terminal addon feeds when someone types.
+function send(master, data) {
+  master.ldisc.writeFromLower(data);
 }
 
-// Watch the terminal until `marker` shows up.
-//
-// "once" answers the marker with a newline the moment it appears — the
-// cold-boot case, where the marker is the guest asking. "repeatedly"
-// offers a newline on every tick until the marker appears — the resume
-// case, where the marker is the guest confirming it heard one, and a
-// newline sent too early is simply lost.
-//
-// Both give up quietly after HANDSHAKE_TIMEOUT_MS: a guest this far off
-// script has a worse problem than a missing newline, and its console is
-// on screen for the reader to look at.
-function watchFor(xterm, marker, { send, sendEveryMs = 0 }) {
-  return new Promise((resolve) => {
-    const started = Date.now();
-    let lastSend = 0;
-    const timer = setInterval(() => {
-      const buffer = xterm.buffer.active;
-      let text = "";
-      for (let i = 0; i < buffer.length; i += 1) {
-        text += buffer.getLine(i)?.translateToString(true) ?? "";
-      }
+const sendLine = (master) => send(master, "\n");
 
-      if (text.includes(marker)) {
-        clearInterval(timer);
-        if (send === "once") {
-          sendLine(xterm);
-        }
-        resolve();
-        return;
-      }
+// Everything the guest has written, and a way to wait for a line in it.
+//
+// The transcript is capped: a guest that runs for an hour must not
+// grow this without bound, and every marker is answered early in the
+// run.
+function watchConsole(master) {
+  let transcript = "";
+  const waiters = [];
 
-      if (send === "repeatedly" && Date.now() - lastSend >= sendEveryMs) {
-        lastSend = Date.now();
-        sendLine(xterm);
+  master.onWrite(([data]) => {
+    transcript += data;
+    if (transcript.length > TRANSCRIPT_LIMIT) {
+      transcript = transcript.slice(-TRANSCRIPT_LIMIT);
+    }
+    for (const waiter of waiters.splice(0)) {
+      if (transcript.includes(waiter.marker)) {
+        waiter.resolve();
+      } else {
+        waiters.push(waiter);
       }
-      if (Date.now() - started > HANDSHAKE_TIMEOUT_MS) {
-        clearInterval(timer);
-        resolve();
-      }
-    }, HANDSHAKE_POLL_MS);
+    }
   });
+
+  return {
+    // Resolves when the marker has been seen, and gives up quietly
+    // after HANDSHAKE_TIMEOUT_MS: a guest this far off script has a
+    // worse problem than a missing newline, and unveiling its console
+    // is more useful than waiting forever.
+    waitFor(marker) {
+      if (transcript.includes(marker)) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const waiter = { marker, resolve };
+        waiters.push(waiter);
+        setTimeout(() => {
+          const at = waiters.indexOf(waiter);
+          if (at !== -1) {
+            waiters.splice(at, 1);
+          }
+          resolve();
+        }, HANDSHAKE_TIMEOUT_MS);
+      });
+    },
+  };
 }

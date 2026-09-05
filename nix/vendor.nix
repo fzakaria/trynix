@@ -24,6 +24,7 @@ let
   xzwasm = npm "xzwasm" "0.1.2" "18zc8z5hfy34cy3z7a5baz07hccl2y0y17y7qsxiy4wsw8v6ig7n";
   fzstd = npm "fzstd" "0.1.1" "1ia5gjcs9r9pfj4jqd3jac233a08qy9342fh27i7n1ir6hnyxljy";
   coi = npm "coi-serviceworker" "0.1.7" "05ln49m3gfi5x71azfbvmb0ww13ii2xmvkr3x46j45g2913nsm3a";
+  ghostty = npm "ghostty-web" "0.4.0" "0bl0p261xpw9aiwyja5r0xmiryq4bqlxi67fa9ganhvzdhxlggwh";
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
@@ -46,4 +47,11 @@ pkgs.runCommand "trynix-js-vendor" { } ''
 
   tar -xzf ${coi} -C unpack
   cp unpack/package/coi-serviceworker.min.js $out/coi-serviceworker.js
+  rm -r unpack/package
+
+  # libghostty-vt compiled to wasm, with xterm.js-shaped bindings. The
+  # wasm sits beside the module because that is where it looks for it.
+  tar -xzf ${ghostty} -C unpack
+  cp unpack/package/dist/ghostty-web.js $out/ghostty-web.js
+  cp unpack/package/ghostty-vt.wasm $out/ghostty-vt.wasm
 ''

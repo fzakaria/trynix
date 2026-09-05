@@ -153,13 +153,25 @@
 
       <div id="selection"></div>
       <p id="status" class="muted"></p>
-      <button type="button" id="boot-button" disabled>Boot</button>
+      <p class="actions">
+        <button type="button" id="boot-button" disabled>Boot</button>
+        <a href="#" id="reboot-link" class="muted" hidden>
+          or start over in a fresh VM
+        </a>
+      </p>
+      <p id="add-note" class="muted" hidden>
+        Packages added to a running VM go on the front of <code>PATH</code>, so the most recently
+        added one wins when two provide the same command.
+      </p>
     </section>
 
     <section id="boot" hidden>
       <h2>Boot</h2>
       <div id="boot-progress"></div>
-      <div id="terminal"></div>
+      <div id="console">
+        <div id="console-veil"><span class="spinner"></span><span id="console-note"></span></div>
+        <div id="terminal"></div>
+      </div>
     </section>
 
     <section>

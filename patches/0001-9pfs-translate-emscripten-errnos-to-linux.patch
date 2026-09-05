@@ -1,0 +1,80 @@
+9pfs: translate emscripten errnos to Linux for 9p2000.L
+
+9p2000.L carries Linux errno numbers on the wire. qemu-wasm declares
+emscripten to need no translation, alongside Linux, but emscripten's
+libc numbers its errnos after WASI. The two disagree on nearly every
+value, and destructively: emscripten's ENOENT is 44, which the guest
+reads as Linux's ECHRNG.
+
+The visible effect is that nothing can find a library by search. A
+dynamic loader walking LD_LIBRARY_PATH expects ENOENT from directories
+that do not hold the library and moves on; it gets "Error 44" instead,
+treats it as a real failure, and stops. Every package that finds its
+libraries by search rather than by RPATH fails to start, naming a
+library that `ls` will show and `cat` will read.
+
+--- a/hw/9pfs/9p-util.h
++++ b/hw/9pfs/9p-util.h
+@@ -62,8 +62,61 @@
+ 
+ /* Translates errno from host -> Linux if needed */
+ static inline int errno_to_dotl(int err) {
+-#if defined(CONFIG_LINUX) || defined(EMSCRIPTEN)
++#if defined(CONFIG_LINUX)
+     /* nothing to translate (Linux -> Linux) */
++#elif defined(EMSCRIPTEN)
++    /*
++     * emscripten's libc numbers its errnos after WASI, which agrees
++     * with Linux on almost nothing, so every value a filesystem
++     * operation can return is translated here. ENOENT matters most:
++     * untranslated it reaches the guest as ECHRNG, and a dynamic
++     * loader walking a search path treats that as a real failure and
++     * gives up instead of trying the next directory.
++     */
++    switch (err) {
++    case EPERM:         err = 1;   break;
++    case ENOENT:        err = 2;   break;
++    case ESRCH:         err = 3;   break;
++    case EINTR:         err = 4;   break;
++    case EIO:           err = 5;   break;
++    case ENXIO:         err = 6;   break;
++    case E2BIG:         err = 7;   break;
++    case ENOEXEC:       err = 8;   break;
++    case EBADF:         err = 9;   break;
++    case ECHILD:        err = 10;  break;
++    case EAGAIN:        err = 11;  break;
++    case ENOMEM:        err = 12;  break;
++    case EACCES:        err = 13;  break;
++    case EFAULT:        err = 14;  break;
++    case EBUSY:         err = 16;  break;
++    case EEXIST:        err = 17;  break;
++    case EXDEV:         err = 18;  break;
++    case ENODEV:        err = 19;  break;
++    case ENOTDIR:       err = 20;  break;
++    case EISDIR:        err = 21;  break;
++    case EINVAL:        err = 22;  break;
++    case ENFILE:        err = 23;  break;
++    case EMFILE:        err = 24;  break;
++    case ENOTTY:        err = 25;  break;
++    case ETXTBSY:       err = 26;  break;
++    case EFBIG:         err = 27;  break;
++    case ENOSPC:        err = 28;  break;
++    case ESPIPE:        err = 29;  break;
++    case EROFS:         err = 30;  break;
++    case EMLINK:        err = 31;  break;
++    case EPIPE:         err = 32;  break;
++    case EDOM:          err = 33;  break;
++    case ERANGE:        err = 34;  break;
++    case ENAMETOOLONG:  err = 36;  break;
++    case ENOLCK:        err = 37;  break;
++    case ENOSYS:        err = 38;  break;
++    case ENOTEMPTY:     err = 39;  break;
++    case ELOOP:         err = 40;  break;
++    case EOVERFLOW:     err = 75;  break;
++    case ESTALE:        err = 116; break;
++    case EDQUOT:        err = 122; break;
++    default:                       break;
++    }
+ #elif defined(CONFIG_DARWIN)
+     /*
+      * translation mandatory for macOS hosts

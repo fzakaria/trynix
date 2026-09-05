@@ -46,6 +46,10 @@ const bootButton = document.getElementById("boot-button");
 const bootSection = document.getElementById("boot");
 const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
+const consoleVeil = document.getElementById("console-veil");
+const consoleNote = document.getElementById("console-note");
+const rebootLink = document.getElementById("reboot-link");
+const addNote = document.getElementById("add-note");
 
 // The selection: digest -> { digest, label, attr, version, storePath }.
 // A package chosen any of the three ways lands here in the same shape,
@@ -267,8 +271,8 @@ function buildManifest(closure, rootDigests, unpacked) {
 
 // The union of every selected root's runtime closure, in one map. Roots
 // that share a glibc fetch it once.
-async function walkRoots(digests, onProgress) {
-  const closure = new Map();
+async function walkRoots(digests, onProgress, known = new Map()) {
+  const closure = new Map(known);
   for (const digest of digests) {
     const one = await walkClosure(
       digest,
@@ -278,6 +282,10 @@ async function walkRoots(digests, onProgress) {
     for (const [key, info] of one) {
       closure.set(key, info);
     }
+  }
+  // Only what this walk added; the caller already has the rest.
+  for (const key of known.keys()) {
+    closure.delete(key);
   }
   return closure;
 }
@@ -320,6 +328,10 @@ function renderClosure(closure) {
 // second boot restarts the page instead, at a URL that describes the
 // new selection and asks for it to start straight away.
 let vmStarted = false;
+let vm = null;
+// Everything the running guest already has, so a later addition only
+// fetches what is new.
+let mounted = new Map();
 
 function reboot() {
   const entries = [...selection.values()];
@@ -342,6 +354,8 @@ function reboot() {
 async function boot() {
   bootSection.hidden = false;
   bootButton.disabled = true;
+  consoleVeil.hidden = false;
+  consoleNote.textContent = "fetching…";
   const panel = new ProgressPanel(bootProgress);
 
   const walkRow = panel.row("closure walk");
@@ -436,17 +450,25 @@ async function boot() {
       snapshotPromise,
     ]);
 
-    await bootVM({
+    consoleNote.textContent =
+      snapshot === null ? "booting the guest…" : "resuming the guest…";
+    vm = await bootVM({
       wasmBinary: wasmBytes.buffer,
       guestFiles,
       closure: closurePaths,
       manifest: buildManifest(closure, rootDigests, closurePaths),
       terminalElement,
       snapshot,
+      onReady: () => {
+        consoleVeil.hidden = true;
+      },
     });
     vmRow.done("running");
     vmStarted = true;
-    bootButton.textContent = "Reboot";
+    mounted = closure;
+    bootButton.textContent = "Add to the running VM";
+    rebootLink.hidden = false;
+    addNote.hidden = false;
     bootButton.disabled = false;
   } catch (err) {
     vmRow.fail(String(err));
@@ -457,11 +479,75 @@ async function boot() {
 
 bootButton.addEventListener("click", () => {
   if (vmStarted) {
-    reboot();
+    addToRunningVM();
     return;
   }
   boot();
 });
+
+rebootLink.addEventListener("click", (event) => {
+  event.preventDefault();
+  reboot();
+});
+
+// Add whatever is selected to the guest that is already running.
+//
+// Nothing is rebooted: the share is a directory in the emscripten
+// filesystem, and 9p passes the guest's lookups straight through to
+// it, so a store path written now is a store path the guest can run a
+// moment later. Only paths it does not already have are fetched.
+async function addToRunningVM() {
+  bootButton.disabled = true;
+  const panel = new ProgressPanel(bootProgress);
+  const row = panel.row("adding");
+
+  try {
+    const rootDigests = [...selection.keys()];
+    const fresh = await walkRoots(
+      rootDigests,
+      (n) => row.note(`${n} narinfos`),
+      mounted,
+    );
+    if (fresh.size === 0) {
+      row.done("already there");
+      bootButton.disabled = false;
+      return;
+    }
+
+    const infos = [...fresh.values()];
+    row.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
+    const unpacked = await mapConcurrent(
+      infos,
+      NAR_CONCURRENCY,
+      async (info) => ({
+        basename: basenameOf(info),
+        entries: await fetchNar(info, (n) => row.add(n)),
+      }),
+    );
+
+    const binDirs = rootDigests
+      .map((digest) => fresh.get(digest) ?? mounted.get(digest))
+      .filter((info) => info !== undefined)
+      .map((info) => basenameOf(info))
+      .filter((basename) =>
+        unpacked
+          .find((p) => p.basename === basename)
+          ?.entries.some((e) => e.path === "bin" && e.type === "directory"),
+      )
+      .map((basename) => `/nix/store/${basename}/bin`);
+
+    vm.addPaths(unpacked, binDirs);
+    for (const [digest, info] of fresh) {
+      mounted.set(digest, info);
+    }
+    row.done(`${fresh.size} paths added`);
+    renderClosure(mounted);
+  } catch (err) {
+    row.fail(String(err));
+  } finally {
+    bootButton.disabled = false;
+  }
+}
 
 // ---------- restoring a shared link ----------
 
@@ -493,6 +579,30 @@ async function restore({ pkgs, paths }) {
     }
     select(entryOf(hit));
   }
+}
+
+// Warm the cache while the reader is still choosing. The engine, the
+// guest image and the snapshot are the same bytes for every boot and
+// none of them depend on the selection, so they can be on their way
+// before anything is picked. A second visit has them already, and the
+// boot's own fetches then find everything in the cache and finish
+// instantly. Failures are ignored: this is an optimisation, and the
+// boot does its own fetching either way.
+function prefetch() {
+  const warm = (url) => fetchWithProgress(url).catch(() => {});
+  warm(QEMU_WASM);
+  warm(SNAPSHOT_URL);
+  for (const name of GUEST_FILES) {
+    warm(`guest/${name}`);
+  }
+}
+
+// requestIdleCallback keeps this off the critical path on a slow
+// device; not every browser has it.
+if (typeof requestIdleCallback === "function") {
+  requestIdleCallback(prefetch);
+} else {
+  setTimeout(prefetch, 0);
 }
 
 const initial = readUrl();

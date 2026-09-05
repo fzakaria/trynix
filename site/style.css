@@ -325,6 +325,11 @@ code {
   cursor: pointer;
   font-size: 13px;
 }
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
 #boot-button {
   padding: 0.5rem 1.4rem;
   font: inherit;
@@ -369,6 +374,48 @@ code {
 .progress-row .bytes {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* The console, and the veil over it. Starting a guest means talking to
+   QEMU's monitor on the same console the guest uses, and that
+   conversation is plumbing, not output: the veil covers it until the
+   shell is ready. */
+#console {
+  position: relative;
+}
+#console-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  border-radius: 6px;
+  background: #000;
+  color: #9a9a9a;
+  font-size: 14px;
+}
+#console-veil[hidden] {
+  display: none;
+}
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #444;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 /* The serial console. xterm draws its own colors; the frame stays dark
