@@ -1,16 +1,16 @@
 {
   "comment": "The qemu-wasm engine and the migration snapshot, built out of band (docs/engine.md) and published by tools/publish-engine.py under a dated release tag that is never reused, so the pins of any commit keep resolving. Pinned by hash so `nix build .#site` produces the whole deployable tree, engine included.",
   "baseUrl": "https://github.com/fzakaria/trynix/releases/download",
-  "tag": "engine-20260905-1727",
+  "tag": "engine-20260905-1950",
   "files": {
     "out.js": "sha256-1MFebAMoh+1/KAegZTmQwygokVHvG4EC3U0+AAufK7A=",
     "qemu-system-x86_64.wasm": "sha256-qVqK9r6wjakkUzImy/u8wwDWbGu9GgVA7jV9b1KYMHY=",
     "qemu-system-x86_64.worker.js": "sha256-jvqwKpy17mPO0i6YU7znTLuJXRWl+z1ROf74VcUPYuo=",
-    "vm.state": "sha256-tSvUe/1tTv/TEBT/U1bejs1ZBbawoTwEF1ZtJ7vBNWE="
+    "vm.state": "sha256-+7BDDALf0Es+Jyrvzykdiga+5orkItsuKC0awilEXy0="
   },
   "guestComment": "The guest image vm.state was captured from. A snapshot holds that kernel and initramfs in its RAM and only resumes on the machine described in machine.json, so a guest built from different sources will not resume against it; checks.snapshot fails when these drift. Retake the snapshot (docs/engine.md) and update these together.",
   "guest": {
-    "bzImage": "sha256-4Gs6O19DNSmV8EU6D06npomMOZJHlVD7T4TPaKVDIks=",
+    "bzImage": "sha256-ZDH3UzBCzX8xkb7AeaDliRiLZ5FS8r11UEfuKG/0yYo=",
     "initramfs.cpio.gz": "sha256-gqvbh9FBnJlsfjgTSV38SvB1aySPYZmCaPp8ToO/65w=",
     "machine.json": "sha256-nc03lmOFIX52kttNxiwMWZmPG/eRZRYBaESdXJgmzVY="
   }
