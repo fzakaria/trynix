@@ -14,17 +14,16 @@
 let
   pins = builtins.fromJSON (builtins.readFile ./engine-pins.json);
 
-  # builtins.fetchurl rather than pkgs.fetchurl, because the snapshot
-  # is a RAM image of a guest whose filesystem is the nix store: it is
-  # full of literal /nix/store strings, and a fixed-output derivation
-  # refuses to be built when the scanner finds those ("is not allowed
-  # to refer to other store paths"). A builtin fetch stores the file
-  # without scanning it. Pure: the hash is pinned.
+  # The snapshot is a RAM image of a guest whose filesystem is the nix
+  # store, so it is full of store paths and needs the reference scan
+  # turned off; fetch-artifact.nix explains why.
+  fetchArtifact = import ./fetch-artifact.nix { inherit pkgs; };
+
   fetch =
     name: hash:
-    builtins.fetchurl {
+    fetchArtifact {
       url = "${pins.baseUrl}/${pins.tag}/${name}";
-      sha256 = hash;
+      inherit hash;
     };
 in
 pkgs.runCommand "trynix-engine" { } ''

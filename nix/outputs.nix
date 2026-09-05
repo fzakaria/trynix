@@ -14,12 +14,11 @@ let
   tag = "data-20260903";
   system = "x86_64-linux";
 
-  # A builtin fetch, not pkgs.fetchurl: this file is an index *of* store
-  # paths, so nix's reference scanner sees thousands of them and refuses
-  # to build a fixed-output derivation that mentions them.
-  artifact = builtins.fetchurl {
+  # An index *of* store paths, so the reference scan has to be off;
+  # fetch-artifact.nix explains why.
+  artifact = import ./fetch-artifact.nix { inherit pkgs; } {
     url = "https://github.com/fzakaria/nixpkgs-multiverse/releases/download/${tag}/outs-${system}.json";
-    sha256 = "10cdq37w3mi1v0bgdihld6j114n25c9wsmqw51qzibqzrvjnx3y7";
+    hash = "sha256-x49u5c4fr/hxKBxXzRMrwpIQpGkUxvYW2CHWwc/AjYE=";
   };
 in
 pkgs.runCommand "trynix-outputs" { nativeBuildInputs = [ pkgs.python3 ]; } ''

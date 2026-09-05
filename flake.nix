@@ -142,6 +142,32 @@
             touch $out
           '';
 
+          # The snapshot resumes a guest that was captured from one
+          # particular kernel and initramfs, and holds them in its RAM.
+          # A guest built from different sources cannot be resumed
+          # against it — the VM would come back describing files that
+          # are not the ones being served — so the pins record what it
+          # was taken from and this fails when they drift.
+          snapshot =
+            let
+              pins = (builtins.fromJSON (builtins.readFile ./nix/engine-pins.json)).guest;
+              guest = self.packages.${system}.guest;
+              matches = pkgs.lib.mapAttrsToList (name: hash: ''
+                echo "${hash}  ${guest}/${name}" |
+                  sed "s|sha256-|sha256-|" > expected
+                got="$(nix-hash --type sha256 --sri --flat ${guest}/${name})"
+                if [ "$got" != "${hash}" ]; then
+                  echo "${name} is $got, but the snapshot was taken against ${hash}"
+                  echo "retake the snapshot (docs/engine.md) and update nix/engine-pins.json"
+                  exit 1
+                fi
+              '') pins;
+            in
+            pkgs.runCommand "trynix-snapshot-check" { nativeBuildInputs = [ pkgs.nix ]; } ''
+              ${pkgs.lib.concatStringsSep "\n" matches}
+              touch $out
+            '';
+
           # the node test suite: the narinfo parser against a fixture,
           # offline
           tests = pkgs.runCommand "trynix-tests" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
