@@ -79,13 +79,20 @@ a {
   color: var(--accent);
 }
 
-/* The two claims the intro rests on: what the page boots, and where it
-   runs. A wavy accent underline marks them without a callout box. */
-.squiggle {
+/* The intro's opening claim, carried by weight alone so it does not add
+   a decoration to a paragraph that is already full of links. */
+.lede {
   font-weight: 600;
-  text-decoration: underline wavy var(--accent);
+}
+
+/* The closing claim. A dotted accent rule, offset tight enough that the
+   line box does not grow. Dotted rather than solid because every link in
+   this paragraph is a solid accent underline, and a solid rule under
+   body-coloured text reads as a link that lost its colour. */
+.claim {
+  text-decoration: underline dotted var(--accent);
   text-decoration-thickness: 2px;
-  text-underline-offset: 5px;
+  text-underline-offset: 3px;
 }
 code {
   font:
