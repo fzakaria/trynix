@@ -56,16 +56,27 @@ function openXterm(element) {
 // leaves a stray prompt, so it is swallowed when there is something to
 // copy — and passed through untouched when there is not, because that
 // is how a shell is interrupted.
-function handleCopyKey(terminal) {
+//
+// The two engines read the return value in opposite directions, which
+// is worth stating plainly because getting it backwards swallows every
+// keystroke and leaves a terminal that draws but cannot be typed at:
+//
+//   xterm.js   true = the terminal should go on handling this key
+//   ghostty    true = the handler dealt with it, stop (preventDefault)
+//
+// The same intent therefore needs the opposite answer from each.
+function handleCopyKey(terminal, engine) {
+  const handledMeans = engine === "ghostty";
+
   terminal.attachCustomKeyEventHandler?.((event) => {
     const isCopy =
       event.key === "c" && (event.ctrlKey || event.metaKey) && !event.altKey;
     if (event.type === "keydown" && isCopy && terminal.hasSelection?.()) {
       navigator.clipboard?.writeText(terminal.getSelection()).catch(() => {});
       terminal.clearSelection?.();
-      return false;
+      return handledMeans;
     }
-    return true;
+    return !handledMeans;
   });
 }
 
@@ -80,7 +91,7 @@ export async function openTerminal(element) {
     opened = openXterm(element);
   }
 
-  handleCopyKey(opened.terminal);
+  handleCopyKey(opened.terminal, opened.engine);
 
   return {
     ...opened,
