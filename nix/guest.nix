@@ -83,6 +83,13 @@ let
     '';
   };
 
+  # Forces the kernel to reseed after a resume; nix/guest/reseed.c says
+  # why that cannot be left to chance.
+  reseed = pkgs.pkgsStatic.runCommandCC "trynix-guest-reseed" { } ''
+    mkdir -p $out/bin
+    $CC -O2 -static -o $out/bin/reseed ${./guest/reseed.c}
+  '';
+
   # The initramfs: static busybox, the init script, and the mount points
   # init expects. Compressed with gzip because the kernel fragment
   # enables RD_GZIP.
@@ -96,6 +103,8 @@ let
       ''
         mkdir -p root/bin root/proc root/sys root/dev root/share root/tmp root/etc
         cp -a ${pkgs.pkgsStatic.busybox}/bin/. root/bin/
+        chmod -R u+w root/bin
+        install -m755 ${reseed}/bin/reseed root/bin/reseed
         install -m755 ${./guest/init} root/init
 
         # Every step below exists to make the archive byte-identical on

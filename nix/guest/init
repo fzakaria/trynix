@@ -56,6 +56,14 @@ read -r _handshake
 # the paths and links the page adds later are names the guest has
 # never looked up, and 9p drops negative dentries in this mode, so a
 # name that was missing once is looked up again.
+# Throw away the randomness this snapshot was frozen with, before
+# anything can consume it. Every visitor resumes these same bytes, and
+# only a reseed pulls fresh ones from the CPU instruction QEMU answers
+# out of the browser. nix/guest/reseed.c has the detail; it is the first
+# thing done after the handshake so that nothing -- not the shell's
+# $RANDOM, not a uuid, not a key -- is generated from shared state.
+reseed || echo "trynix: warning: could not reseed the random pool"
+
 mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose store0 /share
 ln -s /share/nix /nix
 if [ -f /share/manifest ]; then
