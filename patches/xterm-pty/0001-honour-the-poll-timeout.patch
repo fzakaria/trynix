@@ -1,6 +1,6 @@
 --- a/emscripten-pty.js	2026-09-05 07:57:06.227159575 -0700
-+++ b3/emscripten-pty.js	2026-09-05 08:23:33.616894561 -0700
-@@ -78,6 +78,24 @@
++++ b4/emscripten-pty.js	2026-09-05 10:18:38.564690556 -0700
+@@ -78,6 +78,21 @@
  
      $PTY_pollTimeout: 0,
  
@@ -16,16 +16,68 @@
 +    // one that becomes ready while the terminal is quiet is only noticed
 +    // once poll returns. Returning early from poll is always allowed, so
 +    // a cap costs nothing but keeps such an event from waiting on a
-+    // keystroke that may never come. 10 ms rather than something larger
-+    // because the boot handshake runs through this loop: at 50 ms it
-+    // cost about 0.2 s of the boot, and at 10 ms it costs nothing
-+    // measurable while the idle tab stays near a third of a core.
++    // keystroke that may never come. It also bounds the wait below.
 +    $PTY_maxPollSleep: 10,
 +
      $PTY_askToWaitAgain__deps: ['$PTY_pollTimeout', '$FS'],
      $PTY_askToWaitAgain: (timeout) => {
          PTY_pollTimeout = timeout;
-@@ -206,16 +224,22 @@
+@@ -85,7 +100,7 @@
+     },
+ 
+     $PTY_waitForReadableWithCallback__deps: ['$PTY', '$PTY_pollTimeout'],
+-    $PTY_waitForReadableWithCallback: (callback) => {
++    $PTY_waitForReadableWithCallback: (callback, boundMs) => {
+         if (PTY_pollTimeout === 0) {
+             return callback(PTY.readable ? 0 /* ready */ : 2 /* timeout */);
+         }
+@@ -133,14 +148,26 @@
+     $PTY_atomicIndex: 0,
+ 
+     $PTY_waitForReadableWithAtomic__deps: ['$PTY_waitForReadableWithAtomicImpl', '$PTY_atomicIndex', 'malloc'],
+-    $PTY_waitForReadableWithAtomic: (callback) => {
++    $PTY_waitForReadableWithAtomic: (callback, boundMs) => {
+         if (!PTY_atomicIndex) {
+             PTY_atomicIndex = _malloc(4) >> 2;
+         }
+         HEAP32[PTY_atomicIndex] = -1;
+         PTY_waitForReadableWithAtomicImpl(PTY_atomicIndex);
+-        Atomics.wait(HEAP32, PTY_atomicIndex, -1);
+-        callback(HEAP32[PTY_atomicIndex]);
++        // The thread that answers this is the browser's main thread, and
++        // it may be busy. Waiting on it without a bound parks the caller
++        // for as long as that thread takes, which is how QEMU's main
++        // loop came to stop dead while the page unpacked a closure. A
++        // caller that can retry passes one; waking early is safe for it,
++        // and an answer that arrives afterwards lands on the next wait
++        // as a spurious wake, costing one extra round and nothing more.
++        //
++        // fd_read passes none on purpose: it reads a timeout as end of
++        // input, so an early wake there would close the console.
++        const woke = boundMs === undefined
++            ? Atomics.wait(HEAP32, PTY_atomicIndex, -1)
++            : Atomics.wait(HEAP32, PTY_atomicIndex, -1, boundMs);
++        callback(woke === 'timed-out' ? 2 /* timeout */ : HEAP32[PTY_atomicIndex]);
+     },
+ #endif
+ 
+@@ -181,7 +208,7 @@
+     fd_read__async: true,
+ #endif
+ 
+-    $PTY_wrapPoll__deps: ['$PTY_waitForReadable', '$PTY_handleSleep'],
++    $PTY_wrapPoll__deps: ['$PTY_waitForReadable', '$PTY_handleSleep', '$PTY_maxPollSleep'],
+     $PTY_wrapPoll: (impl) => PTY_handleSleep((wakeUp) => {
+         let result = impl();
+         // Did this call return our variant of EAGAIN?
+@@ -200,22 +227,28 @@
+                         wakeUp(0);
+                         break;
+                 }
+-            });
++            }, PTY_maxPollSleep);
+         } else {
+             wakeUp(result);
          }
      }),
  
@@ -54,7 +106,7 @@
  #if !PROXY_TO_PTHREAD
      __syscall_poll__async: true,
  #endif
-@@ -223,7 +247,7 @@
+@@ -223,7 +256,7 @@
  
  // Override default TTY ops to use our PTY.
  // Doing this at compile-time reduces amount of generated unused JS.
@@ -63,7 +115,7 @@
  
  let outputTtyOps = {
      put_char: () => {
-@@ -295,7 +319,10 @@
+@@ -295,7 +328,10 @@
  
      poll: (stream, timeout) => {
          if (!PTY.readable && timeout) {

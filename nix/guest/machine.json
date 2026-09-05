@@ -1,5 +1,5 @@
 {
-  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
+  "comment": "The virtual machine, as both the page (site/js/boot.js) and the snapshot tool (tools/make-snapshot.py) start it. A migration stream only resumes on a machine that matches the one it was taken from, device for device, so this is the one place the machine is described. {pack} is the -L directory holding the kernel, initramfs and BIOS blobs, {share} the directory exported over 9p, {ram} the guest RAM. The 9p device is spelled out rather than left as -virtfs sugar so ioeventfd can be turned off. With it on, a request is handed to QEMU's main loop through a pipe; that loop now sleeps on its own deadline rather than spinning, so every request would wait on it. Off, the handler runs on the vCPU thread inside the kick that raised it, and the main loop is free to sleep. Change anything here and the snapshot has to be retaken (docs/engine.md); the pins carry this file's hash so checks.snapshot notices.",
   "ram": "512M",
   "args": [
     "-nographic",
@@ -15,8 +15,10 @@
     "{pack}/bzImage",
     "-initrd",
     "{pack}/initramfs.cpio.gz",
-    "-virtfs",
-    "local,path={share},mount_tag=store0,security_model=none,id=store0",
+    "-fsdev",
+    "local,id=store0,path={share},security_model=none",
+    "-device",
+    "virtio-9p-pci,fsdev=store0,mount_tag=store0,ioeventfd=off",
     "-append",
     "console=ttyS0 rdinit=/init loglevel=4 mitigations=off"
   ]
