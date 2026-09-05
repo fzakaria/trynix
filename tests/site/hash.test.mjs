@@ -27,3 +27,21 @@ test("a narinfo hash field names its algorithm", () => {
 test("a character outside nix's alphabet is rejected", () => {
   assert.throws(() => decodeNixBase32("e".repeat(52), 32));
 });
+
+// Tests the encodings other caches write. cache.nixos.org writes nix
+// base32; cachix writes FileHash in hex, and nix itself will also emit
+// base64. Each is told apart by its length, the way nix does it, and
+// each has to decode to the same bytes.
+const HELLO_BASE64 = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=";
+
+test("a hex hash, as cachix writes FileHash, decodes", () => {
+  assert.equal(hex(parseHash(`sha256:${HELLO_HEX}`).bytes), HELLO_HEX);
+});
+
+test("a base64 hash decodes", () => {
+  assert.equal(hex(parseHash(`sha256:${HELLO_BASE64}`).bytes), HELLO_HEX);
+});
+
+test("a hash of no recognised length is rejected", () => {
+  assert.throws(() => parseHash("sha256:abc"));
+});
