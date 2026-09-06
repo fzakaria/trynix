@@ -399,6 +399,18 @@ function reboot() {
 // their way. When the last one is in, QEMU is released and the
 // terminal goes live.
 async function boot() {
+  // The engine is threaded, and its threads need SharedArrayBuffer,
+  // which a browser only hands to a cross-origin isolated page. Say so
+  // before anything downloads: without this the closure is fetched and
+  // the engine instantiated, and the run dies seconds later on a
+  // missing global, with nothing on the page to say why.
+  if (!globalThis.crossOriginIsolated) {
+    log("not cross-origin isolated: SharedArrayBuffer is unavailable");
+    status.textContent =
+      "not cross-origin isolated, so SharedArrayBuffer is missing and the engine cannot start — reload once, and if that does not help the browser is blocking the service worker that sets the headers";
+    return;
+  }
+
   bootSection.hidden = false;
   bootButton.disabled = true;
   consoleVeil.hidden = false;

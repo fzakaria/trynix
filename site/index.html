@@ -35,7 +35,20 @@
 
     <!-- GitHub Pages cannot set COOP/COEP response headers; this service
          worker injects them so SharedArrayBuffer (qemu's pthreads) works.
-         A server that sends the real headers makes it a no-op. -->
+         A server that sends the real headers makes it a no-op.
+
+         Left to itself the shim asks for COEP: credentialless on every
+         browser that is neither Chrome nor Firefox — which in practice
+         means Safari, the one engine that has never implemented that
+         value. Safari read a COEP it did not recognise, stayed
+         un-isolated, and every boot there died on "Can't find variable:
+         SharedArrayBuffer". require-corp is what Chrome and Firefox
+         already get from this shim, and the worker stamps
+         Cross-Origin-Resource-Policy on every response it proxies, so
+         the cross-origin narinfos and NARs still load under it. -->
+    <script>
+      window.coi = { coepCredentialless: () => false };
+    </script>
     <script src="coi-serviceworker.js"></script>
 
     <!-- Vendored UMD bundles: openpty, xzwasm, fzstd globals. xterm-pty
