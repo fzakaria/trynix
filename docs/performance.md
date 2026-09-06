@@ -62,15 +62,15 @@ agree about the clock as much as about the devices. `sleep 10` now takes
 
 Share of non-sleeping vCPU-worker time, on a healthy guest:
 
-| | jj cold | jj warm | hot loop |
-|---|---|---|---|
-| TCI interpreter | 46.3% | 41.7% | 1.0% |
-| translation, `tb_gen_code` | 25.9% | 0.3% | 0.0% |
-| generated code | 10.4% | 25.1% | 56.3% |
-| `ffi_call_js` | 7.1% | 7.2% | 0.1% |
-| C dispatch loop | 6.6% | 12.7% | 29.7% |
-| `helper_lookup_tb_ptr` | 4.5% | 7.0% | 10.3% |
-| `_emscripten_get_now` | 0.17% | 0.14% | 0.05% |
+|                            | jj cold | jj warm | hot loop |
+| -------------------------- | ------- | ------- | -------- |
+| TCI interpreter            | 46.3%   | 41.7%   | 1.0%     |
+| translation, `tb_gen_code` | 25.9%   | 0.3%    | 0.0%     |
+| generated code             | 10.4%   | 25.1%   | 56.3%    |
+| `ffi_call_js`              | 7.1%    | 7.2%    | 0.1%     |
+| C dispatch loop            | 6.6%    | 12.7%   | 29.7%    |
+| `helper_lookup_tb_ptr`     | 4.5%    | 7.0%    | 10.3%    |
+| `_emscripten_get_now`      | 0.17%   | 0.14%   | 0.05%    |
 
 Running a program once and running a hot loop are different regimes, and
 that difference is most of this table. An earlier version of this
@@ -107,12 +107,12 @@ n, shared: true})` with initial equal to maximum. So it is 2.41 GB of
 wasm address space, fixed when the engine is built, and the browser has
 to hand over all of it the moment the engine instantiates.
 
-| | |
-|---|---|
-| linear memory | 2.41 GB |
-| guest RAM | 512 MiB |
+|                                 |         |
+| ------------------------------- | ------- |
+| linear memory                   | 2.41 GB |
+| guest RAM                       | 512 MiB |
 | TCG code buffer (`tb-size=500`) | 500 MiB |
-| left for the unpacked closure | ~1.2 GB |
+| left for the unpacked closure   | ~1.2 GB |
 
 That budget is on the **unpacked** closure, not the download: NARs are
 decompressed into the emscripten filesystem, so a 200 MB download can
@@ -137,7 +137,7 @@ that matters most, since it asks every phone for more.
 Two better moves than raising it:
 
 - The 500 MiB code buffer is committed and zeroed at boot, so it is
-  resident on every device. A smaller one frees closure budget *and*
+  resident on every device. A smaller one frees closure budget _and_
   cuts real memory use, helping small devices instead of hurting them.
   The cost is more translation-cache flushes, visible as
   `tb_flush_count`.
