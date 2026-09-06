@@ -5,14 +5,14 @@ emscripten. Three artifacts make up the engine:
 
 ```
 out.js                        the ES6 module the page imports
-qemu-system-x86_64.wasm       ~13 MB, stripped of its DWARF
+qemu-system-x86_64.wasm       41 MB stripped of its DWARF, 14 MB gzipped
 qemu-system-x86_64.worker.js  the pthread bootstrap
 ```
 
 A fourth file rides along in the same release:
 
 ```
-vm.state                      the migration snapshot, ~35 MB
+vm.state                      the migration snapshot, 37 MB (11 gzipped)
 ```
 
 None of them are in this repository and none are built by CI. The
@@ -21,7 +21,7 @@ minutes; the snapshot needs a _native_ build of the same fork. They
 change only when the qemu-wasm pin, the patches, or the guest image
 move, so they are built by hand with the tools below and published as
 a release, which the site build fetches by hash into `qemu/`
-(nix/engine.nix).
+([nix/engine.nix](../nix/engine.nix)).
 
 Every tool is a flake app. Each needs a checkout of [qemu-wasm] at the
 pinned commit (`0ef7b4e2`, a fork of QEMU 8.2.0) and docker on the
@@ -44,7 +44,8 @@ The patches matter more than the build flags:
 
 - `0001-9pfs-translate-emscripten-errnos-to-linux.patch` makes 9p
   report Linux errno numbers instead of emscripten's WASI ones.
-  Without it no package can find a library by search (docs/design.md).
+  Without it no package can find a library by search
+  ([design.md](./design.md#where-emscripten-and-the-guest-disagree)).
 - `0002-9p-local-resolve-a-path-in-one-syscall-under-emscripten.patch`
   opens and stats a path in one syscall instead of one per component.
   Under emscripten each syscall is a round trip to the browser's main
@@ -121,8 +122,8 @@ file (Cloudflare Pages, Netlify). It is inert on GitHub Pages, and the
 shim registers nothing once the page is already cross-origin isolated,
 so the tag stays in `index.html` as the fallback for both.
 
-What the move is worth, measured on localhost with the 13 MB engine
-booting hello, page load to the guest prompt:
+What the move is worth, measured on localhost booting hello, page
+load to the guest prompt:
 
     coi shim        3.42 s cold    2.25 s warm
     real headers    2.95 s cold    2.28 s warm

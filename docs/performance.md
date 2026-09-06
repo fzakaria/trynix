@@ -34,7 +34,8 @@ The machine had no entropy to offer. `RANDOM_TRUST_CPU` was set but
 never writes a seed on an `-kernel` boot, and the kernel had no
 virtio-rng driver. It now has `+rdrand` and a `virtio-rng-pci` device,
 and init forces a reseed before anything can consume randomness
-(nix/guest/reseed.c explains why that cannot be left to timing).
+([nix/guest/reseed.c](../nix/guest/reseed.c) explains why that cannot
+be left to timing).
 
 A cold `jj --version` is now about 2.5 s of real time and a warm one
 about 1 s. What remains is roughly 0.1 s of store reads, and the rest is
@@ -53,10 +54,11 @@ no cycle counter and QEMU falls back to the monotonic clock —
 nanoseconds, so 1 GHz. QEMU's own comment on that fallback reads "This
 will be totally wrong, but hopefully better than nothing."
 
-`patches/0003` makes the snapshotting build count the same clock, and
-`build-native-qemu.sh` defines it. Both ends of a migration have to
-agree about the clock as much as about the devices. `sleep 10` now takes
-10.15 s and the guest reports 1000 MHz, which is what it gets.
+[`patches/0003`][0003] makes the snapshotting build count the same
+clock, and `build-native-qemu.sh` defines it. Both ends of a migration
+have to agree about the clock as much as about the devices. `sleep 10`
+now takes 10.15 s and the guest reports 1000 MHz, which is what it
+gets.
 
 ## What the profile actually says
 
@@ -160,7 +162,7 @@ Each was measured, and each was worse than or the same as doing nothing.
   command wanted and wall time does not move.
 - **Blaming the page-fault path.** The counters above.
 - **Compressing the snapshot.** GitHub Pages already serves it gzipped,
-  30 MB down to 7.4 MB.
+  37 MB down to 11 MB.
 - **Moving to a host that sets COOP/COEP headers** to keep the browser's
   compiled-WebAssembly cache. Compiling the engine takes 56 ms warm or
   cold; the shim costs about half a second on a first-ever visit and
@@ -225,3 +227,5 @@ already compiled, so it speeds hot code and does little for a first run.
 boots the site repeatedly in a fresh profile and fails if a guest does
 not reach a shell. CI runs it on every push, because two hangs shipped
 while `nix flake check` was green.
+
+[0003]: ../patches/0003-count-the-clock-the-resumer-will-count.patch

@@ -25,7 +25,7 @@ The pieces already exist in sibling projects; trynix is the glue:
    more store-path digests, from static index shards. A package split
    across outputs gets its `bin` sibling too, from a digest-keyed map
    the site build shards out of a multiverse release artifact
-   (nix/outputs.nix).
+   ([nix/outputs.nix](../nix/outputs.nix)).
 2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the
    full runtime closure, and verify every signature against the
    configured keys. The cache serves `access-control-allow-origin: *`,
@@ -89,12 +89,12 @@ same path, with `/nix` a symlink into it:
 `/share/bin` is a farm of symlinks, one per program in the closure, and
 the one directory the guest keeps on PATH. What the reader selected is
 linked first and wins a name collision; the rest of the closure only
-fills names still free, so a dependency never shadows a selection. It
-is what makes adding a package to a running VM silent: the page writes
-the new store paths and links, 9p shows them to the guest the moment
-they exist, and the new selection's links replace old ones so the most
-recent choice runs. Nothing is typed at the guest's shell. (The shell
-remembers a command it has already run at its old path until
+fills names still free, so a dependency never shadows a selection. The
+symlink farm is what makes adding a package to a running VM silent: the
+page writes the new store paths and links, 9p shows them to the guest
+the moment they exist, and the new selection's links replace old ones
+so the most recent choice runs. Nothing is typed at the guest's shell.
+(The shell remembers a command it has already run at its old path until
 `hash -r`.)
 
 The manifest sets PATH, and the three things a serial console session
@@ -150,16 +150,18 @@ What got it there, and what was tried and dropped:
   and lets the browser keep the compiled code across visits — neither
   happens for a buffer the page passes in. The page only warms the
   HTTP cache, with a progress bar. On GitHub Pages the COOP/COEP
-  service worker synthesises the response, which loses the compiled
-  code cache; a host that sets the headers itself would keep it.
+  service worker synthesises the response, which was long assumed to
+  cost the compiled code cache; measurement says otherwise, and the
+  engine compiles in 56 ms either way ([engine.md](./engine.md)).
 - **Guest RAM.** A 256M guest resumes about 0.3 s faster than 512M
   (the migration load touches every page) and its snapshot is 5 MB
   smaller. Not worth halving the guest for; 512M stays.
 
 Migration demands that snapshotter and restorer agree exactly — QEMU
-version, machine type, device config, RAM size. `nix/guest/machine.json`
-is the one description of the machine; the page and the snapshot tool
-both start QEMU from it, and its hash rides in the pins.
+version, machine type, device config, RAM size.
+[`nix/guest/machine.json`](../nix/guest/machine.json) is the one
+description of the machine; the page and the snapshot tool both start
+QEMU from it, and its hash rides in the pins.
 
 ## Memory
 
@@ -168,7 +170,7 @@ decompressed NAR buffers themselves: MEMFS is told to keep the views
 it is handed (`canOwn`) rather than copy them. The page never holds
 more than the few NARs in flight, and once the guest is at its prompt
 the kernel, initramfs and snapshot copies in `/pack` are unlinked
-(QEMU has read them; the snapshot alone is 35 MB). Before this the
+(QEMU has read them; the snapshot alone is 37 MB). Before this the
 whole closure existed three times over — compressed, decompressed,
 and copied into MEMFS — and a large one ran the tab out of room, which
 surfaces as a bare "TypeError: Failed to fetch".
@@ -209,20 +211,25 @@ Where the exec time went, and what was done:
   syscall is a synchronous round trip to the browser's main thread,
   and QEMU's local backend opened a path one component at a time to
   keep a symlink from escaping the export. The share is a private
-  in-memory directory; `patches/0002` opens and stats a path in one
-  call. Worth 10–25% on file operations once the guest caches.
+  in-memory directory; [`patches/0002`][0002] opens and stats a path
+  in one call. Worth 10–25% on file operations once the guest caches.
 - **A lower JIT threshold** (300 instead of 1500) was built and
-  measured: slower on both loops, since short-lived processes pay the
-  compile and never amortise it. Not adopted.
+  measured as slower on both loops, and not adopted. That measurement
+  is no longer trusted: it ran on the entropy-starved guest, which
+  spins in a hot loop and so favours a late compile. It deserves a
+  retest ([performance.md](./performance.md)).
 
 What is left is emulation itself: a shell loop runs about 400 µs per
 iteration, and a fork-plus-exec about 30 ms even with nothing on 9p.
 Nothing in a browser accelerates that — there is no KVM — so the
-levers are the emulator's. JSLinux's x86 engine (the one that boasts
-AVX-512 and APX) is unreleased, TinyEMU has no x86_64, v86 is 32-bit;
-an aarch64 guest on qemu-wasm's aarch64 target is the one untried
-experiment with any chance of a different constant, and the multiverse
-has aarch64-linux data to feed it.
+levers are the emulator's. Chaining generated blocks to each other is
+the candidate with a feasibility study behind it, worth 11% of a cold
+run and 40% of a hot loop ([performance.md](./performance.md)).
+Swapping the emulator is the other direction and has no candidate:
+JSLinux's x86 engine (the one that boasts AVX-512 and APX) is
+unreleased, TinyEMU has no x86_64, and v86 is 32-bit. An aarch64 guest
+on qemu-wasm's aarch64 target is the untried experiment there, and the
+multiverse has aarch64-linux data to feed it.
 
 ## Where emscripten and the guest disagree
 
@@ -235,10 +242,10 @@ changing this code.
 returns an absolute path, while the stat beside it reports the
 _relative_ target's length. A guest reading such a link gets a string
 longer than the size it was promised. trynix writes absolute targets
-itself (`absoluteTarget` in `site/js/store.js`) so the two agree, and
-mounts the share in the guest at the same path the page built it at
-(`/share`) so those absolute targets resolve. The mount point is
-load-bearing, not cosmetic.
+itself (`absoluteTarget` in [`site/js/store.js`](../site/js/store.js))
+so the two agree, and mounts the share in the guest at the same path
+the page built it at (`/share`) so those absolute targets resolve. The
+mount point is load-bearing.
 
 **Errnos.** 9p2000.L carries Linux errno numbers, but emscripten's libc
 numbers its errnos after WASI. qemu-wasm declares emscripten to need no
@@ -247,37 +254,17 @@ ECHRNG. A dynamic loader walking `LD_LIBRARY_PATH` expects ENOENT from
 directories that lack the library and moves on; given "Error 44" it
 stops. Every package that finds libraries by search rather than by
 RPATH fails to start, naming a library `ls` will show and `cat` will
-read. `patches/0001-9pfs-translate-emscripten-errnos-to-linux.patch`
-fixes it in the engine, and is worth sending upstream.
+read. [`patches/0001`][0001] fixes it in the engine, and is worth
+sending upstream.
 
 **stdout.** Defining `Module.print` or `printErr` takes stdout and
 stderr away from the xterm-pty js-library linked into the build, and
 the console stays blank for the whole run — guest output included.
 QEMU's diagnostics arrive in the terminal instead.
 
-And one thing that is not a bug: busybox's `clear` sends only the
-erase-screen sequence, so the terminal's scrollback survives it. The
-`clear` from ncurses sends erase-scrollback too, and a guest with it
-on PATH behaves as expected.
-
-## Performance
-
-Where a first run's time actually goes, what would move it, and the
-things that looked like they would and did not:
-[docs/performance.md](./performance.md).
-
-## Repository layout
-
-- `site/` — the static site (vanilla ES modules; the multiverse chrome
-  and tokens, so the family of sites reads as one).
-- `nix/` — the flake's pieces: `site.nix` assembles the deployable tree
-  with the multiverse js.<hash> cache-busting trick, `guest.nix` builds
-  the kernel and initramfs, `engine.nix` fetches the pinned engine,
-  `formatter.nix` is `nix fmt`.
-- `patches/` — what the engine is built with.
-- `tools/` — the engine tools, each a flake app (docs/engine.md).
-- `tests/` — node test suite; run by `checks.tests`, offline.
-- `docs/` — this file and docs/engine.md.
+Not a bug: busybox's `clear` sends only the erase-screen sequence, so
+the terminal's scrollback survives it. The `clear` from ncurses sends
+erase-scrollback too, and a guest with it on PATH behaves as expected.
 
 ## Alternatives considered
 
@@ -307,15 +294,19 @@ share described under Memory.
 ## Open questions
 
 - A nix-native emscripten build of the fork, so the engine is a
-  derivation rather than a docker recipe (docs/engine.md).
-- The compiled-code cache on GitHub Pages: the COOP/COEP service worker
-  costs it. A host that sends the headers (Cloudflare Pages takes a
-  `_headers` file) would drop the worker and keep the cache.
+  derivation rather than a docker recipe ([engine.md](./engine.md)).
+- Moving off GitHub Pages to a host that sends COOP/COEP itself
+  (Cloudflare Pages takes a `_headers` file), for control over headers
+  and caching. Not for speed: the shim costs about half a second on a
+  first-ever visit and nothing after.
 - Autocompleting store paths in the store-path lane needs an index
   keyed by digest, which the multiverse does not publish; its shards
   are keyed by attribute.
-- An aarch64 guest, as the one emulation experiment left.
+- Block chaining in the wasm TCG backend, and an aarch64 guest as the
+  emulation experiment behind it ([performance.md](./performance.md)).
 
+[0001]: ../patches/0001-9pfs-translate-emscripten-errnos-to-linux.patch
+[0002]: ../patches/0002-9p-local-resolve-a-path-in-one-syscall-under-emscripten.patch
 [nixpkgs-multiverse]: https://github.com/fzakaria/nixpkgs-multiverse
 [grail]: https://github.com/fzakaria/grail
 [qemu-wasm]: https://github.com/ktock/qemu-wasm
