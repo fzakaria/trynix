@@ -1,133 +1,225 @@
 # Performance
 
-Measured on 2026-09-05, in headless Chrome against the built site, on a
-Ryzen 7 7840U. Every number here came from a run rather than an
-argument, and the dead ends are recorded because each of them cost an
-afternoon and looks just as plausible the second time.
+Measured on 2026-09-05 in headless Chrome against the built site, on a
+Ryzen 7 7840U. Every number came from a run rather than an argument, and
+the dead ends are written down because each of them cost an afternoon
+and will look just as plausible next time.
 
-## Where the time goes
+Read the section on measuring first if you are about to measure
+anything. Three separate conclusions in this document were wrong once,
+and each time the cause was the instrument rather than the engine.
 
-Booting is not the slow part. A cold visit reaches a shell in about
-3.5 s locally and 4 to 5 s from the deployed site, most of it fetching
-the closure. Running a binary for the first time is the slow part.
+## Where a first run's time went
 
-`jj --version`, whose binary is 30.6 MB:
-
-```
-first run                17 s   (1.4 s user, 16 s system)
-first run, closure read sequentially beforehand    8.5 s
-second run               1.2 s
-```
-
-So roughly half of a first run is reading the closure. The other half is
-not what it looks like. With the VM event counters on, the two runs
-fault almost identically — 1732 pages against 1655 — while differing by
-a factor of nearly fifty in time:
+Running a binary for the first time took about fifty seconds of real
+time; running it again took one. Every explanation offered for that was
+wrong — not the store reads, not page faults, not translation, not the
+dynamic loader. `strace -cf jj --version` in the guest settled it:
 
 ```
-first run    1732 faults   15.2 s
-second run   1655 faults    0.3 s
+                    cold      warm
+getrandom (6 calls) 14.25 s   0.0005 s
+153 other syscalls   0.039 s  0.045 s
 ```
 
-Faulting pages in is therefore not the expense, and neither is any
-per-page work: the same pages are mapped both times. What the first run
-does and the second does not is read the store and translate guest code
-it has not seen. Chase those, not the fault path — and note that the
-guest's own `time` charges emulator work to whatever the guest was
-doing, so translation shows up as the guest's system time and looks
-like kernel work when it is not.
+The random pool was empty. The snapshot is taken while init parks on the
+handshake, before the kernel has seeded its CRNG, and a resumed guest
+sees almost no interrupts to credit entropy with, so the first caller of
+`getrandom()` drove `try_to_generate_entropy` — the kernel's TSC-jitter
+loop — and spun there. Reading one byte from `/dev/random` at the prompt
+cost twelve seconds; afterwards a cold run took under a second.
 
-A CPU profile of the vCPU worker during that first run:
+The machine had no entropy to offer. `RANDOM_TRUST_CPU` was set but
+`qemu64` has no RDRAND, `RANDOM_TRUST_BOOTLOADER` was set but QEMU 8.2
+never writes a seed on an `-kernel` boot, and the kernel had no
+virtio-rng driver. It now has `+rdrand` and a `virtio-rng-pci` device,
+and init forces a reseed before anything can consume randomness
+(nix/guest/reseed.c explains why that cannot be left to timing).
 
-|                                                       |      |
-| ----------------------------------------------------- | ---- |
-| `tcg_qemu_tb_exec`, the C dispatch loop               | 20%  |
-| generated guest code                                  | ~26% |
-| `helper_lookup_tb_ptr`, from inside generated code    | 8.9% |
-| guest `rdtsc` → `cpu_get_ticks` → `performance.now()` | 8.2% |
-| TCI interpreter                                       | 5%   |
+A cold `jj --version` is now about 2.5 s of real time and a warm one
+about 1 s. What remains is roughly 0.1 s of store reads, and the rest is
+emulator work: interpreting and translating code the guest has not run
+before.
 
-The dispatcher and the lookup are one cost wearing two hats: generated
-blocks never jump to each other, so every cross-block jump returns to C
-and looks the next block up in a hash table. That is the largest single
-item, and the interpreter is not — at 5%, the 1500-execution threshold
-before a block is compiled is not what makes a first run slow.
+## The guest's clock was 3.3x slow
 
-## What would actually help
+Every duration this document used to quote was inflated by that factor,
+and a guest `sleep 10` took 33 seconds.
 
-- **Chain generated blocks to each other.** Worth most of the 29% the
-  dispatcher and lookup take between them. Needs the target's function
-  index stored when a block is compiled and a `return_call_indirect` to
-  reach it; a plain call would grow the wasm stack per jump, so it needs
-  the tail-call proposal, and the pinned emsdk 3.1.50 may not emit it.
-  Check that first.
-- **Make the guest's `rdtsc` cheap.** Every one is a call out to
-  JavaScript, about 30 million of them in that run. Caching or
-  interpolating `cpu_get_host_ticks` under emscripten would take the 8%,
-  at the risk of the guest's own clock drifting; it is what the guest
-  measures time with, so be careful.
-- **Map the store instead of copying it.** The cost that survives
-  prewarming is per-page work: faulting a 30 MB binary into a process
-  through a page cache. An emulated NVDIMM with a DAX filesystem would
-  let the guest map store pages straight out of emulated memory, no page
-  cache and no copies, and with huge pages a handful of faults instead
-  of thousands. It is a redesign rather than a patch: it wants a
-  filesystem image where there is now a 9p share, which is also how
-  packages are added to a running VM.
+The snapshot is taken by a native binary, where `cpu_get_host_ticks()`
+is a real `rdtsc`, so the kernel calibrated its TSC to the host's
+3.29 GHz while booting. It then resumed in the browser, where wasm has
+no cycle counter and QEMU falls back to the monotonic clock —
+nanoseconds, so 1 GHz. QEMU's own comment on that fallback reads "This
+will be totally wrong, but hopefully better than nothing."
 
-Together the first two are worth roughly 1.5x. They are not worth 10x;
-that figure was the gap to native TCG, and closing it means a different
-wasm JIT (many blocks per module, chained), not tuning this one.
+`patches/0003` makes the snapshotting build count the same clock, and
+`build-native-qemu.sh` defines it. Both ends of a migration have to
+agree about the clock as much as about the devices. `sleep 10` now takes
+10.15 s and the guest reports 1000 MHz, which is what it gets.
+
+## What the profile actually says
+
+Share of non-sleeping vCPU-worker time, on a healthy guest:
+
+| | jj cold | jj warm | hot loop |
+|---|---|---|---|
+| TCI interpreter | 46.3% | 41.7% | 1.0% |
+| translation, `tb_gen_code` | 25.9% | 0.3% | 0.0% |
+| generated code | 10.4% | 25.1% | 56.3% |
+| `ffi_call_js` | 7.1% | 7.2% | 0.1% |
+| C dispatch loop | 6.6% | 12.7% | 29.7% |
+| `helper_lookup_tb_ptr` | 4.5% | 7.0% | 10.3% |
+| `_emscripten_get_now` | 0.17% | 0.14% | 0.05% |
+
+Running a program once and running a hot loop are different regimes, and
+that difference is most of this table. An earlier version of this
+document carried the hot-loop column and called it a first run, because
+it had been measured through the entropy jitter loop, which is a hot
+loop. That is why it once reported the interpreter at 5% and the clock
+at 8%.
+
+For running a program once, the interpreter and the translator are the
+cost. Whether the 1500-execution threshold before a block is compiled
+(`tcg/wasm32.h`) is the right number is open.
+
+## Page faults are not the cost
+
+With the VM event counters on, a first run and a second fault almost
+identically while differing by a factor of nearly fifty:
+
+```
+first run    1732 faults
+second run   1655 faults
+```
+
+The same pages are mapped both times, so neither faulting nor any other
+per-page work explains the difference. Chase reading and translating
+instead. Note also that the guest's own `time` charges emulator work to
+whatever the guest was doing, so translation appears as guest system
+time and reads like kernel work when it is not.
+
+## Memory, and how large a closure fits
+
+The engine is built with `-sTOTAL_MEMORY=2300MB` and no growth flag, and
+its memory is created as `new WebAssembly.Memory({initial: n, maximum:
+n, shared: true})` with initial equal to maximum. So it is 2.41 GB of
+wasm address space, fixed when the engine is built, and the browser has
+to hand over all of it the moment the engine instantiates.
+
+| | |
+|---|---|
+| linear memory | 2.41 GB |
+| guest RAM | 512 MiB |
+| TCG code buffer (`tb-size=500`) | 500 MiB |
+| left for the unpacked closure | ~1.2 GB |
+
+That budget is on the **unpacked** closure, not the download: NARs are
+decompressed into the emscripten filesystem, so a 200 MB download can
+cost 800 MB of it. The guest still sees only 492 MB of RAM either way,
+because the closure lives in the emulator's memory beside the guest
+rather than inside it. Confirmed by booting real closures: nodejs at
+219 MB unpacked boots in 9 s, llvm at 739 MB in 17 s.
+
+The budget does not vary by machine, but whether the page runs at all
+does. Because the memory is shared and cannot grow, a device that cannot
+grant the whole reservation does not get a smaller closure — it gets no
+VM, because the engine fails to instantiate. A 2.41 GB reservation is a
+lot to ask of a phone.
+
+It can be raised. Chrome grants a shared wasm32 memory at every size up
+to the 4 GiB ceiling that 32-bit pointers impose, verified by allocating
+and touching both ends at 2300, 3072, 4032 and 4096 MB. Going to about
+4000 MB would take the closure budget to roughly 2.9 GB, and the build
+already handles pointers above 2 GB. But it worsens exactly the case
+that matters most, since it asks every phone for more.
+
+Two better moves than raising it:
+
+- The 500 MiB code buffer is committed and zeroed at boot, so it is
+  resident on every device. A smaller one frees closure budget *and*
+  cuts real memory use, helping small devices instead of hurting them.
+  The cost is more translation-cache flushes, visible as
+  `tb_flush_count`.
+- Two engine builds, small and large, chosen by `navigator.deviceMemory`.
+  The snapshot carries guest RAM and device state, and `TOTAL_MEMORY` is
+  the emulator's own heap, so one snapshot should serve both — that last
+  part is reasoning and has not been tested.
 
 ## Dead ends
 
-Each of these was measured, and each was worse than or the same as
-doing nothing.
+Each was measured, and each was worse than or the same as doing nothing.
 
 - **A faster or custom virtio driver.** The transport is not the
-  bottleneck: a cold sequential read of the 30 MB binary over the
-  existing 9p mount runs at 46 MB/s. There is nothing there to win.
-- **`tsc=unstable` on the guest command line**, to stop the kernel
-  reading the TSC so often. 17.25 s against 14.95 s: worse.
-- **Blaming the page-fault path.** The counters say a 15 s first run and
-  a 0.3 s second run fault the same number of pages. Whatever costs the
-  15 s, it is not faulting.
-- **Prewarming just the binary.** Reading it sequentially first costs
-  0.6 s and leaves the first run unchanged at 17 s. Reading the whole
-  closure does help — 8.5 s — but see the next entry.
-- **Prewarming in the background while the reader types.** There is one
-  vCPU, so the prewarm takes the cycles the command wanted: system time
-  falls from 16 s to 6.1 s and wall time stays at 17.4 s. It only pays
-  if it finishes before anyone types, which cannot be arranged.
+  bottleneck: a cold sequential read of a 30 MB binary over the existing
+  9p mount runs at 46 MB/s.
+- **`tsc=unstable` on the guest command line.** Worse, not better.
+- **Prewarming the binary.** Reading it first changes nothing. Reading
+  the whole closure does help, but only if it finishes before anyone
+  types: there is one vCPU, so a background prewarm takes the cycles the
+  command wanted and wall time does not move.
+- **Blaming the page-fault path.** The counters above.
 - **Compressing the snapshot.** GitHub Pages already serves it gzipped,
-  30 MB down to 7.4 MB. zstd and xz save another megabyte and cost a
-  decoder in the page.
-- **Moving to a host that sets COOP/COEP headers**, to keep the
-  browser's compiled-WebAssembly cache. Compiling the engine takes 56 ms
-  warm or cold; the shim costs about half a second on a first-ever visit
-  and nothing after. `site/_headers` is there if the move happens for
-  other reasons.
-- **Turning the JIT threshold down** so blocks compile sooner. Slower when
-  measured (11.6 s against 10.0 s), and the profile above says why:
-  interpretation is 5% of the problem.
-- **`ioeventfd=off` on its own.** It buys nothing measurable by itself.
-  It is in the machine definition only because the main loop now sleeps,
-  and 9p has to be off that loop for the sleep to be safe.
+  30 MB down to 7.4 MB.
+- **Moving to a host that sets COOP/COEP headers** to keep the browser's
+  compiled-WebAssembly cache. Compiling the engine takes 56 ms warm or
+  cold; the shim costs about half a second on a first-ever visit and
+  nothing after.
+- **Inlining the jump-cache probe into generated code.** About 0.7% of a
+  cold run and 2.0% of a warm one. Worth building only as part of block
+  chaining, which subsumes it.
+- **`ioeventfd=off` on its own.** Buys nothing by itself. It is in the
+  machine definition only because the main loop now sleeps, and 9p has
+  to be off that loop for the sleep to be safe.
+- **Turning the JIT threshold down.** Recorded once as slower, but that
+  was measured on the entropy-starved workload and is not to be trusted.
+  The profile above puts the interpreter at 46% of a real first run, so
+  this deserves a proper retest.
+
+## Block chaining, the standing engine candidate
+
+Generated blocks never jump to each other: every cross-block jump returns
+to a C dispatch loop that looks the next block up. That loop plus the
+lookup is 11% of a cold run, 20% warm and 40% of a hot loop.
+
+Chaining them is feasible. The blocks are hand-assembled wasm bytes, so
+the toolchain is irrelevant and emitting `return_call_indirect` is a
+matter of writing an opcode; WebAssembly tail calls work today in Chrome
+and Firefox with no flags, verified at ten million cross-instance calls
+at constant stack where a plain call overflows at one million.
+Slot-based chaining needs no invalidation work, because `tb_reset_jump`
+already has an emscripten branch that writes zero.
+
+The hazard is asyncify. Blocks are not instrumented; the fork hand-rolls
+resumption, and today the dispatch loop re-invokes the exact block that
+unwound. Chained, the head of the chain is re-invoked instead, and
+replaying it would pop the wrong frames off the asyncify stack — silent
+corruption rather than a trap. The fix is to record which block unwound
+and have each block's prologue forward straight to it, touching nothing
+instrumented on the way. That has not been built or tested.
+
+Bound the expectation: chaining only applies when both blocks are
+already compiled, so it speeds hot code and does little for a first run.
 
 ## Measuring without fooling yourself
 
-Four ways these measurements went wrong before they went right:
-
 - **Kill the browser's process group**, not its parent. Leaked renderers
   keep running a guest; fifteen of them made a known-good build measure
-  as 12 stalls out of 12.
+  as twelve stalls out of twelve.
 - **Give every run its own debugging port.** Reusing one attaches to the
   previous, dying browser and reports stalls that are not there.
 - **Check a harness against a build known to be good** before believing
-  what it says about a build that might not be.
-- **The profiler distorts what it measures.** Under it, a 0.6 s read
-  took minutes. Use it for proportions, never for durations, and take
-  durations from an unprofiled run.
+  what it says about one that might not be.
+- **The profiler distorts durations.** Under it a 0.6 s read took
+  minutes. Use it for proportions and take durations from an unprofiled
+  run.
+- **Profile the workload you care about.** The entropy loop was a hot
+  loop, so it profiled like one, and every conclusion drawn from it
+  described a regime the site does not spend its time in.
+- **Watch what the guest's clock is worth.** It was 3.3x slow for the
+  life of this project until today, so guest-reported durations meant
+  nothing on their own. Cross-check against the page's
+  `performance.now()`.
 
 `nix run .#boot-test` is the standing version of the first three: it
 boots the site repeatedly in a fresh profile and fails if a guest does
