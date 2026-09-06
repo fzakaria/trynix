@@ -1,0 +1,26 @@
+--- a/tcg/wasm32/tcg-target.c.inc
++++ b/tcg/wasm32/tcg-target.c.inc
+@@ -3688,10 +3688,21 @@
+         tcg_out_not(s, opc, args[0], args[1]);
+         break;
+     case INDEX_op_ctpop_i32:
+-        tcg_out_ctpop_i32(s, opc, args[1], args[2]);
++        /*
++         * ctpop is DEF(ctpop_i32, 1, 1, 0) in tcg-opc.h: one output and
++         * one input, so the destination is args[0] and the source is
++         * args[1], the way every other unary op in this file reads them.
++         * Starting at args[1] wrote the count into the register holding
++         * the source and read args[2], which a two-operand op does not
++         * have. The destination kept whatever it held before, so a guest
++         * POPCNT returned a stale register instead of a count. mimalloc
++         * builds its bitmaps on POPCNT, so every Bun binary died in its
++         * allocator with no failing syscall to show for it.
++         */
++        tcg_out_ctpop_i32(s, opc, args[0], args[1]);
+         break;
+     case INDEX_op_ctpop_i64:
+-        tcg_out_ctpop_i64(s, opc, args[1], args[2]);
++        tcg_out_ctpop_i64(s, opc, args[0], args[1]);
+         break;
+     case INDEX_op_add2_i32:
+     case INDEX_op_add2_i64:

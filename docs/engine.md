@@ -51,6 +51,11 @@ The patches matter more than the build flags:
   Under emscripten each syscall is a round trip to the browser's main
   thread, and the share is a private in-memory directory with nothing
   for the component walk to protect.
+- `0004-wasm-tcg-pass-ctpop-the-right-operands.patch` gives the wasm
+  backend's `ctpop` the operands TCG declares for it, so the guest's
+  `POPCNT` returns a count rather than whatever its destination
+  register already held. Only a guest at `Haswell-v4` reaches it;
+  x86-64-v1 has no `POPCNT` to emit.
 
 Otherwise the emscripten flags are upstream's verbatim (`-sASYNCIFY`,
 `-pthread -sPROXY_TO_PTHREAD`, `-sTOTAL_MEMORY=2300MB`, the xterm-pty
