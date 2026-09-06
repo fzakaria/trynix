@@ -101,9 +101,13 @@
             pkgs.nix
           ];
 
-          # publish engine and snapshot as a dated release and repin
+          # publish engine and snapshot as a dated release and repin.
+          # git is here to find the checkout whose pins are rewritten:
+          # run this way the script itself sits in the store, nowhere
+          # near the tree that carries the commit.
           publish-engine = tool "publish-engine" "${pkgs.python3}/bin/python3 ${./tools/publish-engine.py}" [
             pkgs.gh
+            pkgs.git
             pkgs.nix
           ];
 

@@ -30,7 +30,7 @@ import subprocess
 import sys
 
 REPO = "fzakaria/trynix"
-PINS = os.path.join(os.path.dirname(__file__), "..", "nix", "engine-pins.json")
+PINS_IN_TREE = os.path.join("nix", "engine-pins.json")
 
 ENGINE_FILES = (
     "out.js",
@@ -42,6 +42,26 @@ GUEST_FILES = ("bzImage", "initramfs.cpio.gz", "machine.json")
 
 TAG_PREFIX = "engine-"
 TAG_TIME_FORMAT = "%Y%m%d-%H%M"
+
+
+def pins_path():
+    """The pins file of the checkout the caller is standing in.
+
+    Not a path relative to this script: run as a flake app the script is
+    a lone file in the nix store, and the file that has to be rewritten
+    is the one in the working tree that will carry the commit.
+    """
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    if root.returncode != 0:
+        sys.exit("run this from a trynix checkout: git found no repository here")
+    path = os.path.join(root.stdout.strip(), PINS_IN_TREE)
+    if not os.path.isfile(path):
+        sys.exit(f"no {PINS_IN_TREE} in {root.stdout.strip()}: is this a trynix checkout?")
+    return path
 
 
 def sri(path):
@@ -66,6 +86,8 @@ def main():
     parser.add_argument("--notes", default="", help="release notes")
     args = parser.parse_args()
 
+    pins_file = pins_path()
+
     paths = [os.path.join(args.dir, name) for name in ENGINE_FILES]
     missing = [path for path in paths if not os.path.isfile(path)]
     if missing:
@@ -77,7 +99,7 @@ def main():
     guest = os.path.realpath(args.guest)
     guest_hashes = {name: sri(os.path.join(guest, name)) for name in GUEST_FILES}
 
-    with open(PINS) as f:
+    with open(pins_file) as f:
         pins = json.load(f)
 
     subprocess.run(
@@ -94,11 +116,11 @@ def main():
     pins["tag"] = args.tag
     pins["files"] = files
     pins["guest"] = guest_hashes
-    with open(PINS, "w") as f:
+    with open(pins_file, "w") as f:
         json.dump(pins, f, indent=2)
         f.write("\n")
 
-    print(f"published {args.tag} and rewrote {os.path.relpath(PINS)}", flush=True)
+    print(f"published {args.tag} and rewrote {os.path.relpath(pins_file)}", flush=True)
 
 
 if __name__ == "__main__":
