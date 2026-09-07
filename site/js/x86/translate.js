@@ -78,13 +78,19 @@ export class Translator {
     // error the run loop raises if one is reached.
     this.unsupported = new Map();
     this.regions = 0;
+    this.blocks = 0;
+    this.bytesEmitted = 0;
+    this.translateMs = 0;
     // When set, every block reports its address to the trace import.
     this.traceBlocks = false;
+    // When set, called with (entry, blocks, ms) after every region.
+    this.onRegion = null;
   }
 
   // Translates the region reachable from entry and returns the table
   // slot of entry's block.
   translateRegion(entry) {
+    const t0 = performance.now();
     const machine = this.machine;
     const blocks = new Map();
     const order = [];
@@ -114,6 +120,13 @@ export class Translator {
       machine.register(b.addr, b.index);
     }
     this.regions++;
+    this.blocks += order.length;
+    this.bytesEmitted += bytes.length;
+    const ms = performance.now() - t0;
+    this.translateMs += ms;
+    if (this.onRegion) {
+      this.onRegion(entry, order.length, ms, bytes.length);
+    }
     return blocks.get(entry).index;
   }
 
@@ -510,6 +523,16 @@ class Emitter {
     c.i32_const(ccOp(kind, size)).global_set(this.g.cc_op);
   }
 
+  // Pushes ZF, SF and PF computed from a result local, as i32.
+  zspFlags(res, size) {
+    const c = this.c;
+    c.local_get(res).i64_eqz().i32_const(6).i32_shl();
+    c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().i32_const(7).i32_shl();
+    c.i32_or();
+    c.local_get(res).i64_const(0xff).i64_and().i64_popcnt().i32_wrap_i64().i32_const(1).i32_and().i32_const(1).i32_xor().i32_const(2).i32_shl();
+    c.i32_or();
+  }
+
   // Pushes the current EFLAGS (arithmetic bits) as i32.
   eflags() {
     this.c.call(this.ctx.helpers.cc_eflags);
@@ -564,19 +587,30 @@ class Emitter {
     c.local_get(idx).return_call_indirect(this.ctx.blockType, 0);
   }
 
-  push64() {
-    // value on stack (i64)
+  // Pushes the i64 on the stack as `width` bytes (8, or 2 with an
+  // operand-size prefix).
+  push(width) {
     const c = this.c;
     const v = this.t64();
     c.local_set(v);
-    c.global_get(this.g.rsp).i64_const(8).i64_sub().global_set(this.g.rsp);
-    c.global_get(this.g.rsp).i32_wrap_i64().local_get(v).i64_store(0, 0);
+    c.global_get(this.g.rsp).i64_const(width).i64_sub().global_set(this.g.rsp);
+    c.global_get(this.g.rsp).i32_wrap_i64().local_get(v);
+    this.storeMem(width);
+  }
+
+  push64() {
+    this.push(8);
+  }
+
+  pop(width) {
+    const c = this.c;
+    c.global_get(this.g.rsp).i32_wrap_i64();
+    this.loadMem(width);
+    c.global_get(this.g.rsp).i64_const(width).i64_add().global_set(this.g.rsp);
   }
 
   pop64() {
-    const c = this.c;
-    c.global_get(this.g.rsp).i32_wrap_i64().i64_load(0, 0);
-    c.global_get(this.g.rsp).i64_const(8).i64_add().global_set(this.g.rsp);
+    this.pop(8);
   }
 
   // Pushes the condition's truth as i32, folding a preceding compare.
@@ -734,6 +768,9 @@ class Emitter {
       case "rol":
       case "ror":
         return this.emitRotate(m, ops, size);
+      case "rcl":
+      case "rcr":
+        return this.emitRotateCarry(m, ops, size);
       case "shld":
       case "shrd":
         return this.emitDoubleShift(m, ops, size);
@@ -777,18 +814,21 @@ class Emitter {
         this.setReg(REG.rdx, 8);
         return;
 
-      case "push":
+      case "push": {
+        const width = insn.opsize === 2 ? 2 : 8;
         if (ops[0].kind === "imm") {
           c.i64_const(BigInt.asUintN(64, BigInt.asIntN(ops[0].size * 8, ops[0].value)));
         } else {
-          this.load(ops[0], 8);
+          this.load(ops[0], width);
         }
-        this.push64();
+        this.push(width);
         return;
+      }
       case "pop": {
+        const width = insn.opsize === 2 ? 2 : 8;
         const a = this.prepareDest(ops[0]);
-        this.pop64();
-        this.store(ops[0], 8, a);
+        this.pop(width);
+        this.store(ops[0], width, a);
         return;
       }
       case "leave":
@@ -1268,16 +1308,88 @@ class Emitter {
     }
     c.local_get(res);
     this.store(dst, size, a);
-    // CF = lsb (rol) or msb (ror) of the result; OF = msb ^ CF. Other
-    // flags keep their values.
+    // CF is the bit rotated across; OF, defined for a count of 1, is
+    // msb ^ CF for rol and msb ^ (msb - 1) for ror. Other flags keep
+    // their values.
+    const cf = this.t32();
+    const msb = this.t32();
     this.eflags();
     c.i32_const(~0x801).i32_and().local_set(f);
+    c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(msb);
     if (m === "rol") {
-      c.local_get(res).i32_wrap_i64().i32_const(1).i32_and();
+      c.local_get(res).i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+      c.local_get(msb).local_get(cf).i32_xor();
     } else {
-      c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and();
+      c.local_get(msb).local_set(cf);
+      c.local_get(res).i64_const(BigInt(BITS[size] - 2)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_get(msb).i32_xor();
     }
-    c.local_get(f).i32_or();
+    c.i32_const(11).i32_shl().local_get(cf).i32_or().local_get(f).i32_or();
+    this.setEflags();
+    c.end();
+    this.lastFlags = null;
+  }
+
+  // Rotate through carry: the value and CF form a (bits + 1)-bit ring.
+  emitRotateCarry(m, ops, size) {
+    const c = this.c;
+    const [dst, cnt] = ops;
+    const a = this.prepareDest(dst);
+    const count = this.t64();
+    const val = this.t64();
+    const res = this.t64();
+    const cfIn = this.t64();
+    const cf = this.t32();
+    const f = this.t32();
+    const bits = BigInt(BITS[size]);
+    this.load(cnt, 1);
+    c.i64_const(size === 8 ? 63n : 31n).i64_and();
+    if (size < 4) {
+      c.i64_const(bits + 1n).i64_rem_u();
+    }
+    c.local_set(count);
+    this.eflags();
+    c.i32_const(1).i32_and().i64_extend_i32_u().local_set(cfIn);
+    this.loadDest(dst, size, a);
+    c.local_set(val);
+    c.local_get(count).i64_eqz().i32_eqz().if_(T.empty);
+    if (m === "rcl") {
+      // res = val << c | cf << (c-1) | val >> (bits + 1 - c); CF = bit (bits - c) of val
+      c.local_get(val).local_get(count).i64_shl();
+      c.local_get(cfIn).local_get(count).i64_const(1).i64_sub().i64_shl().i64_or();
+      // The wrapped-around part exists only for counts of 2 and up; at
+      // 1 its shift would be the full width, which wasm reads as none.
+      c.local_get(count).i64_const(1).i64_gt_u().if_(T.i64);
+      c.local_get(val).i64_const(bits + 1n).local_get(count).i64_sub().i64_shr_u();
+      c.else_().i64_const(0).end();
+      c.i64_or();
+      this.mask(size);
+      c.local_set(res);
+      c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+    } else {
+      // res = val >> c | cf << (bits - c) | val << (bits + 1 - c); CF = bit (c-1) of val
+      c.local_get(val).local_get(count).i64_shr_u();
+      c.local_get(cfIn).i64_const(bits).local_get(count).i64_sub().i64_shl().i64_or();
+      c.local_get(count).i64_const(1).i64_gt_u().if_(T.i64);
+      c.local_get(val).i64_const(bits + 1n).local_get(count).i64_sub().i64_shl();
+      c.else_().i64_const(0).end();
+      c.i64_or();
+      this.mask(size);
+      c.local_set(res);
+      c.local_get(val).local_get(count).i64_const(1).i64_sub().i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+    }
+    c.local_get(res);
+    this.store(dst, size, a);
+    // OF (count 1): rcl msb ^ CF; rcr msb ^ (msb - 1). Other flags kept.
+    const msb = this.t32();
+    this.eflags();
+    c.i32_const(~0x801).i32_and().local_set(f);
+    c.local_get(res).i64_const(bits - 1n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(msb);
+    if (m === "rcl") {
+      c.local_get(msb).local_get(cf).i32_xor();
+    } else {
+      c.local_get(res).i64_const(bits - 2n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_get(msb).i32_xor();
+    }
+    c.i32_const(11).i32_shl().local_get(cf).i32_or().local_get(f).i32_or();
     this.setEflags();
     c.end();
     this.lastFlags = null;
@@ -1301,25 +1413,27 @@ class Emitter {
     c.local_get(count).i64_eqz().i32_eqz().if_(T.empty);
     const bits = BigInt(BITS[size]);
     if (m === "shld") {
-      // res = val << c | other >> (bits - c)
+      // res = val << c | other >> (bits - c); CF = bit (bits - c) of val
       c.local_get(val).local_get(count).i64_shl();
       c.local_get(other).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i64_or();
       this.mask(size);
       c.local_set(res);
       c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
-      c.local_get(res);
-      this.store(dst, size, a);
-      this.setFlags(CC.SHL, size, res, cf);
     } else {
+      // res = val >> c | other << (bits - c); CF = bit (c - 1) of val
       c.local_get(val).local_get(count).i64_shr_u();
       c.local_get(other).i64_const(bits).local_get(count).i64_sub().i64_shl().i64_or();
       this.mask(size);
       c.local_set(res);
       c.local_get(val).local_get(count).i64_const(1).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
-      c.local_get(res);
-      this.store(dst, size, a);
-      this.setFlags(CC.SHR, size, res, cf, val);
     }
+    c.local_get(res);
+    this.store(dst, size, a);
+    // ZF, SF, PF from the result, CF as computed, OF = the sign changed.
+    this.zspFlags(res, size);
+    c.local_get(cf).i32_wrap_i64().i32_or();
+    c.local_get(val).local_get(res).i64_xor().i64_const(bits - 1n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().i32_const(11).i32_shl().i32_or();
+    this.setEflags();
     c.end();
     this.lastFlags = null;
   }

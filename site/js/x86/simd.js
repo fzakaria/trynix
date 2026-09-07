@@ -47,7 +47,6 @@ const UNARY = {
   sqrtps: "f32x4_sqrt", sqrtpd: "f64x2_sqrt",
   cvtdq2ps: "f32x4_convert_i32x4_s", cvtdq2pd: "f64x2_convert_low_i32x4_s",
   cvtps2pd: "f64x2_promote_low_f32x4", cvtpd2ps: "f32x4_demote_f64x2_zero",
-  cvttps2dq: "i32x4_trunc_sat_f32x4_s", cvttpd2dq: "i32x4_trunc_sat_f64x2_s_zero",
 };
 
 // Lane shuffles: the byte index list for i8x16.shuffle(dst, src).
@@ -258,21 +257,30 @@ export function emitSimd(e, insn, ops) {
       c.i8x16_shuffle(lanesOf(8, [[0, 0], [1, 0]]));
       storeV(dst);
       return true;
-    case "movddup":
+    case "movddup": {
+      const v = e.t128();
       loadV(src, 8);
+      c.local_tee(v).local_get(v);
       c.i8x16_shuffle(lanesOf(8, [[0, 0], [0, 0]]));
       storeV(dst);
       return true;
-    case "movsldup":
+    }
+    case "movsldup": {
+      const v = e.t128();
       loadV(src);
+      c.local_tee(v).local_get(v);
       c.i8x16_shuffle(lanesOf(4, [[0, 0], [0, 0], [0, 2], [0, 2]]));
       storeV(dst);
       return true;
-    case "movshdup":
+    }
+    case "movshdup": {
+      const v = e.t128();
       loadV(src);
+      c.local_tee(v).local_get(v);
       c.i8x16_shuffle(lanesOf(4, [[0, 1], [0, 1], [0, 3], [0, 3]]));
       storeV(dst);
       return true;
+    }
     case "pmovmskb":
       loadV(src);
       c.i8x16_bitmask();
@@ -298,16 +306,22 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
     case "ldmxcsr":
-      e.load(src, 4);
+      e.load(dst, 4);
       c.i32_wrap_i64().global_set(e.g.mxcsr);
       return true;
     case "fxsave":
     case "fxsave64": {
       // The SSE half of the 512-byte area: mxcsr at 24, xmm0-15 at 160.
+      // Header: fcw, fsw, an empty tag word, zeros for the pointers,
+      // mxcsr and its mask; the x87 registers as zeros; then xmm0-15.
       const a = e.t32();
       e.address32(dst);
       c.local_set(a);
+      c.local_get(a).i32_const(0).i32_const(160).memory_fill();
+      c.local_get(a).global_get(e.g.fpu_cw).i32_store16(0);
+      c.local_get(a).global_get(e.g.fpu_sw).i32_store16(2);
       c.local_get(a).global_get(e.g.mxcsr).i32_store(24, 2);
+      c.local_get(a).i32_const(0x2ffff).i32_store(28, 2);
       for (let i = 0; i < 16; i++) {
         c.local_get(a).global_get(e.g[`xmm${i}`]).v128_store(160 + 16 * i, 0);
       }
@@ -318,6 +332,8 @@ export function emitSimd(e, insn, ops) {
       const a = e.t32();
       e.address32(dst);
       c.local_set(a);
+      c.local_get(a).i32_load16_u(0).global_set(e.g.fpu_cw);
+      c.local_get(a).i32_load16_u(2).global_set(e.g.fpu_sw);
       c.local_get(a).i32_load(24, 2).global_set(e.g.mxcsr);
       for (let i = 0; i < 16; i++) {
         c.local_get(a).v128_load(160 + 16 * i, 0).global_set(e.g[`xmm${i}`]);
@@ -441,17 +457,25 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
     case "palignr": {
-      // Bytes imm.. of src:dst (src low)
+      // Bytes imm.. of the 32-byte value dst:src (src low). Past 16 the
+      // low half is gone and zeros shift in from above dst.
       const lanes = [];
-      for (let i = 0; i < 16; i++) {
-        const k = i + imm;
-        lanes.push(k < 16 ? k : k < 32 ? k : 16);
-      }
-      loadV(src);
-      loadV(dst);
       if (imm >= 32) {
-        c.drop().drop().v128_const(ZERO16);
+        c.v128_const(ZERO16);
+      } else if (imm >= 16) {
+        for (let i = 0; i < 16; i++) {
+          const k = i + imm - 16;
+          lanes.push(k < 16 ? k : 16);
+        }
+        loadV(dst);
+        c.v128_const(ZERO16);
+        c.i8x16_shuffle(lanes);
       } else {
+        for (let i = 0; i < 16; i++) {
+          lanes.push(i + imm);
+        }
+        loadV(src);
+        loadV(dst);
         c.i8x16_shuffle(lanes);
       }
       storeV(dst);
@@ -655,7 +679,7 @@ export function emitSimd(e, insn, ops) {
       c.i16x8_extadd_pairwise_i8x16_u();
       c.i32x4_extadd_pairwise_i16x8_u();
       c.local_tee(d);
-      c.local_get(d);
+      c.local_get(d).local_get(d);
       c.i8x16_shuffle(lanesOf(4, [[0, 1], [0, 0], [0, 3], [0, 2]]));
       c.i32x4_add();
       c.v128_const(ZERO16);
@@ -872,9 +896,9 @@ export function emitSimd(e, insn, ops) {
       }
       // true -> all ones in the lane
       if (f32) {
-        c.i32_const(0).i32_sub().f32_reinterpret_i32().f32x4_replace_lane(0);
+        c.i32_const(-1).i32_mul().f32_reinterpret_i32().f32x4_replace_lane(0);
       } else {
-        c.i64_extend_i32_u().i64_const(0).i64_sub().f64_reinterpret_i64().f64x2_replace_lane(0);
+        c.i64_extend_i32_u().i64_const(-1n).i64_mul().f64_reinterpret_i64().f64x2_replace_lane(0);
       }
       storeV(dst);
       return true;
@@ -895,19 +919,36 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
     case "cvttss2si": case "cvttsd2si": case "cvtss2si": case "cvtsd2si": {
+      // Saturation matches the hardware below the range; above it, and
+      // for NaN, the hardware returns the "integer indefinite", the
+      // minimum value.
       const f32 = m.includes("ss");
       const truncate = m.startsWith("cvtt");
+      const x = f32 ? e.tF32() : e.tF64();
       loadV(src, f32 ? 4 : 8);
       f32 ? c.f32x4_extract_lane(0) : c.f64x2_extract_lane(0);
       if (!truncate) {
         f32 ? c.f32_nearest() : c.f64_nearest();
       }
+      c.local_set(x);
+      const limit = dst.size === 4 ? 2147483648 : 9223372036854775808;
+      const indefinite = dst.size === 4 ? 0x80000000n : 0x8000000000000000n;
+      c.local_get(x);
       if (dst.size === 4) {
         f32 ? c.i32_trunc_sat_f32_s() : c.i32_trunc_sat_f64_s();
         c.i64_extend_i32_u();
       } else {
         f32 ? c.i64_trunc_sat_f32_s() : c.i64_trunc_sat_f64_s();
       }
+      c.i64_const(indefinite);
+      // select the indefinite when x != x or x >= limit
+      c.local_get(x).local_get(x);
+      f32 ? c.f32_ne() : c.f64_ne();
+      c.local_get(x);
+      f32 ? c.f32_const(limit).f32_ge() : c.f64_const(limit).f64_ge();
+      c.i32_or();
+      c.i32_eqz();
+      c.select();
       e.setReg(dst.reg, dst.size);
       return true;
     }
@@ -924,15 +965,59 @@ export function emitSimd(e, insn, ops) {
       storeV(dst);
       return true;
     case "cvtps2dq":
+    case "cvttps2dq": {
+      // Lanes that are NaN or at or above 2^31 get the integer
+      // indefinite, as the scalar forms do.
+      const x = e.t128();
+      const limit = new Uint8Array(16);
+      new DataView(limit.buffer).setFloat32(0, 2147483648, true);
+      for (let i = 4; i < 16; i += 4) {
+        limit.set(limit.subarray(0, 4), i);
+      }
+      const indefinite = new Uint8Array(16);
+      for (let i = 0; i < 16; i += 4) {
+        indefinite[i + 3] = 0x80;
+      }
       loadV(src);
-      c.f32x4_nearest().i32x4_trunc_sat_f32x4_s();
+      if (m === "cvtps2dq") {
+        c.f32x4_nearest();
+      }
+      c.local_set(x);
+      c.v128_const(indefinite);
+      c.local_get(x).i32x4_trunc_sat_f32x4_s();
+      c.local_get(x).local_get(x).f32x4_ne();
+      c.local_get(x).v128_const(limit).f32x4_ge();
+      c.v128_or();
+      c.v128_bitselect();
       storeV(dst);
       return true;
+    }
     case "cvtpd2dq":
+    case "cvttpd2dq": {
+      const x = e.t128();
+      const limit = new Uint8Array(16);
+      new DataView(limit.buffer).setFloat64(0, 2147483648, true);
+      limit.set(limit.subarray(0, 8), 8);
+      const indefinite = new Uint8Array(16);
+      indefinite[3] = 0x80;
+      indefinite[7] = 0x80;
       loadV(src);
-      c.f64x2_nearest().i32x4_trunc_sat_f64x2_s_zero();
+      if (m === "cvtpd2dq") {
+        c.f64x2_nearest();
+      }
+      c.local_set(x);
+      c.v128_const(indefinite);
+      c.local_get(x).i32x4_trunc_sat_f64x2_s_zero();
+      // The two-lane mask, narrowed to the low two i32 lanes.
+      c.local_get(x).local_get(x).f64x2_ne();
+      c.local_get(x).v128_const(limit).f64x2_ge();
+      c.v128_or();
+      c.v128_const(ZERO16);
+      c.i8x16_shuffle([0, 1, 2, 3, 8, 9, 10, 11, 16, 16, 16, 16, 16, 16, 16, 16]);
+      c.v128_bitselect();
       storeV(dst);
       return true;
+    }
 
     case "roundss": case "roundsd": {
       const f32 = m.endsWith("ss");

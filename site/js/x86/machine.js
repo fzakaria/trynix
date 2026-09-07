@@ -46,6 +46,10 @@ export class Machine {
     });
     this.helpers = helpers.exports;
     this.translator = new Translator(this);
+    // Reset values: mxcsr masks every exception and rounds to nearest;
+    // the x87 control word extends precision with all exceptions masked.
+    this.helpers.mxcsr.value = 0x1f80;
+    this.helpers.fpu_cw.value = 0x37f;
 
     this.slots = 1;
     this.syscall = () => {

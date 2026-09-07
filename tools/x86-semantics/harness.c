@@ -96,6 +96,24 @@ static uint8_t *emit_load_xmm(uint8_t *p, int reg, uint32_t addr)
     return p + 4;
 }
 
+/* Calls the built program. The snippet may clobber any register, so
+ * every callee-saved one is declared clobbered and rbp is saved by
+ * hand, which the compiler will not let a clobber list do. */
+static void *const entry = CODE;
+
+static void run(void)
+{
+    asm volatile(
+        "push %%rbp\n\t"
+        "call *%0\n\t"
+        "pop %%rbp\n\t"
+        :
+        : "m"(entry)
+        : "rax", "rcx", "rdx", "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11",
+          "xmm12", "xmm13", "xmm14", "xmm15", "memory", "cc");
+}
+
 static int hexval(int c)
 {
     if (c >= '0' && c <= '9') return c - '0';
@@ -125,14 +143,18 @@ static void build(const uint8_t *snippet, int len)
     uint32_t in_addr = (uint32_t)(uintptr_t)OUT + 1024; /* input block lives after the outputs */
     uint64_t *in = (uint64_t *)(uintptr_t)in_addr;
 
-    /* Input block: regs, flags, xmm */
+    /* Input block: regs, flags, a reset mxcsr, xmm */
     for (int i = 0; i < 16; i++) in[i] = in_regs[i];
     in[16] = in_flags;
+    in[17] = 0x1f80;
 
     /* Save harness rsp: mov [OUT_HARNESS_RSP], rsp */
     p = emit_store_gpr(p, 4, (uint32_t)(uintptr_t)OUT + OUT_HARNESS_RSP);
     /* Load xmm0-15 from input block + 256 */
     for (int i = 0; i < 16; i++) p = emit_load_xmm(p, i, in_addr + 256 + 16 * i);
+    /* mxcsr: ldmxcsr [in+136] -> 0F AE 14 25 disp32, so the sticky
+     * exception flags of earlier cases do not leak into this one */
+    *p++ = 0x0f; *p++ = 0xae; *p++ = 0x14; *p++ = 0x25; memcpy(p, &(uint32_t){in_addr + 136}, 4); p += 4;
     /* Flags: push [in+128]; popf  -> FF 34 25 disp32 ; 9D */
     *p++ = 0xff; *p++ = 0x34; *p++ = 0x25; memcpy(p, &(uint32_t){in_addr + 128}, 4); p += 4;
     *p++ = 0x9d;
@@ -154,14 +176,15 @@ static void build(const uint8_t *snippet, int len)
     memcpy(p, snippet, len);
     p += len;
 
-    /* Epilogue: stores */
+    /* Epilogue: store every general register, then leave the test's
+     * stack alone: switch back to the harness's before pushf touches
+     * memory, so the scratch page holds only what the snippet wrote. */
     for (int i = 0; i < 16; i++) p = emit_store_gpr(p, i, (uint32_t)(uintptr_t)OUT + OUT_GPR + 8 * i);
-    /* pushf; pop [OUT_FLAGS]: 9C ; 8F 04 25 disp32 -- but pushf needs a valid rsp; use the test's rsp, fine */
+    p = emit_load_gpr(p, 4, (uint32_t)(uintptr_t)OUT + OUT_HARNESS_RSP);
+    /* pushf; pop [OUT_FLAGS]: 9C ; 8F 04 25 disp32 */
     *p++ = 0x9c;
     *p++ = 0x8f; *p++ = 0x04; *p++ = 0x25; memcpy(p, &(uint32_t){(uint32_t)(uintptr_t)OUT + OUT_FLAGS}, 4); p += 4;
     for (int i = 0; i < 16; i++) p = emit_store_xmm(p, i, (uint32_t)(uintptr_t)OUT + OUT_XMM + 16 * i);
-    /* mov rsp, [OUT_HARNESS_RSP]; ret */
-    p = emit_load_gpr(p, 4, (uint32_t)(uintptr_t)OUT + OUT_HARNESS_RSP);
     *p++ = 0xc3;
 }
 
@@ -194,7 +217,7 @@ int main(void)
         memcpy((uint8_t *)OUT + 1024 + 256, SCRATCH, 256);
 
         build(snippet, len);
-        ((void (*)(void))CODE)();
+        run();
 
         uint64_t *out = OUT;
         for (int i = 0; i < 16; i++) printf("%llx ", (unsigned long long)out[i]);

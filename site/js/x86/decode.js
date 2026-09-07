@@ -994,6 +994,8 @@ function resolve(entry, c) {
     // Keyed by mandatory prefix.
     const key = c.mandatory;
     if (c.vex && key === "f2" && entry.f2vex) {
+      // A VEX-only form sharing a legacy opcode: named as is.
+      c.vexNative = true;
       entry = entry.f2vex;
       continue;
     }
@@ -1325,7 +1327,7 @@ function decodeVex(c, first) {
     fromLegacy = false;
   }
   let spec = resolve(entry, c);
-  if (fromLegacy && !(entry && entry.vexOnly) && !spec.startsWith("v")) {
+  if (fromLegacy && !(entry && entry.vexOnly) && !c.vexNative && !spec.startsWith("v")) {
     spec = "v" + spec;
   }
   if (c.evex) {

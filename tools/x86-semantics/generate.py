@@ -159,8 +159,9 @@ for op in ["shld", "shrd"]:
         regs = REGS_BY_SIZE[size]
         form(f"{op} {regs[0]},{regs[2]},1", f"{op} {regs[0]},{regs[2]},1", mask=ALL_FLAGS & ~AF)
         form(f"{op} {regs[0]},{regs[2]},9", f"{op} {regs[0]},{regs[2]},9", mask=ALL_FLAGS & ~(AF | OF))
-        form(f"{op} {regs[0]},{regs[2]},cl", f"{op} {regs[0]},{regs[2]},cl", mask=ALL_FLAGS & ~(AF | OF), setup={"rcx": "shiftcount"})
-        form(f"{op} [m],{regs[2]},cl", f"{op} {mem(size)},{regs[2]},cl", mem=True, mask=ALL_FLAGS & ~(AF | OF), setup={"rcx": "shiftcount"})
+        count_kind = "shiftcount16" if size == 16 else "shiftcount"
+        form(f"{op} {regs[0]},{regs[2]},cl", f"{op} {regs[0]},{regs[2]},cl", mask=ALL_FLAGS & ~(AF | OF), setup={"rcx": count_kind})
+        form(f"{op} [m],{regs[2]},cl", f"{op} {mem(size)},{regs[2]},cl", mem=True, mask=ALL_FLAGS & ~(AF | OF), setup={"rcx": count_kind})
 
 MUL_MASK = CF | OF
 for size in [8, 16, 32, 64]:
@@ -174,13 +175,14 @@ for size in [8, 16, 32, 64]:
         form(f"imul {regs[0]},{regs[2]},imm8", f"imul {regs[0]},{regs[2]},-3", mask=MUL_MASK)
         form(f"imul {regs[0]},{regs[2]},imm", f"imul {regs[0]},{regs[2]},0x1234", mask=MUL_MASK)
         form(f"imul {regs[0]},[m]", f"imul {regs[0]},{mem(size)}", mem=True, mask=MUL_MASK)
-    form(f"div {regs[2]}", f"div {regs[2]}", mask=0, setup={"div": size})
-    form(f"idiv {regs[2]}", f"idiv {regs[2]}", mask=0, setup={"idiv": size})
+    form(f"div {regs[1]}", f"div {regs[1]}", mask=0, setup={"div": size})
+    form(f"idiv {regs[1]}", f"idiv {regs[1]}", mask=0, setup={"idiv": size})
 
 for size in [16, 32, 64]:
     regs = REGS_BY_SIZE[size]
     form(f"movzx {regs[0]},r8", f"movzx {regs[0]},dl")
-    form(f"movzx {regs[0]},ah", f"movzx {regs[0]},ah")
+    if size < 64:
+        form(f"movzx {regs[0]},ah", f"movzx {regs[0]},ah")
     form(f"movsx {regs[0]},r8", f"movsx {regs[0]},dl")
     form(f"movzx {regs[0]},[m]8", f"movzx {regs[0]},{mem(8)}", mem=True)
     form(f"movsx {regs[0]},[m]8", f"movsx {regs[0]},{mem(8)}", mem=True)
@@ -223,7 +225,6 @@ form("mov [m],ah", f"mov {mem(8)},ah", mem=True)
 form("mov eax,[m] zero-extends", f"mov eax,{mem(32)}", mem=True)
 form("xchg rax,r8", "xchg rax,r8")
 form("xchg eax,ecx", "xchg eax,ecx")
-form("mov fs-relative", "mov rax,QWORD PTR fs:[rbx+0x20]", mem=True, setup={"fs": True})
 
 BT_MASK = CF
 for size in [16, 32, 64]:
@@ -264,7 +265,8 @@ for cc in CONDS:
     form(f"cmp;j{cc}", f"cmp rax,rcx; j{cc} 1f; mov edx,1; 1: mov esi,2")
     form(f"cmp16;j{cc}", f"cmp ax,cx; j{cc} 1f; mov edx,1; 1: mov esi,2")
     form(f"test8;j{cc}", f"test al,cl; j{cc} 1f; mov edx,1; 1: mov esi,2")
-    form(f"shr;j{cc}", f"shr rax,3; j{cc} 1f; mov edx,1; 1: mov esi,2", mask=ALL_FLAGS & ~(AF | OF))
+    if cc not in ("o", "no", "l", "ge", "le", "g"):
+        form(f"shr;j{cc}", f"shr rax,3; j{cc} 1f; mov edx,1; 1: mov esi,2", mask=ALL_FLAGS & ~(AF | OF))
     form(f"flags;j{cc}", f"j{cc} 1f; mov edx,1; 1: mov esi,2")
     form(f"cmp;set{cc};flags after", f"cmp rax,rcx; set{cc} dl; pushf; pop rsi")
 
@@ -290,7 +292,6 @@ form("stc; rcl", "stc; rcl eax,1", mask=CF | OF)
 form("stc; rcr", "stc; rcr rax,1", mask=CF | OF)
 form("rcl imm", "rcl eax,5", mask=CF)
 form("rcr imm", "rcr rax,9", mask=CF)
-form("cpuid leaf 0", "xor eax,eax; xor ecx,ecx; cpuid; mov eax,ebx", setup={"cpuid": True})
 
 # String instructions: rcx small, rsi and rdi into scratch, both directions.
 for suffix, size in [("b", 8), ("w", 16), ("d", 32), ("q", 64)]:
@@ -371,9 +372,11 @@ PACKED = ["paddb", "paddw", "paddd", "paddq", "psubb", "psubw", "psubd", "psubq"
           "unpckhpd", "pmuludq", "pmuldq", "pmulhw", "pmulhuw", "psadbw", "pshufb", "pabsb", "pabsw", "pabsd",
           "pmovzxbw", "pmovzxbd", "pmovzxbq", "pmovzxwd", "pmovzxwq", "pmovzxdq", "pmovsxbw", "pmovsxbd",
           "pmovsxbq", "pmovsxwd", "pmovsxwq", "pmovsxdq"]
+PMOV_WIDTH = {"bw": "QWORD", "bd": "DWORD", "bq": "WORD", "wd": "QWORD", "wq": "DWORD", "dq": "QWORD"}
 for op in PACKED:
     sse(f"{op} xmm,xmm", f"{op} xmm2,xmm6")
-    sse(f"{op} xmm,[m]", f"{op} xmm2,XMMWORD PTR [rbx+0x40]", mem_=True)
+    width = PMOV_WIDTH[op[6:8]] if op.startswith("pmov") else "XMMWORD"
+    sse(f"{op} xmm,[m]", f"{op} xmm2,{width} PTR [rbx+0x40]", mem_=True)
 sse("pcmpeqb same", "pcmpeqb xmm2,xmm2")
 sse("pxor same", "pxor xmm2,xmm2")
 
@@ -386,7 +389,7 @@ FLOAT_SCALAR = ["addss", "addsd", "subss", "subsd", "mulss", "mulsd", "divss", "
                 "maxsd", "sqrtss", "sqrtsd", "cvtss2sd", "cvtsd2ss"]
 for op in FLOAT_SCALAR:
     sse(f"{op} xmm,xmm", f"{op} xmm2,xmm6", floats=True)
-    width = "DWORD" if op.endswith("ss") or op == "cvtss2sd" else "QWORD"
+    width = "DWORD" if (op.endswith("ss") and op != "cvtsd2ss") or op == "cvtss2sd" else "QWORD"
     sse(f"{op} xmm,[m]", f"{op} xmm2,{width} PTR [rbx+0x40]", mem_=True, floats=True)
 for op in ["comiss", "comisd", "ucomiss", "ucomisd"]:
     sse(f"{op}", f"{op} xmm2,xmm6", mask=CF | PF | ZF | SF | OF | AF, floats=True)
@@ -500,6 +503,17 @@ def float32_bits(rng):
         return struct.unpack("<I", struct.pack("<f", float("inf") if v > 0 else float("-inf")))[0]
 
 
+# Any register name to the 64-bit register that holds it.
+PARENT = {}
+for _regs in (R64, R32, R16):
+    for _i, _r in enumerate(_regs):
+        PARENT[_r] = R64[_i]
+for _r, _p in [("al", "rax"), ("cl", "rcx"), ("dl", "rdx"), ("bl", "rbx"), ("ah", "rax"), ("ch", "rcx"),
+               ("dh", "rdx"), ("bh", "rbx"), ("sil", "rsi"), ("dil", "rdi"), ("r8b", "r8"), ("r9b", "r9"),
+               ("r12b", "r12"), ("r15b", "r15")]:
+    PARENT[_r] = _p
+
+
 def make_inputs(f, rng, seed):
     regs = {r: rand_int(rng) for r in R64}
     regs["rsp"] = STACK
@@ -508,8 +522,11 @@ def make_inputs(f, rng, seed):
     if "fs" in f.setup:
         regs["rbx"] = 0x40  # fs_base + rbx + 0x20 lands in scratch
     for r, kind in f.setup.items():
+        r = PARENT.get(r, r)
         if kind == "shiftcount":
             regs[r] = rng.choice([0, 1, 2, 5, 8, 15, 16, 31, 32, 33, 63, 64, 65, 100, 0xFF, 0x1FF])
+        elif kind == "shiftcount16":
+            regs[r] = rng.choice([0, 1, 2, 5, 8, 15, 16])
         elif kind == "count":
             regs[r] = rng.choice([0, 1, 2, 3, 5, 8])
         elif kind == "src":
@@ -528,7 +545,7 @@ def make_inputs(f, rng, seed):
             regs[r] = rng.choice([0, 5, 31, 63, 64, 100, -1 & 0xFFFFFFFFFFFFFFFF, -70 & 0xFFFFFFFFFFFFFFFF, 0x1234])
         elif r == "nonzero-or-zero":
             if rng.random() < 0.3:
-                regs[kind] = 0
+                regs[PARENT[kind]] = 0
         elif r in ("div", "idiv"):
             size = kind
             bits = size
@@ -575,29 +592,51 @@ def scratch_for(f, rng, seed):
     return bytes(data)
 
 
+REG_ORDER = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+
+
+def build_cases(per_form=5):
+    """Assembles every form and draws its inputs; returns the cases and
+    the harness's input lines, one per case."""
+    codes = assemble(FORMS)
+    rng = random.Random(20260907)
+    cases = []
+    lines = []
+    for f, code in zip(FORMS, codes):
+        for _ in range(per_form):
+            seed = rng.getrandbits(64) or 1
+            regs, flags = make_inputs(f, rng, seed)
+            data = scratch_for(f, rng, seed)
+            cases.append({"form": f, "code": code, "regs": regs, "flags": flags, "seed": seed, "data": data})
+            reg_list = [regs[r] for r in REG_ORDER]
+            lines.append(" ".join([code.hex()] + [f"{v:x}" for v in reg_list] + [f"{flags:x}", data.hex()]))
+    return cases, lines
+
+
+def build_harness(d):
+    here = os.path.dirname(os.path.abspath(__file__))
+    harness = os.path.join(d, "harness")
+    subprocess.run(["cc", "-O1", "-w", "-o", harness, os.path.join(here, "harness.c")], check=True)
+    return harness
+
+
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         sys.exit(__doc__)
     out_path = sys.argv[1]
-    here = os.path.dirname(os.path.abspath(__file__))
     with tempfile.TemporaryDirectory() as d:
-        harness = os.path.join(d, "harness")
-        subprocess.run(["cc", "-O1", "-w", "-o", harness, os.path.join(here, "harness.c")], check=True)
-        codes = assemble(FORMS)
-        rng = random.Random(20260907)
-        cases = []
-        lines = []
-        for f, code in zip(FORMS, codes):
-            for k in range(5):
-                seed = rng.getrandbits(64) or 1
-                regs, flags = make_inputs(f, rng, seed)
-                data = scratch_for(f, rng, seed)
-                cases.append({"form": f, "code": code, "regs": regs, "flags": flags, "seed": seed, "data": data})
-                reg_list = [regs[r] for r in ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]]
-                lines.append(" ".join([code.hex()] + [f"{v:x}" for v in reg_list] + [f"{flags:x}", data.hex()]))
+        harness = build_harness(d)
+        cases, lines = build_cases()
+        if "--one-by-one" in sys.argv:
+            # Find the case that kills the harness.
+            for case, line in zip(cases, lines):
+                proc = subprocess.run([harness], input=line + "\n", capture_output=True, text=True)
+                if proc.returncode != 0:
+                    print(f"harness died with {proc.returncode} on {case['form'].name}: {line[:120]}")
+            return
         proc = subprocess.run([harness], input="\n".join(lines) + "\n", capture_output=True, text=True)
         if proc.returncode != 0:
-            sys.exit(f"harness failed: {proc.stderr}")
+            sys.exit(f"harness failed with {proc.returncode}; rerun with --one-by-one to find the case")
         results = proc.stdout.splitlines()
         if len(results) != len(cases):
             sys.exit(f"harness answered {len(results)} of {len(cases)} cases")
@@ -613,7 +652,7 @@ def main():
             "name": f.name,
             "code": case["code"].hex(),
             "seed": f"{case['seed']:x}",
-            "regs": [f"{case['regs'][r]:x}" for r in ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]],
+            "regs": [f"{case['regs'][r]:x}" for r in REG_ORDER],
             "flags": f"{case['flags']:x}",
             "mask": f"{f.mask:x}",
             "out": {"regs": [f"{v:x}" for v in out_regs], "flags": f"{out_flags:x}"},

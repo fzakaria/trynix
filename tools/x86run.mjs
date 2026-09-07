@@ -16,7 +16,7 @@ import { Process } from "../site/js/x86/linux.js";
 import { NodeFs } from "../site/js/x86/fs-node.js";
 
 function usage() {
-  console.error("usage: x86run [--trace] [--stats] [--blocks] <binary> [args...]");
+  console.error("usage: x86run [--trace] [--stats] [--blocks] [--regions] <binary> [args...]");
   process.exit(2);
 }
 
@@ -24,6 +24,7 @@ const args = process.argv.slice(2);
 let trace = null;
 let stats = false;
 let traceBlocks = false;
+let traceRegions = false;
 while (args.length > 0 && args[0].startsWith("--")) {
   const flag = args.shift();
   if (flag === "--trace") {
@@ -32,6 +33,8 @@ while (args.length > 0 && args[0].startsWith("--")) {
     stats = true;
   } else if (flag === "--blocks") {
     traceBlocks = true;
+  } else if (flag === "--regions") {
+    traceRegions = true;
   } else {
     usage();
   }
@@ -73,6 +76,10 @@ function hostStream(fd, canRead, canWrite) {
 
 const t0 = performance.now();
 const machine = new Machine({ pages: 16384 });
+if (traceRegions) {
+  machine.translator.onRegion = (entry, blocks, ms, bytes) =>
+    fs.writeSync(2, `[region] 0x${entry.toString(16)} ${blocks} blocks ${bytes} bytes ${ms.toFixed(1)} ms (total ${machine.translator.blocks} blocks, heap ${(process.memoryUsage().heapUsed / 1048576).toFixed(0)} MB)\n`);
+}
 if (traceBlocks) {
   machine.translator.traceBlocks = true;
   machine.traceBlock = (rip) => fs.writeSync(2, `[blk] 0x${rip.toString(16)}\n`);
@@ -107,7 +114,8 @@ try {
     const tr = machine.translator;
     console.error(
       `[stats] load ${(t1 - t0).toFixed(1)} ms, run ${(t2 - t1).toFixed(1)} ms, ` +
-        `${tr.regions} regions, ${machine.slots - 1} blocks, ${proc.syscalls} syscalls`,
+        `${tr.regions} regions, ${machine.slots - 1} blocks, ${(tr.bytesEmitted / 1048576).toFixed(1)} MB of wasm, ` +
+        `${tr.translateMs.toFixed(0)} ms translating, ${proc.syscalls} syscalls`,
     );
   }
 } catch (e) {
