@@ -108,6 +108,15 @@
               pkgs.chromium
             ];
 
+          # run an x86-64 binary from the host's store through the
+          # translator (docs/translate.md): the development loop
+          x86run = tool "x86run" "${pkgs.nodejs}/bin/node ${./tools/x86run.mjs}" [ ];
+
+          # harvest the decoder's oracle from objdump over real binaries
+          x86-oracle = tool "x86-oracle" "${pkgs.python3}/bin/python3 ${./tools/x86-oracle.py}" [
+            pkgs.binutils
+          ];
+
           # publish the example package into the site as a binary cache
           make-example-cache = tool "make-example-cache" ./tools/make-example-cache.sh [
             pkgs.curl
@@ -241,11 +250,12 @@
               touch $out
             '';
 
-          # the node test suite: the narinfo parser against a fixture,
-          # offline
+          # the node test suite, offline: the narinfo parser against a
+          # fixture, and the x86 translator against objdump's oracle and
+          # hand-assembled programs
           tests = pkgs.runCommand "trynix-tests" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
             cd ${self}
-            node --test tests/site/*.test.mjs
+            node --test tests/site/*.test.mjs tests/x86/*.test.mjs
             touch $out
           '';
         }
