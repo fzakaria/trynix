@@ -2,18 +2,19 @@
 // register file, the block table and the run loop that dispatches into
 // translated code. It knows nothing about ELF files or Linux; the
 // process layer sits on top and supplies the syscall handler.
-import { buildHelpersModule, LOOKUP_L1_SIZE, LOOKUP_L2_SIZE } from "./helpers.js";
+import { buildHelpersModule, LOOKUP_ENTRY_BYTES, LOOKUP_HASH_MULTIPLIER } from "./helpers.js";
 import { Translator } from "./translate.js";
 import { EXIT, G, REGISTER_NAMES } from "./state.js";
 import { fpuOp } from "./x87.js";
 
 const PAGE = 65536;
 
-// What the Machine keeps for its own tables, at the top of the initial
-// memory: the lookup directory and the second-level blocks behind it.
-// The guest gets everything below, and everything above once the
-// memory grows.
-const KERNEL_SIZE = 64 << 20;
+// The block lookup: a hash table of this many entries, 16 MiB, per
+// Machine. It holds a million and a half blocks at a comfortable load;
+// python's start is a tenth of that.
+const LOOKUP_ENTRIES = 1 << 21;
+export const LOOKUP_BYTES = LOOKUP_ENTRIES * LOOKUP_ENTRY_BYTES;
+const LOOKUP_LOAD_LIMIT = 0.8;
 
 // Thrown by a syscall handler to end the process.
 export class ProcessExit extends Error {
@@ -27,25 +28,37 @@ export class ProcessExit extends Error {
 export class GuestFault extends Error {}
 
 export class Machine {
-  constructor({ pages = 4096, maxPages = 65536 } = {}) {
-    this.memory = new WebAssembly.Memory({ initial: pages, maximum: maxPages });
+  // A Machine owns a memory unless given one (a thread shares its
+  // process's), and keeps its block lookup at `lookupBase` in that
+  // memory: LOOKUP_BYTES that the process layer reserved for it, or the
+  // top of the initial memory when nothing is said.
+  constructor({ pages = 4096, maxPages = 65536, memory = null, shared = false, lookupBase = null } = {}) {
+    this.shared = shared || (memory !== null && memory.buffer instanceof SharedArrayBuffer);
+    this.memory = memory ?? new WebAssembly.Memory({ initial: pages, maximum: maxPages, shared: this.shared });
     this.table = new WebAssembly.Table({ element: "anyfunc", initial: 1 });
     this.refreshViews();
 
-    if (pages * PAGE < 2 * KERNEL_SIZE) {
-      throw new Error("memory too small for the runtime's tables");
+    if (lookupBase === null) {
+      if (this.size < 2 * LOOKUP_BYTES) {
+        throw new Error("memory too small for the block lookup");
+      }
+      lookupBase = this.size - LOOKUP_BYTES;
     }
-    this.kernelTop = pages * PAGE;
-    this.kernelBase = this.kernelTop - KERNEL_SIZE;
-    this.l1Base = this.kernelBase;
-    // Everything the run loop reserves for itself comes from this bump
-    // pointer, starting past the lookup directory.
-    this.kernelBrk = this.l1Base + LOOKUP_L1_SIZE;
+    this.lookupBase = lookupBase;
+    this.lookupMask = LOOKUP_ENTRIES - 1;
+    this.lookupCount = 0;
+    // The top of what the guest may use when the lookup sits at the
+    // top of the initial memory; the process layer reads it.
+    this.kernelBase = lookupBase;
+    this.kernelTop = lookupBase + LOOKUP_BYTES;
+    this.u8.fill(0, lookupBase, lookupBase + LOOKUP_BYTES);
 
-    const helpers = new WebAssembly.Instance(new WebAssembly.Module(buildHelpersModule({ l1Base: this.l1Base })), {
+    const helpers = new WebAssembly.Instance(new WebAssembly.Module(buildHelpersModule({ shared: this.shared })), {
       env: { memory: this.memory, table: this.table },
     });
     this.helpers = helpers.exports;
+    this.helpers.ht_base.value = lookupBase;
+    this.helpers.ht_mask.value = this.lookupMask;
     this.translator = new Translator(this);
     // Reset values: mxcsr masks every exception and rounds to nearest;
     // the x87 control word extends precision with all exceptions masked.
@@ -77,6 +90,14 @@ export class Machine {
     this.u8 = new Uint8Array(this.memory.buffer);
     this.u32 = new Uint32Array(this.memory.buffer);
     this.view = new DataView(this.memory.buffer);
+  }
+
+  // Another thread may have grown a shared memory; views follow the
+  // buffer's current length.
+  syncViews() {
+    if (this.u8.length !== this.memory.buffer.byteLength) {
+      this.refreshViews();
+    }
   }
 
   // The imports every translated module takes, with the load base the
@@ -147,17 +168,6 @@ export class Machine {
     this.view.setUint32(Number(addr), Number(v) >>> 0, true);
   }
 
-  // Zero-filled memory for the runtime's own tables.
-  kalloc(len) {
-    const addr = this.kernelBrk;
-    if (addr + len > this.kernelTop) {
-      throw new GuestFault("runtime table space exhausted");
-    }
-    this.kernelBrk += len;
-    this.ensure(addr, len);
-    return addr;
-  }
-
   // ---- registers ----------------------------------------------------
 
   // Registers read back unsigned; wasm reports i64 globals signed.
@@ -172,27 +182,47 @@ export class Machine {
 
   // ---- block table --------------------------------------------------
 
-  // The table slot for a guest address, or 0.
+  // The table slot for a guest address, or 0: the same probe as the
+  // wasm helper, in JavaScript.
   lookup(addr) {
     const a = Number(BigInt.asUintN(32, addr));
-    const l1 = this.u32[(this.l1Base >>> 2) + (a >>> 12)];
-    if (l1 === 0) {
-      return 0;
+    let i = (Math.imul(a, LOOKUP_HASH_MULTIPLIER) >>> 8) & this.lookupMask;
+    const u32 = this.u32;
+    const base = this.lookupBase >>> 2;
+    for (;;) {
+      const key = u32[base + i * 2];
+      if (key === a) {
+        return u32[base + i * 2 + 1];
+      }
+      if (key === 0) {
+        return 0;
+      }
+      i = (i + 1) & this.lookupMask;
     }
-    return this.u32[(l1 >>> 2) + (a & 0xfff)];
   }
 
   // Puts a block function in a table slot and in the lookup for addr.
   register(addr, slot, func) {
     this.table.set(slot, func);
     const a = Number(BigInt.asUintN(32, addr));
-    const l1i = (this.l1Base >>> 2) + (a >>> 12);
-    let l1 = this.u32[l1i];
-    if (l1 === 0) {
-      l1 = this.kalloc(LOOKUP_L2_SIZE);
-      this.u32[l1i] = l1;
+    let i = (Math.imul(a, LOOKUP_HASH_MULTIPLIER) >>> 8) & this.lookupMask;
+    const u32 = this.u32;
+    const base = this.lookupBase >>> 2;
+    for (;;) {
+      const key = u32[base + i * 2];
+      if (key === 0 || key === a) {
+        if (key === 0) {
+          this.lookupCount++;
+          if (this.lookupCount > LOOKUP_ENTRIES * LOOKUP_LOAD_LIMIT) {
+            throw new GuestFault("block lookup table full");
+          }
+        }
+        u32[base + i * 2] = a;
+        u32[base + i * 2 + 1] = slot;
+        return;
+      }
+      i = (i + 1) & this.lookupMask;
     }
-    this.u32[(l1 >>> 2) + (a & 0xfff)] = slot;
   }
 
   // Grows the function table by n and returns the first new slot.

@@ -11,17 +11,23 @@ import { CC, FLAG, G, GLOBALS } from "./state.js";
 
 const VALTYPE = { i32: T.i32, i64: T.i64, f64: T.f64, v128: T.v128 };
 
-// The block lookup is a two-level table in guest memory, in the region
-// the Machine keeps for itself: one 32-bit word per 4 KiB page pointing
-// at a 16 KiB second-level block, which holds one table index per byte
-// of the page. Zero means untranslated. The directory's address is a
-// constant of the helper module, so the Machine passes it in.
-export const LOOKUP_L1_SIZE = 1 << 22;
-export const LOOKUP_L2_SIZE = 1 << 14;
+// Inside this module the state globals sit after the two lookup
+// globals; translated modules import the state alone, in G's order.
+const LOOKUP_GLOBALS = 2;
+const H = Object.fromEntries(Object.entries(G).map(([k, v]) => [k, v + LOOKUP_GLOBALS]));
 
-export function buildHelpersModule({ l1Base }) {
+// The block lookup is an open-addressed hash table in guest memory,
+// in an area the Machine owns: entries of (low 32 bits of the address,
+// table slot), 8 bytes each, probed linearly. Address 0 is never a
+// block, so a zero key is an empty entry. The table's base and mask
+// are globals, so a thread has its own and a grown table is a new
+// pair of values rather than a new module.
+export const LOOKUP_ENTRY_BYTES = 8;
+export const LOOKUP_HASH_MULTIPLIER = 0x9e3779b1;
+
+export function buildHelpersModule({ shared = false } = {}) {
   const m = new ModuleBuilder();
-  m.importMemory("env", "memory", { min: 1, max: 65536 });
+  m.importMemory("env", "memory", { min: 1, max: 65536, shared });
   // The block table is imported here and nowhere else. V8 keeps a
   // dispatch table per instance that imports a table, sized to the
   // table, so with one instance per translated region that cost was
@@ -29,6 +35,12 @@ export function buildHelpersModule({ l1Base }) {
   m.importTable("env", "table", { min: 1 });
 
   // Globals, in state.js order, all exported.
+  // The lookup table's base address and index mask, set by the Machine.
+  for (const name of ["ht_base", "ht_mask"]) {
+    const init = new Code();
+    init.i32_const(0).end();
+    m.addGlobal(T.i32, true, init, { export: name });
+  }
   for (const [name, type] of GLOBALS) {
     const init = new Code();
     if (type === "i32") {
@@ -44,17 +56,27 @@ export function buildHelpersModule({ l1Base }) {
     m.addGlobal(VALTYPE[type], true, init, { export: name });
   }
 
-  // lookup(addr: i64) -> i32
+  // lookup(addr: i64) -> i32: the table slot for a block address, or 0.
   {
+    const HT_BASE = 0;
+    const HT_MASK = 1;
     const c = new Code(1);
-    const l1 = c.declareLocal(T.i32);
     const a = c.declareLocal(T.i32);
+    const i = c.declareLocal(T.i32);
+    const e = c.declareLocal(T.i32);
+    const key = c.declareLocal(T.i32);
     c.local_get(0).i32_wrap_i64().local_set(a);
-    // l1 = load32(LOOKUP_L1_BASE + (a >> 12) * 4)
-    c.local_get(a).i32_const(12).i32_shr_u().i32_const(2).i32_shl().i32_load(l1Base).local_tee(l1);
-    c.i32_eqz().if_(T.empty).i32_const(0).return_().end();
-    // load32(l1 + (a & 0xfff) * 4)
-    c.local_get(l1).local_get(a).i32_const(0xfff).i32_and().i32_const(2).i32_shl().i32_add().i32_load(0);
+    // i = (a * multiplier) >> 8 & mask
+    c.local_get(a).i32_const(LOOKUP_HASH_MULTIPLIER).i32_mul().i32_const(8).i32_shr_u().global_get(HT_MASK).i32_and().local_set(i);
+    c.block(T.empty).loop(T.empty);
+    // e = base + i * 8; key = load32(e)
+    c.global_get(HT_BASE).local_get(i).i32_const(3).i32_shl().i32_add().local_tee(e).i32_load(0).local_tee(key);
+    c.local_get(a).i32_eq().if_(T.empty).local_get(e).i32_load(4).return_().end();
+    c.local_get(key).i32_eqz().br_if(1);
+    c.local_get(i).i32_const(1).i32_add().global_get(HT_MASK).i32_and().local_set(i);
+    c.br(0);
+    c.end().end();
+    c.i32_const(0);
     c.end();
     m.addFunc(m.addType([T.i64], [T.i32]), c.locals, c, { export: "lookup" });
   }
@@ -74,10 +96,10 @@ export function buildHelpersModule({ l1Base }) {
     const of = c.declareLocal(T.i32);
     const af = c.declareLocal(T.i32);
 
-    c.global_get(G.cc_op).local_set(op);
-    c.global_get(G.cc_dst).local_set(dst);
-    c.global_get(G.cc_src).local_set(src);
-    c.global_get(G.cc_src2).local_set(src2);
+    c.global_get(H.cc_op).local_set(op);
+    c.global_get(H.cc_dst).local_set(dst);
+    c.global_get(H.cc_src).local_set(src);
+    c.global_get(H.cc_src2).local_set(src2);
     // bits = 8 << (op & 3); mask = ~0 >>> (64 - bits)
     c.i32_const(8).local_get(op).i32_const(3).i32_and().i32_shl().local_set(bits);
     c.i64_const(-1).i64_const(64).local_get(bits).i64_extend_i32_u().i64_sub().i64_shr_u().local_set(mask);
@@ -257,7 +279,7 @@ export function buildHelpersModule({ l1Base }) {
   // through the top-of-stack index; fpu_push(v) and fpu_pop() -> f64
   // move it. Each is a br_table over the physical register.
   const physical = (c, iLocal) => {
-    c.global_get(G.fpu_top).local_get(iLocal).i32_add().i32_const(7).i32_and();
+    c.global_get(H.fpu_top).local_get(iLocal).i32_add().i32_const(7).i32_and();
   };
   {
     const c = new Code(1);
@@ -267,7 +289,7 @@ export function buildHelpersModule({ l1Base }) {
     physical(c, 0);
     c.br_table([0, 1, 2, 3, 4, 5, 6, 7], 8);
     for (let i = 0; i < 8; i++) {
-      c.end().global_get(G[`st${i}`]).return_();
+      c.end().global_get(H[`st${i}`]).return_();
     }
     c.end().f64_const(0);
     c.end();
@@ -281,14 +303,14 @@ export function buildHelpersModule({ l1Base }) {
     physical(c, 0);
     c.br_table([0, 1, 2, 3, 4, 5, 6, 7], 8);
     for (let i = 0; i < 8; i++) {
-      c.end().local_get(1).global_set(G[`st${i}`]).return_();
+      c.end().local_get(1).global_set(H[`st${i}`]).return_();
     }
     c.end();
     c.end();
     const fpuSet = m.addFunc(m.addType([T.i32, T.f64], []), c.locals, c, { export: "fpu_set" });
     // fpu_push(v): top = (top - 1) & 7; st(0) = v
     const cp = new Code(1);
-    cp.global_get(G.fpu_top).i32_const(1).i32_sub().i32_const(7).i32_and().global_set(G.fpu_top);
+    cp.global_get(H.fpu_top).i32_const(1).i32_sub().i32_const(7).i32_and().global_set(H.fpu_top);
     cp.i32_const(0).local_get(0).call(fpuSet).end();
     m.addFunc(m.addType([T.f64], []), cp.locals, cp, { export: "fpu_push" });
   }
@@ -298,7 +320,7 @@ export function buildHelpersModule({ l1Base }) {
     c.i32_const(0).call(m.funcs.length - 3 + 0);
     // The call index above is fpu_get; computed as the index of the
     // function three definitions back (fpu_get, fpu_set, fpu_push).
-    c.global_get(G.fpu_top).i32_const(1).i32_add().i32_const(7).i32_and().global_set(G.fpu_top);
+    c.global_get(H.fpu_top).i32_const(1).i32_add().i32_const(7).i32_and().global_set(H.fpu_top);
     c.end();
     m.addFunc(m.addType([], [T.f64]), c.locals, c, { export: "fpu_pop" });
   }
@@ -308,7 +330,7 @@ export function buildHelpersModule({ l1Base }) {
   {
     const c = new Code(1);
     for (let i = 0; i < 16; i++) {
-      c.local_get(0).global_get(G[`xmm${i}`]).v128_store(16 * i, 0);
+      c.local_get(0).global_get(H[`xmm${i}`]).v128_store(16 * i, 0);
     }
     c.end();
     m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "save_xmm" });
@@ -316,7 +338,7 @@ export function buildHelpersModule({ l1Base }) {
   {
     const c = new Code(1);
     for (let i = 0; i < 16; i++) {
-      c.local_get(0).v128_load(16 * i, 0).global_set(G[`xmm${i}`]);
+      c.local_get(0).v128_load(16 * i, 0).global_set(H[`xmm${i}`]);
     }
     c.end();
     m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "load_xmm" });

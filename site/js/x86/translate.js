@@ -230,7 +230,7 @@ export class Translator {
     // Imports, in a fixed order the Machine's import object matches.
     // The block table is not among them: indirect jumps go through the
     // helpers' `jump`, which is the one place the table is imported.
-    m.importMemory("env", "memory", { min: 1, max: 65536 });
+    m.importMemory("env", "memory", { min: 1, max: 65536, shared: this.machine.shared });
     for (const [name, params, results] of JS_IMPORTS) {
       ctx.imports[name] = m.importFunc("env", name, m.addType(params, results));
     }
