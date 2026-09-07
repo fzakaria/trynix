@@ -4,7 +4,7 @@
 // process layer sits on top and supplies the syscall handler.
 import { buildHelpersModule, LOOKUP_ENTRY_BYTES, LOOKUP_HASH_MULTIPLIER } from "./helpers.js";
 import { Translator } from "./translate.js";
-import { EXIT, G, REGISTER_NAMES } from "./state.js";
+import { EXIT, G, GLOBALS, REGISTER_NAMES } from "./state.js";
 import { fpuOp } from "./x87.js";
 
 const PAGE = 65536;
@@ -15,6 +15,9 @@ const PAGE = 65536;
 const LOOKUP_ENTRIES = 1 << 21;
 export const LOOKUP_BYTES = LOOKUP_ENTRIES * LOOKUP_ENTRY_BYTES;
 const LOOKUP_LOAD_LIMIT = 0.8;
+// Past the lookup: a scratch area the register file is spilled through.
+export const SCRATCH_BYTES = 4096;
+export const LOOKUP_RESERVE = LOOKUP_BYTES + SCRATCH_BYTES;
 
 // Thrown by a syscall handler to end the process.
 export class ProcessExit extends Error {
@@ -45,6 +48,7 @@ export class Machine {
       lookupBase = this.size - LOOKUP_BYTES;
     }
     this.lookupBase = lookupBase;
+    this.scratch = lookupBase + LOOKUP_BYTES;
     this.lookupMask = LOOKUP_ENTRIES - 1;
     this.lookupCount = 0;
     // The top of what the guest may use when the lookup sits at the
@@ -178,6 +182,47 @@ export class Machine {
 
   setReg(name, v) {
     this.helpers[name].value = typeof v === "bigint" ? BigInt.asUintN(64, v) : v;
+  }
+
+  // The whole register file as plain data: BigInt strings for the
+  // 64-bit globals, numbers for the rest, xmm as byte arrays. What a
+  // fork, a new thread or a signal frame carries.
+  saveState() {
+    const state = {};
+    for (const [name, type] of GLOBALS) {
+      if (name.startsWith("xmm")) {
+        continue;
+      }
+      const v = this.helpers[name].value;
+      state[name] = type === "i64" ? BigInt.asUintN(64, v).toString() : v;
+    }
+    this.helpers.save_xmm(this.scratch);
+    state.xmm = Array.from(this.u8.subarray(this.scratch, this.scratch + 256));
+    return state;
+  }
+
+  loadState(state) {
+    for (const [name, type] of GLOBALS) {
+      if (name.startsWith("xmm")) {
+        continue;
+      }
+      if (state[name] === undefined) {
+        continue;
+      }
+      this.helpers[name].value = type === "i64" ? BigInt.asIntN(64, BigInt(state[name])) : state[name];
+    }
+    if (state.xmm) {
+      this.u8.set(state.xmm, this.scratch);
+      this.helpers.load_xmm(this.scratch);
+    }
+  }
+
+  // An Int32 view for futexes on a shared memory; refreshed on growth.
+  get i32() {
+    if (this._i32 === undefined || this._i32.buffer !== this.memory.buffer) {
+      this._i32 = new Int32Array(this.memory.buffer);
+    }
+    return this._i32;
   }
 
   // ---- block table --------------------------------------------------

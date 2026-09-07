@@ -1,7 +1,7 @@
 // An in-memory filesystem for the page: the store paths of a closure,
 // as the NAR entries site/js/nar.js parses, plus a writable tmpfs for
 // everything a program creates. The same interface fs-node.js offers
-// over the host's files, so linux.js does not know which it has.
+// over the host's files, so the kernel does not know which it has.
 //
 // File contents are the views into the decompressed archives that the
 // NAR parser produced, never copied: the closure lives in the tab

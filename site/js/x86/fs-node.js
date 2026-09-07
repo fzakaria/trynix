@@ -1,7 +1,7 @@
 // A filesystem backend over node's own: the guest sees the host's
 // files, which makes every path in /nix/store a test case. The page
 // uses a different backend over the NAR-unpacked tree; the interface
-// is what linux.js calls.
+// is what kernel.js calls.
 //
 // Interface:
 //   stat(path, followLinks) -> { mode, size, ino, nlink, uid, gid, mtime, blksize, blocks }

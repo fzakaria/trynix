@@ -54,6 +54,25 @@ const digestFromPath = (path) => {
   return DIGEST_PATTERN.test(digest) ? digest : null;
 };
 
+// Every process worker reads the store in place, so an archive's
+// bytes move into a SharedArrayBuffer once and its entries become
+// views into that: the closure is copied once, here, and never again.
+function shareEntries(entries) {
+  const shared = new Map();
+  return entries.map((entry) => {
+    if (entry.data === undefined) {
+      return entry;
+    }
+    let buffer = shared.get(entry.data.buffer);
+    if (buffer === undefined) {
+      buffer = new SharedArrayBuffer(entry.data.buffer.byteLength);
+      new Uint8Array(buffer).set(new Uint8Array(entry.data.buffer));
+      shared.set(entry.data.buffer, buffer);
+    }
+    return { ...entry, data: new Uint8Array(buffer, entry.data.byteOffset, entry.data.byteLength) };
+  });
+}
+
 // The environment a program sees: what a shell in the VM would give
 // it, minus what only a kernel can provide.
 function environment(binDirs) {
@@ -159,7 +178,7 @@ async function main() {
     const t0 = performance.now();
     await mapConcurrent(infos, NAR_CONCURRENCY, async (info) => {
       const entries = await fetchNar(info, (n) => closureRow.add(n));
-      storePaths.push({ path: info.storePath, entries });
+      storePaths.push({ path: info.storePath, entries: shareEntries(entries) });
     });
     const unpacked = infos.reduce((sum, i) => sum + i.narSize, 0);
     closureRow.done(`${humanBytes(unpacked)} unpacked in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
@@ -229,7 +248,8 @@ async function main() {
     consoleNote.textContent = "starting…";
     runRow.note("running…");
     const started = performance.now();
-    const worker = new Worker(new URL("./x86/worker.js", import.meta.url), { type: "module" });
+    let lastStats = null;
+    const worker = new Worker(new URL("./x86/kernel-worker.js", import.meta.url), { type: "module" });
     const done = new Promise((resolve, reject) => {
       worker.onmessage = (event) => {
         const msg = event.data;
@@ -246,6 +266,9 @@ async function main() {
             break;
           case "log":
             log(msg.text);
+            if (msg.text.includes("[stats]")) {
+              lastStats = msg.text.slice(msg.text.indexOf("[stats]") + 8);
+            }
             break;
           case "trace":
             log(`[sys] ${msg.line}`);
@@ -260,16 +283,6 @@ async function main() {
       worker.onerror = (e) => reject(new Error(e.message));
     });
 
-    // Transfer the archives rather than copy them: each NAR's entries
-    // are views into one decompressed buffer.
-    const buffers = new Set();
-    for (const { entries } of storePaths) {
-      for (const entry of entries) {
-        if (entry.data !== undefined) {
-          buffers.add(entry.data.buffer);
-        }
-      }
-    }
     worker.postMessage(
       {
         type: "start",
@@ -286,24 +299,15 @@ async function main() {
           "/etc/hosts": "127.0.0.1 localhost\n",
         },
       },
-      [...buffers],
     );
     consoleVeil.hidden = true;
     log(`running ${program} ${args.join(" ")}`);
 
     const exit = await done;
     const wall = (performance.now() - started) / 1000;
-    window.trynixRun.exit = { code: exit.code, wall, stats: exit.stats };
+    window.trynixRun.exit = { code: exit.code, wall, stats: lastStats };
     runRow.done(`exit ${exit.code} after ${wall.toFixed(1)} s`);
-    if (exit.stats !== null) {
-      const s = exit.stats;
-      statsElement.textContent =
-        `exit ${exit.code} in ${wall.toFixed(2)} s: ${s.regions} regions translated (${s.blocks} blocks), ` +
-        `${s.cachedRegions} from the cache (${s.cachedBlocks} blocks), ${humanBytes(s.wasmBytes)} of new wasm, ` +
-        `${(s.translateMs / 1000).toFixed(2)} s translating or instantiating, ${s.syscalls} syscalls`;
-    } else {
-      statsElement.textContent = `exit ${exit.code}: see the debug log`;
-    }
+    statsElement.textContent = `exit ${exit.code} in ${wall.toFixed(2)} s${lastStats ? `; ${lastStats}` : ""}`;
     slave.write(`\r\n[process exited with ${exit.code}]\r\n`);
     worker.terminate();
   } catch (err) {

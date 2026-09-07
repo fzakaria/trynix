@@ -65,7 +65,7 @@ export class InputWriter {
   }
 }
 
-// The worker's end, shaped as the stream linux.js reads from.
+// The kernel's end: what its terminal reads from.
 export class InputReader {
   constructor(sab) {
     this.header = new Int32Array(sab, 0, HEADER_WORDS);
