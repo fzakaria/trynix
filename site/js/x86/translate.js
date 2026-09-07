@@ -33,7 +33,7 @@ const MAX_INSNS_PER_BLOCK = 256;
 
 // Bumped whenever generated code changes shape, so a cached module from
 // an older translator is never instantiated against a newer runtime.
-export const TRANSLATION_VERSION = 1;
+export const TRANSLATION_VERSION = 2;
 
 // Imported functions, in the order the translated module imports them.
 // The JavaScript side of these lives on the Machine.
@@ -166,7 +166,9 @@ export class Translator {
     const first = machine.reserveSlots(offsets.length);
     let module;
     try {
-      module = new WebAssembly.Module(bytes);
+      // Cached bytes may sit in shared memory, which a compiler will
+      // not read from.
+      module = new WebAssembly.Module(bytes.buffer instanceof SharedArrayBuffer ? bytes.slice() : bytes);
     } catch (e) {
       throw new Error(`${key ?? "region"}: ${e.message}`);
     }

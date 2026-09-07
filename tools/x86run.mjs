@@ -80,6 +80,7 @@ const tty = {
     return n;
   },
   size: () => ({ rows: process.stdout.rows || 24, cols: process.stdout.columns || 80 }),
+  isTerminal: () => Boolean(process.stdin.isTTY),
   takeInterrupt: () => {
     const was = interrupted;
     interrupted = false;

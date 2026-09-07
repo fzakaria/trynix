@@ -124,6 +124,8 @@ export class Process {
     this.sigactions = new Array(SIG_COUNT).fill(null);
     this.sigmask = 0n;
     this.signalFrames = [];
+    // The alternate signal stack, if the thread set one: { sp, size }.
+    this.altStack = null;
     this.mappings = [];
     this.exePath = "";
     this.argv = [];
@@ -408,6 +410,7 @@ export class Process {
       registers: this.machine.saveState(),
       sigactions: this.sigactions.map((a) => (a === null ? null : { handler: a.handler.toString(), flags: a.flags.toString(), restorer: a.restorer.toString(), mask: a.mask.toString() })),
       sigmask: this.sigmask.toString(),
+      altStack: this.altStack === null ? null : { sp: this.altStack.sp.toString(), size: this.altStack.size },
       tidAddress: this.tidAddress.toString(),
       exePath: this.exePath,
       argv: this.argv,
@@ -419,6 +422,7 @@ export class Process {
   restore(state) {
     this.sigactions = state.sigactions.map((a) => (a === null ? null : { handler: BigInt(a.handler), flags: BigInt(a.flags), restorer: BigInt(a.restorer), mask: BigInt(a.mask) }));
     this.sigmask = BigInt(state.sigmask);
+    this.altStack = state.altStack ? { sp: BigInt(state.altStack.sp), size: state.altStack.size } : null;
     this.tidAddress = BigInt(state.tidAddress);
     this.exePath = state.exePath;
     this.argv = state.argv;
@@ -477,7 +481,9 @@ export class Process {
     while (m.u8[end] !== 0) {
       end++;
     }
-    return new TextDecoder().decode(m.u8.subarray(start, end));
+    // A copy: guest memory is shared, and a browser's TextDecoder
+    // refuses a view of it.
+    return new TextDecoder().decode(m.u8.slice(start, end));
   }
 
   // Copies the kernel's payload into guest memory.
@@ -552,13 +558,20 @@ export class Process {
     const m = this.machine;
     const saved = { registers: m.saveState(), sigmask: this.sigmask };
     this.signalFrames.push(saved);
-    let sp = m.reg("rsp") - 128n;
+    const SA_ONSTACK = 0x08000000n;
+    let sp;
+    if (action.flags & SA_ONSTACK && this.altStack !== null && !this.onAltStack()) {
+      sp = this.altStack.sp + BigInt(this.altStack.size);
+    } else {
+      sp = m.reg("rsp") - 128n;
+    }
+    const frameTop = sp;
     sp -= 128n; // siginfo
     const siginfo = sp;
     sp -= 968n; // ucontext + fpstate room
     const ucontext = sp;
     sp = (sp & ~0xfn) - 8n;
-    m.u8.fill(0, Number(sp), Number(m.reg("rsp") - 128n));
+    m.u8.fill(0, Number(sp), Number(frameTop));
     m.write64(sp, action.restorer);
     m.write32(siginfo, sig);
     // uc_mcontext.gregs at ucontext + 40
@@ -1103,11 +1116,38 @@ export class Process {
   }
 
   sys_sigaltstack(ss, oldss) {
+    const m = this.machine;
+    const SS_ONSTACK = 1;
+    const SS_DISABLE = 2;
     if (oldss !== 0n) {
-      this.machine.u8.fill(0, Number(oldss), Number(oldss) + 24);
-      this.machine.write32(Number(oldss) + 8, 2);
+      const a = Number(oldss);
+      m.u8.fill(0, a, a + 24);
+      if (this.altStack === null) {
+        m.write32(a + 8, SS_DISABLE);
+      } else {
+        m.write64(a, this.altStack.sp);
+        m.write32(a + 8, this.onAltStack() ? SS_ONSTACK : 0);
+        m.write64(a + 16, BigInt(this.altStack.size));
+      }
+    }
+    if (ss !== 0n) {
+      const a = Number(ss);
+      const flags = m.read32(a + 8);
+      if (flags & SS_DISABLE) {
+        this.altStack = null;
+      } else {
+        this.altStack = { sp: m.read64(a), size: Number(m.read64(a + 16)) };
+      }
     }
     return 0;
+  }
+
+  onAltStack() {
+    if (this.altStack === null) {
+      return false;
+    }
+    const rsp = this.machine.reg("rsp");
+    return rsp >= this.altStack.sp && rsp < this.altStack.sp + BigInt(this.altStack.size);
   }
 
   sys_kill(pid, sig) {
@@ -1271,7 +1311,7 @@ export class Process {
       const head = this.kbytes().slice(0, n);
       this.k(OP.CLOSE, [fd]);
       if (n >= 2 && head[0] === 0x23 && head[1] === 0x21) {
-        const line = new TextDecoder().decode(head.subarray(2, head.indexOf(10) === -1 ? n : head.indexOf(10))).trim();
+        const line = new TextDecoder().decode(head.slice(2, head.indexOf(10) === -1 ? n : head.indexOf(10))).trim();
         const parts = line.split(/\s+/).filter(Boolean);
         argv = [parts[0], ...(parts.length > 1 ? [parts.slice(1).join(" ")] : []), path, ...argv.slice(1)];
         path = parts[0];
@@ -1382,10 +1422,13 @@ export class Process {
 
   sys_getrandom(buf, len) {
     const n = Number(len);
-    const out = this.machine.u8.subarray(Number(buf), Number(buf) + n);
+    // Into a private buffer first: shared memory cannot be filled
+    // directly.
+    const tmp = new Uint8Array(n);
     for (let i = 0; i < n; i += 65536) {
-      crypto.getRandomValues(out.subarray(i, Math.min(n, i + 65536)));
+      crypto.getRandomValues(tmp.subarray(i, Math.min(n, i + 65536)));
     }
+    this.machine.u8.set(tmp, Number(buf));
     return n;
   }
 

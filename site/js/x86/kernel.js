@@ -1503,7 +1503,9 @@ export class Kernel {
   }
 
   ioctl(proc, d, req, data) {
-    const isTty = d.kind === "tty";
+    // A terminal descriptor answers as a terminal only when the tty
+    // behind it is one: under node with a pipe on stdin, it is not.
+    const isTty = d.kind === "tty" && !(this.tty.isTerminal && !this.tty.isTerminal());
     switch (req) {
       case TCGETS:
       case TCGETS2:
@@ -1606,7 +1608,7 @@ export class Kernel {
     // The child copies the used ranges of the parent's memory: what
     // the free list does not cover.
     const used = usedRanges(parent, this.memorySize(parent));
-    const state = new TextDecoder().decode(statePayload);
+    const state = new TextDecoder().decode(statePayload.slice());
     task.parked = { kind: "fork" };
     this.spawnTask(child, pid, {
       kind: "fork",
@@ -1626,7 +1628,7 @@ export class Kernel {
       throw new Errno(E.AGAIN, "memory unknown");
     }
     const tid = this.nextPid++;
-    const state = new TextDecoder().decode(statePayload);
+    const state = new TextDecoder().decode(statePayload.slice());
     task.parked = { kind: "fork" };
     this.spawnTask(proc, tid, {
       kind: "thread",
@@ -1723,7 +1725,7 @@ export function encodeTranslation(entry) {
 
 export function decodeTranslation(bytes) {
   const nl = bytes.indexOf(10);
-  const header = JSON.parse(new TextDecoder().decode(bytes.subarray(0, nl)));
+  const header = JSON.parse(new TextDecoder().decode(bytes.slice(0, nl)));
   return {
     key: header.key,
     bytes: bytes.slice(nl + 1),

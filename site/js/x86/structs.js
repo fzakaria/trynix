@@ -111,7 +111,8 @@ export function unpackStrings(bytes, length) {
   let start = 0;
   for (let i = 0; i < length; i++) {
     if (bytes[i] === 0) {
-      out.push(decoder.decode(bytes.subarray(start, i)));
+      // A copy: a browser's TextDecoder refuses a view of shared memory.
+      out.push(decoder.decode(bytes.slice(start, i)));
       start = i + 1;
     }
   }
