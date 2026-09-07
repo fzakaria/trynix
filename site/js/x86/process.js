@@ -272,6 +272,7 @@ export class Process {
     this.beforeExit = null;
     machine.syscall = (m) => this.syscall(m);
     machine.locator = (addr) => this.locate(addr);
+    machine.onFault = (rip) => this.vsyscall(rip);
     machine.cache = {
       get: (key) => this.translationGet(key),
       put: (key, entry) => this.translationPut(key, entry),
@@ -643,6 +644,42 @@ export class Process {
       writable: m.writable,
     }));
     this.machine.loadState(state.registers);
+  }
+
+  // The legacy vsyscall page: three entry points old runtimes still
+  // call, each a function returning through the stack. Linux emulates
+  // them the same way.
+  vsyscall(rip) {
+    const VSYSCALL_BASE = 0xffffffffff600000n;
+    const VSYSCALL_SIZE = 0x1000n;
+    if (rip < VSYSCALL_BASE || rip >= VSYSCALL_BASE + VSYSCALL_SIZE) {
+      return false;
+    }
+    const m = this.machine;
+    const which = Number((rip - VSYSCALL_BASE) >> 10n);
+    let result;
+    if (which === 0) {
+      result = this.sys_gettimeofday(m.reg("rdi"), m.reg("rsi"));
+    } else if (which === 1) {
+      result = this.sys_time(m.reg("rdi"));
+    } else if (which === 2) {
+      // getcpu: one CPU, one node
+      if (m.reg("rdi") !== 0n) {
+        m.write32(m.reg("rdi"), 0);
+      }
+      if (m.reg("rsi") !== 0n) {
+        m.write32(m.reg("rsi"), 0);
+      }
+      result = 0;
+    } else {
+      return false;
+    }
+    m.setReg("rax", BigInt(result));
+    // ret
+    const ret = m.read64(m.reg("rsp"));
+    m.setReg("rsp", m.reg("rsp") + 8n);
+    m.setReg("rip", ret);
+    return true;
   }
 
   // ---- syscall plumbing ---------------------------------------------

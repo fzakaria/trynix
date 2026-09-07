@@ -104,6 +104,8 @@ export class Machine {
     this.locator = () => null;
     // A translation cache: { get(key) -> entry | undefined, put(key, entry) }.
     this.cache = null;
+    // Called with rip when a block traps; returns true to resume.
+    this.onFault = null;
   }
 
   locate(addr) {
@@ -349,6 +351,20 @@ export class Machine {
           return { reason: "exit", code: e.code, rip: rip.value };
         }
         throw e;
+      }
+      switch (exitReason.value) {
+        case EXIT.MISS:
+          continue;
+        case EXIT.UNSUPPORTED:
+        case EXIT.TRAP:
+          // A hook may handle a jump to an address that holds no code
+          // (the legacy vsyscall page) and resume.
+          if (this.onFault !== null && this.onFault(BigInt.asUintN(64, rip.value))) {
+            continue;
+          }
+          break;
+        default:
+          break;
       }
       switch (exitReason.value) {
         case EXIT.MISS:
