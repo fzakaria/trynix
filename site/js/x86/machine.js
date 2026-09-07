@@ -190,20 +190,20 @@ export class Machine {
   saveState() {
     const state = {};
     for (const [name, type] of GLOBALS) {
-      if (name.startsWith("xmm")) {
+      if (name.startsWith("xmm") || name.startsWith("ymmh")) {
         continue;
       }
       const v = this.helpers[name].value;
       state[name] = type === "i64" ? BigInt.asUintN(64, v).toString() : v;
     }
-    this.helpers.save_xmm(this.scratch);
-    state.xmm = Array.from(this.u8.subarray(this.scratch, this.scratch + 256));
+    this.helpers.save_ymm(this.scratch);
+    state.ymm = Array.from(this.u8.subarray(this.scratch, this.scratch + 512));
     return state;
   }
 
   loadState(state) {
     for (const [name, type] of GLOBALS) {
-      if (name.startsWith("xmm")) {
+      if (name.startsWith("xmm") || name.startsWith("ymmh")) {
         continue;
       }
       if (state[name] === undefined) {
@@ -211,9 +211,9 @@ export class Machine {
       }
       this.helpers[name].value = type === "i64" ? BigInt.asIntN(64, BigInt(state[name])) : state[name];
     }
-    if (state.xmm) {
-      this.u8.set(state.xmm, this.scratch);
-      this.helpers.load_xmm(this.scratch);
+    if (state.ymm) {
+      this.u8.set(state.ymm, this.scratch);
+      this.helpers.load_ymm(this.scratch);
     }
   }
 
@@ -270,6 +270,26 @@ export class Machine {
     }
   }
 
+  // Forgets a block: its entry keeps its key with slot 0, which both
+  // probes read as "not translated" and a later register reuses.
+  unregister(addr) {
+    const a = Number(BigInt.asUintN(32, addr));
+    let i = (Math.imul(a, LOOKUP_HASH_MULTIPLIER) >>> 8) & this.lookupMask;
+    const u32 = this.u32;
+    const base = this.lookupBase >>> 2;
+    for (;;) {
+      const key = u32[base + i * 2];
+      if (key === a) {
+        u32[base + i * 2 + 1] = 0;
+        return;
+      }
+      if (key === 0) {
+        return;
+      }
+      i = (i + 1) & this.lookupMask;
+    }
+  }
+
   // Grows the function table by n and returns the first new slot.
   reserveSlots(n) {
     const base = this.slots;
@@ -302,6 +322,9 @@ export class Machine {
       }
       switch (exitReason.value) {
         case EXIT.MISS:
+          continue;
+        case EXIT.INVALIDATE:
+          this.translator.invalidate(rip.value);
           continue;
         case EXIT.HLT:
           return { reason: "hlt", rip: rip.value };

@@ -90,12 +90,30 @@ export function fpuOp(machine, op, arg) {
     case FPU.FPREM1: {
       const a = get(0);
       const b = get(1);
+      let sw = h.fpu_sw.value & ~CONDITION_BITS;
+      // With the exponents 64 or more apart the hardware reduces by
+      // at most 2^63 of the quotient and sets C2 to say so; the
+      // caller loops until it is clear.
+      const gap = exponentOf(a) - exponentOf(b);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || b === 0) {
+        set(0, a - Math.trunc(a / b) * b);
+        h.fpu_sw.value = sw;
+        return;
+      }
+      if (gap >= 64) {
+        // The step is a multiple of 32 that leaves a gap of 32 to 63,
+        // which is what this CPU was measured to do; the manual allows
+        // any such choice.
+        const remaining = 32 + ((gap - 32) % 32);
+        set(0, exactRemainder(a, b, gap - remaining, false));
+        h.fpu_sw.value = sw | C2;
+        return;
+      }
       const q = op === FPU.FPREM ? Math.trunc(a / b) : Math.round(a / b);
-      set(0, a - q * b);
+      set(0, exactRemainder(a, b, 0, op === FPU.FPREM1));
       // C2 clear: the reduction is complete. C0, C3, C1 hold the low
       // quotient bits.
       const qi = Math.abs(q);
-      let sw = h.fpu_sw.value & ~CONDITION_BITS;
       sw |= (qi & 1) ? C1 : 0;
       sw |= (qi & 2) ? C3 : 0;
       sw |= (qi & 4) ? C0 : 0;
@@ -117,6 +135,54 @@ export function fpuOp(machine, op, arg) {
     default:
       throw new Error(`fpu op ${op}`);
   }
+}
+
+// a - q * b * 2^shift with q the truncated (or, for fprem1, nearest)
+// quotient of a / (b * 2^shift), computed exactly on the integers the
+// doubles are, then rounded once: the hardware reduces exactly, and a
+// double product would lose the low bits.
+function exactRemainder(a, b, shift, nearest) {
+  const [ma, ea] = decompose(a);
+  const [mb, eb] = decompose(b);
+  const ebs = eb + shift;
+  const emin = Math.min(ea, ebs);
+  const ia = ma << BigInt(ea - emin);
+  const ib = mb << BigInt(ebs - emin);
+  let q = ia / ib; // truncates toward zero, as BigInt division does
+  if (nearest) {
+    const twice = 2n * (ia - q * ib);
+    const absIb = ib < 0n ? -ib : ib;
+    const absTwice = twice < 0n ? -twice : twice;
+    if (absTwice > absIb || (absTwice === absIb && (q & 1n) === 1n)) {
+      q += (ia < 0n) === (ib < 0n) ? 1n : -1n;
+    }
+  }
+  const r = ia - q * ib;
+  return Number(r) * Math.pow(2, emin);
+}
+
+// A double as an integer mantissa and a power of two: v = m * 2^e.
+function decompose(v) {
+  const bits = new DataView(new ArrayBuffer(8));
+  bits.setFloat64(0, v);
+  const raw = bits.getBigUint64(0);
+  const sign = raw >> 63n ? -1n : 1n;
+  let e = Number((raw >> 52n) & 0x7ffn);
+  let m = raw & 0xfffffffffffffn;
+  if (e === 0) {
+    e = 1;
+  } else {
+    m |= 0x10000000000000n;
+  }
+  return [sign * m, e - 1075];
+}
+
+// The unbiased binary exponent of a double.
+function exponentOf(v) {
+  if (v === 0 || !Number.isFinite(v)) {
+    return 0;
+  }
+  return Math.floor(Math.log2(Math.abs(v)));
 }
 
 // 80-bit extended <-> f64. The mantissa's top 11 bits become the

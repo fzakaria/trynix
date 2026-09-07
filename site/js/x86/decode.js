@@ -531,11 +531,12 @@ const VEX_ONLY = {
   },
 };
 
-// FMA and the other 0F 38 VEX-only families that take Vx,Hx,Wx: the
-// whole 0x96-0xbf range, plus a few below it. Length decoding only.
-for (let op = 0x96; op <= 0xbf; op++) {
-  VEX_ONLY["0f38"][op] = { 66: "vfma Vx,Hx,Wx" };
-}
+// The FMA block's ten forms, low nibble 6 through f: name and whether
+// the form is scalar.
+const FMA_KINDS = [
+  ["vfmaddsub", false], ["vfmsubadd", false], ["vfmadd", false], ["vfmadd", true], ["vfmsub", false],
+  ["vfmsub", true], ["vfnmadd", false], ["vfnmadd", true], ["vfnmsub", false], ["vfnmsub", true],
+];
 
 // The x87 maps. For each escape byte: memory forms by ModRM.reg, and
 // register forms by the whole ModRM byte (or by reg with STi as the
@@ -1092,7 +1093,7 @@ export function decode(bytes, offset, addr) {
 
   if (b === 0xc4 || b === 0xc5 || b === 0x62) {
     spec = decodeVex(c, b);
-    map = "vex";
+    map = c.vexMap;
   } else if (b === 0x9b) {
     // fwait, possibly fused with the x87 instruction that follows.
     spec = decodeFwait(c);
@@ -1161,6 +1162,12 @@ export function decode(bytes, offset, addr) {
     mnemonic = c.opcode === 0x16 ? "pextrq" : "pinsrq";
   } else if (map === "0f" && c.opcode === 0xc7 && c.modrm && (c.modrm.reg & 7) === 1 && c.rexW) {
     mnemonic = "cmpxchg16b";
+  }
+
+  // A size fixup names the legacy instruction; a VEX form that had its
+  // v before the fixup gets it back.
+  if (c.vex !== null && words[0].startsWith("v") && !mnemonic.startsWith("v")) {
+    mnemonic = "v" + mnemonic;
   }
 
   const len = c.pos - c.start;
@@ -1299,6 +1306,7 @@ function decodeVex(c, first) {
   c.opcode = opcode;
   let mapName;
   let table;
+  c.vexMap = null;
   if (mapSel === 1) {
     mapName = "0f";
     table = TWO_BYTE;
@@ -1310,6 +1318,24 @@ function decodeVex(c, first) {
     table = THREE_BYTE_3A;
   } else {
     throw new DecodeError(`VEX map ${mapSel} at ${c.addr.toString(16)}`);
+  }
+  c.vexMap = mapName;
+
+  // 0F 77 is vzeroupper at 128 bits and vzeroall at 256.
+  if (mapName === "0f" && opcode === 0x77) {
+    return L ? "vzeroall" : "vzeroupper";
+  }
+  // The FMA block, 0F 38 96-BF: ten forms per operand order, W
+  // choosing double over single.
+  if (mapName === "0f38" && opcode >= 0x96 && opcode <= 0xbf) {
+    const orders = { 0x90: "132", 0xa0: "213", 0xb0: "231" };
+    const order = orders[opcode & 0xf0];
+    const kind = FMA_KINDS[(opcode & 0x0f) - 6];
+    if (order !== undefined && kind !== undefined) {
+      const [name, scalar] = kind;
+      const suffix = scalar ? (W ? "sd" : "ss") : W ? "pd" : "ps";
+      return `${name}${order}${suffix} Vx,Hx,${scalar ? (W ? "Wsd" : "Wss") : "Wx"}`;
+    }
   }
 
   // Prefer the VEX-only table, then the legacy table with a v prefix.
@@ -1328,10 +1354,54 @@ function decodeVex(c, first) {
   }
   let spec = resolve(entry, c);
   if (fromLegacy && !(entry && entry.vexOnly) && !c.vexNative && !spec.startsWith("v")) {
-    spec = "v" + spec;
+    spec = vexShape("v" + spec);
   }
   if (c.evex) {
     spec = evexRename(spec, c);
+  }
+  return spec;
+}
+
+// Instructions whose VEX form does not use vvvv: the destination and
+// one source, as in the legacy form.
+const VEX_TWO_OPERAND = new Set([
+  "vmovdqu", "vmovdqa", "vmovups", "vmovaps", "vmovupd", "vmovapd", "vmovd", "vmovq", "vmovntdq",
+  "vmovntps", "vmovntpd", "vpmovmskb", "vmovmskps", "vmovmskpd", "vpshufd", "vpshufhw", "vpshuflw",
+  "vptest", "vcvtdq2ps", "vcvtps2dq", "vcvttps2dq", "vcvtdq2pd", "vcvtps2pd", "vcvtpd2ps", "vcvttpd2dq",
+  "vcvtpd2dq", "vsqrtps", "vsqrtpd", "vrcpps", "vrsqrtps", "vpabsb", "vpabsw", "vpabsd", "vpmovzxbw",
+  "vpmovzxbd", "vpmovzxbq", "vpmovzxwd", "vpmovzxwq", "vpmovzxdq", "vpmovsxbw", "vpmovsxbd", "vpmovsxbq",
+  "vpmovsxwd", "vpmovsxwq", "vpmovsxdq", "vlddqu", "vmovddup", "vmovshdup", "vmovsldup", "vroundps",
+  "vroundpd", "vcomiss", "vcomisd", "vucomiss", "vucomisd", "vpextrb", "vpextrw", "vpextrd", "vpextrq",
+  "vcvtss2si", "vcvtsd2si", "vcvttss2si", "vcvttsd2si", "vstmxcsr", "vldmxcsr", "vextractps",
+  "vpcmpestri", "vpcmpistri", "vpcmpestrm", "vpcmpistrm", "vphminposuw", "vaesimc", "vmovlps", "vmovhps",
+  "vmovlpd", "vmovhpd",
+]);
+
+// The shift-by-immediate group writes vvvv and reads r/m.
+const VEX_SHIFT_IMM = new Set(["vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad", "vpsllw", "vpslld", "vpsllq", "vpsrldq", "vpslldq"]);
+
+// Rewrites a legacy two-operand spec into the VEX three-operand one:
+// most take (Vx, Hx, Wx); the shift-immediate group (Hx, Ux, Ub).
+function vexShape(spec) {
+  const [name, ops = ""] = spec.split(" ");
+  // vmovss/vmovsd merge from a second register but load from memory;
+  // which it is shows only after ModRM, so both keep the W operand.
+  if ((name === "vmovss" || name === "vmovsd") && ops.startsWith("W")) {
+    return spec;
+  }
+  if (VEX_TWO_OPERAND.has(name) || ops === "") {
+    return spec;
+  }
+  const parts = ops.split(",");
+  if (VEX_SHIFT_IMM.has(name) && parts[0] === "Ux" && parts[1] === "Ub") {
+    return `${name} Hx,Ux,Ub`;
+  }
+  if (parts[0].startsWith("V") && parts.length >= 2 && (parts[1].startsWith("W") || parts[1].startsWith("U") || parts[1].startsWith("E") || parts[1].startsWith("M"))) {
+    // Memory-destination forms (vmovlps m64, xmm) keep two operands.
+    return `${name} ${parts[0]},Hx,${parts.slice(1).join(",")}`;
+  }
+  if (parts[0].startsWith("W") || parts[0].startsWith("M")) {
+    return spec;
   }
   return spec;
 }

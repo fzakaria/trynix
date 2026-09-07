@@ -517,9 +517,29 @@ export class Kernel {
     mergeFree(proc);
   }
 
-  addMapping(proc, lo, hi, file, fileOffset) {
+  addMapping(proc, lo, hi, file, fileOffset, writable = true) {
     this.dropMapping(proc, lo, hi);
-    proc.mappings.push({ lo, hi, file, base: lo - BigInt(fileOffset) });
+    proc.mappings.push({ lo, hi, file, base: lo - BigInt(fileOffset), writable });
+  }
+
+  // Changes the writability of [lo, hi), splitting mappings at the
+  // edges.
+  protectRange(proc, lo, hi, writable) {
+    const out = [];
+    for (const m of proc.mappings) {
+      if (m.hi <= lo || m.lo >= hi) {
+        out.push(m);
+        continue;
+      }
+      if (m.lo < lo) {
+        out.push({ ...m, hi: lo });
+      }
+      out.push({ ...m, lo: m.lo > lo ? m.lo : lo, hi: m.hi < hi ? m.hi : hi, writable });
+      if (m.hi > hi) {
+        out.push({ ...m, lo: hi });
+      }
+    }
+    proc.mappings = out;
   }
 
   dropMapping(proc, lo, hi) {
@@ -1259,7 +1279,8 @@ export class Kernel {
           }
           file = d.path;
         }
-        this.addMapping(proc, at, at + BigInt(size), file, file === null ? 0 : offset);
+        const prot = Number(a(2));
+        this.addMapping(proc, at, at + BigInt(size), file, file === null ? 0 : offset, (prot & PROT_WRITE) !== 0);
         // The worker fills the range: zero below the high-water mark,
         // then the file's bytes; it is told whether zeroing is needed.
         const needZero = at < proc.highWater ? 1n : 0n;
@@ -1310,7 +1331,10 @@ export class Kernel {
         const hi = BigInt.asUintN(64, a(1));
         const [file] = strings();
         this.claimRange(proc, lo, hi);
-        this.addMapping(proc, lo, hi, file === "" ? null : file, Number(a(2)));
+        // The loader's segments: a file's code is read-only, the rest
+        // writable, which is what decides whether translated blocks
+        // must watch for their bytes changing.
+        this.addMapping(proc, lo, hi, file === "" ? null : file, Number(a(2)), file === "");
         const needZero = lo < proc.highWater ? 1n : 0n;
         if (hi > proc.highWater) {
           proc.highWater = hi;
@@ -1330,9 +1354,15 @@ export class Kernel {
         const addr = BigInt.asUintN(64, a(0));
         for (const m of proc.mappings) {
           if (addr >= m.lo && addr < m.hi) {
-            return { result: 1, payload: packStrings([m.lo.toString(), m.hi.toString(), m.base.toString(), m.file ?? ""]) };
+            return { result: 1, payload: packStrings([m.lo.toString(), m.hi.toString(), m.base.toString(), m.file ?? "", m.writable ? "w" : "r"]) };
           }
         }
+        return 0;
+      }
+      case OP_MPROTECT: {
+        const lo = BigInt.asUintN(64, a(0)) & PAGE_MASK;
+        const hi = (BigInt.asUintN(64, a(0)) + a(1) + 0xfffn) & PAGE_MASK;
+        this.protectRange(proc, lo, hi, (Number(a(2)) & PROT_WRITE) !== 0);
         return 0;
       }
 
@@ -1660,6 +1690,8 @@ export const OP_CLAIM = 74;
 export const OP_ALLOCATE = 75;
 export const OP_LOCATE = 76;
 export const OP_SIGDISPOSITION = 77;
+export const OP_MPROTECT = 78;
+const PROT_WRITE = 2;
 
 const MAP_FIXED = 0x10;
 const MAP_ANONYMOUS = 0x20;

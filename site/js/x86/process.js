@@ -21,6 +21,7 @@ import {
   OP_CLAIM,
   OP_LOCATE,
   OP_MMAP,
+  OP_MPROTECT,
   OP_MUNMAP,
   OP_SIGDISPOSITION,
 } from "./kernel.js";
@@ -203,8 +204,8 @@ export class Process {
     if (r !== 1n) {
       return null;
     }
-    const [lo, hi, base, file] = this.kstrings();
-    const m = { lo: BigInt(lo), hi: BigInt(hi), base: BigInt(base), file: file === "" ? null : file };
+    const [lo, hi, base, file, prot] = this.kstrings();
+    const m = { lo: BigInt(lo), hi: BigInt(hi), base: BigInt(base), file: file === "" ? null : file, writable: prot === "w" };
     this.mappings.push(m);
     return m;
   }
@@ -415,7 +416,7 @@ export class Process {
       exePath: this.exePath,
       argv: this.argv,
       entry: this.entry.toString(),
-      mappings: this.mappings.map((m) => ({ lo: m.lo.toString(), hi: m.hi.toString(), base: m.base.toString(), file: m.file })),
+      mappings: this.mappings.map((m) => ({ lo: m.lo.toString(), hi: m.hi.toString(), base: m.base.toString(), file: m.file, writable: m.writable })),
     };
   }
 
@@ -427,7 +428,7 @@ export class Process {
     this.exePath = state.exePath;
     this.argv = state.argv;
     this.entry = BigInt(state.entry);
-    this.mappings = state.mappings.map((m) => ({ lo: BigInt(m.lo), hi: BigInt(m.hi), base: BigInt(m.base), file: m.file }));
+    this.mappings = state.mappings.map((m) => ({ lo: BigInt(m.lo), hi: BigInt(m.hi), base: BigInt(m.base), file: m.file, writable: m.writable }));
     this.machine.loadState(state.registers);
   }
 
@@ -993,6 +994,11 @@ export class Process {
     return at;
   }
 
+  sys_mprotect(addr, length, prot) {
+    this.forgetMappings(addr & PAGE_MASK, (addr + length + 0xfffn) & PAGE_MASK);
+    return this.k(OP_MPROTECT, [addr, length, prot]);
+  }
+
   sys_munmap(addr, length) {
     this.forgetMappings(addr & PAGE_MASK, (addr + length + 0xfffn) & PAGE_MASK);
     return this.k(OP_MUNMAP, [addr, length]);
@@ -1528,7 +1534,7 @@ Process.prototype.handlers = {
   [NR.poll]: Process.prototype.sys_poll,
   [NR.lseek]: Process.prototype.sys_lseek,
   [NR.mmap]: Process.prototype.sys_mmap,
-  [NR.mprotect]: Process.prototype.sys_ok,
+  [NR.mprotect]: Process.prototype.sys_mprotect,
   [NR.munmap]: Process.prototype.sys_munmap,
   [NR.brk]: Process.prototype.sys_brk,
   [NR.rt_sigaction]: Process.prototype.sys_rt_sigaction,

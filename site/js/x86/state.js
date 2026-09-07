@@ -32,6 +32,8 @@ export const GLOBALS = [
   ["fpu_cw", "i32"],
   ["fpu_sw", "i32"],
   ...Array.from({ length: 16 }, (_, i) => [`xmm${i}`, "v128"]),
+  // The upper 128 bits of each ymm register, for VEX.256 code.
+  ...Array.from({ length: 16 }, (_, i) => [`ymmh${i}`, "v128"]),
 ];
 
 // name -> index into GLOBALS
@@ -72,4 +74,7 @@ export const EXIT = Object.freeze({
   // holds the instruction's address.
   TRAP: 3,
   UNSUPPORTED: 4,
+  // A volatile block's bytes changed since translation; rip holds its
+  // address and its region is to be thrown away.
+  INVALIDATE: 5,
 });

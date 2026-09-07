@@ -18,6 +18,7 @@ says which. Everything else is compared bit for bit.
 """
 
 import json
+import math
 import os
 import random
 import subprocess
@@ -26,7 +27,7 @@ import tempfile
 
 SNIPPET = 0x601000
 SCRATCH = 0x610000
-SCRATCH_SIZE = 256
+SCRATCH_SIZE = 512
 STACK = SCRATCH + 0xC0
 
 ALL_FLAGS = 0x8D5
@@ -85,7 +86,7 @@ def rand_int(rng):
 
 
 class Case:
-    def __init__(self, name, asm, mask=ALL_FLAGS, sse=False, mem=False, setup=None, floats=False):
+    def __init__(self, name, asm, mask=ALL_FLAGS, sse=False, mem=False, setup=None, floats=False, finite=False):
         self.name = name
         self.asm = asm
         self.mask = mask
@@ -93,6 +94,10 @@ class Case:
         self.mem = mem
         self.setup = setup or {}
         self.floats = floats
+        # Finite inputs only: the sign of a NaN or an infinity that a
+        # fused operation produces is where wasm and x86 differ by
+        # design, and a bit-for-bit comparison would only report that.
+        self.finite = finite
 
 
 FORMS = []
@@ -324,6 +329,123 @@ for size in [32, 64]:
     form(f"pdep {a},{b},{c}", f"pdep {a},{b},{c}")
     form(f"mulx {a},{b},{c}", f"mulx {a},{b},{c}")
     form(f"andn {a},{b},[m]", f"andn {a},{b},{mem(size)}", mem=True, mask=ALL_FLAGS & ~(AF | PF))
+
+# ---- AVX forms -----------------------------------------------------
+# The VEX encodings of the SSE forms, 128 and 256 bits wide. The
+# harness records whole ymm registers, so the zeroing of the upper
+# half a VEX.128 write does is checked too.
+
+def avx(name, asm, mask=ALL_FLAGS, mem_=False, floats=False, finite=False):
+    form(name, asm, mask=mask, sse=True, mem=mem_, floats=floats, finite=finite)
+
+
+for op in ["vmovdqu", "vmovdqa", "vmovups", "vmovaps"]:
+    for w in ["xmm", "ymm"]:
+        avx(f"{op} {w},{w}", f"{op} {w}1,{w}5")
+        avx(f"{op} {w},[m]", f"{op} {w}9,{'XMMWORD' if w == 'xmm' else 'YMMWORD'} PTR [rbx+0x40]", mem_=True)
+        avx(f"{op} [m],{w}", f"{op} {'XMMWORD' if w == 'xmm' else 'YMMWORD'} PTR [rbx+0x40],{w}12", mem_=True)
+avx("vmovd xmm,r32", "vmovd xmm3,eax")
+avx("vmovd r32,xmm", "vmovd eax,xmm3")
+avx("vmovq xmm,r64", "vmovq xmm3,rax")
+avx("vmovq r64,xmm", "vmovq rax,xmm3")
+avx("vmovq xmm,xmm", "vmovq xmm3,xmm5")
+avx("vmovq xmm,[m]", "vmovq xmm3,QWORD PTR [rbx+0x40]", mem_=True)
+avx("vmovq [m],xmm", "vmovq QWORD PTR [rbx+0x40],xmm3", mem_=True)
+avx("vzeroupper", "vzeroupper")
+avx("vzeroall", "vzeroall")
+VPACKED = ["vpaddb", "vpaddw", "vpaddd", "vpaddq", "vpsubb", "vpsubw", "vpsubd", "vpsubq", "vpminub", "vpmaxub",
+           "vpminsb", "vpmaxsb", "vpminuw", "vpmaxuw", "vpminsw", "vpmaxsw", "vpminud", "vpmaxud", "vpminsd", "vpmaxsd",
+           "vpcmpeqb", "vpcmpeqw", "vpcmpeqd", "vpcmpeqq", "vpcmpgtb", "vpcmpgtw", "vpcmpgtd", "vpcmpgtq",
+           "vpand", "vpandn", "vpor", "vpxor", "vandps", "vandnps", "vorps", "vxorps", "vandpd", "vandnpd", "vorpd", "vxorpd",
+           "vpunpcklbw", "vpunpckhbw", "vpunpcklwd", "vpunpckhwd", "vpunpckldq", "vpunpckhdq", "vpunpcklqdq", "vpunpckhqdq",
+           "vpackuswb", "vpacksswb", "vpackssdw", "vpackusdw", "vpshufb", "vpavgb", "vpavgw", "vpmullw", "vpmulld",
+           "vpmuludq", "vpmaddwd", "vpsadbw", "vpaddsb", "vpaddusb", "vpsubsb", "vpsubusb", "vpaddsw", "vpaddusw",
+           "vpsubsw", "vpsubusw", "vpmulhw", "vpmulhuw",
+           "vaddps", "vaddpd", "vsubps", "vsubpd", "vmulps", "vmulpd", "vdivps", "vdivpd", "vminps", "vmaxps", "vminpd", "vmaxpd",
+           "vunpcklps", "vunpckhps", "vunpcklpd", "vunpckhpd"]
+for op in VPACKED:
+    fl = op[1] in "adsmu" and op[2] in "diu" and op not in ("vandps",) and False
+    floats = op.endswith("ps") or op.endswith("pd")
+    for w, mem in [("xmm", "XMMWORD"), ("ymm", "YMMWORD")]:
+        avx(f"{op} {w}", f"{op} {w}2,{w}6,{w}3", floats=floats)
+        avx(f"{op} {w},[m]", f"{op} {w}2,{w}6,{mem} PTR [rbx+0x40]", mem_=True, floats=floats)
+for op in ["vpabsb", "vpabsw", "vpabsd", "vsqrtps", "vsqrtpd", "vcvtdq2ps", "vcvtps2dq", "vcvttps2dq"]:
+    for w in ["xmm", "ymm"]:
+        avx(f"{op} {w}", f"{op} {w}2,{w}6", floats=op.startswith("vs") or op.startswith("vc"))
+for w in ["xmm", "ymm"]:
+    avx(f"vpmovmskb {w}", f"vpmovmskb eax,{w}5")
+    avx(f"vmovmskps {w}", f"vmovmskps eax,{w}5")
+    avx(f"vmovmskpd {w}", f"vmovmskpd eax,{w}5")
+    avx(f"vptest {w}", f"vptest {w}2,{w}6", mask=CF | ZF | PF | AF | SF | OF)
+    for imm in [0x1b, 0x4e, 0xff]:
+        avx(f"vpshufd {w} {imm:#x}", f"vpshufd {w}2,{w}6,{imm:#x}")
+        avx(f"vpshuflw {w} {imm:#x}", f"vpshuflw {w}2,{w}6,{imm:#x}")
+        avx(f"vpshufhw {w} {imm:#x}", f"vpshufhw {w}2,{w}6,{imm:#x}")
+        avx(f"vshufps {w} {imm:#x}", f"vshufps {w}2,{w}6,{w}3,{imm:#x}")
+    for imm in [0, 3, 7, 15, 16, 17]:
+        avx(f"vpalignr {w} {imm}", f"vpalignr {w}2,{w}6,{w}3,{imm}")
+        avx(f"vpslldq {w} {imm}", f"vpslldq {w}2,{w}6,{imm}")
+        avx(f"vpsrldq {w} {imm}", f"vpsrldq {w}2,{w}6,{imm}")
+    for op in ["vpsllw", "vpslld", "vpsllq", "vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad"]:
+        for imm in [0, 1, 7, 15, 16, 31, 32, 63, 64]:
+            avx(f"{op} {w} {imm}", f"{op} {w}2,{w}6,{imm}")
+        avx(f"{op} {w},xmm", f"{op} {w}2,{w}6,xmm3")
+    avx(f"vpbroadcastb {w}", f"vpbroadcastb {w}2,xmm6")
+    avx(f"vpbroadcastw {w}", f"vpbroadcastw {w}2,xmm6")
+    avx(f"vpbroadcastd {w}", f"vpbroadcastd {w}2,xmm6")
+    avx(f"vpbroadcastq {w}", f"vpbroadcastq {w}2,xmm6")
+    avx(f"vpbroadcastb {w},[m]", f"vpbroadcastb {w}2,BYTE PTR [rbx+0x40]", mem_=True)
+    avx(f"vpbroadcastd {w},[m]", f"vpbroadcastd {w}2,DWORD PTR [rbx+0x40]", mem_=True)
+    avx(f"vbroadcastss {w}", f"vbroadcastss {w}2,xmm6")
+    for op in ["vpmovzxbw", "vpmovzxbd", "vpmovzxwd", "vpmovzxdq", "vpmovsxbw", "vpmovsxwd", "vpmovsxdq"]:
+        avx(f"{op} {w}", f"{op} {w}2,xmm6")
+    for op in ["vpblendvb", "vblendvps", "vblendvpd"]:
+        avx(f"{op} {w}", f"{op} {w}2,{w}6,{w}3,{w}0")
+    for imm in [0x00, 0x5a, 0xff]:
+        avx(f"vpblendw {w} {imm:#x}", f"vpblendw {w}2,{w}6,{w}3,{imm:#x}")
+        avx(f"vpblendd {w} {imm:#x}", f"vpblendd {w}2,{w}6,{w}3,{imm:#x}")
+for imm in [0, 1]:
+    avx(f"vextracti128 {imm}", f"vextracti128 xmm2,ymm6,{imm}")
+    avx(f"vextractf128 {imm}", f"vextractf128 xmm2,ymm6,{imm}")
+    avx(f"vinserti128 {imm}", f"vinserti128 ymm2,ymm6,xmm3,{imm}")
+    avx(f"vinsertf128 {imm}", f"vinsertf128 ymm2,ymm6,xmm3,{imm}")
+    avx(f"vextracti128 [m] {imm}", f"vextracti128 XMMWORD PTR [rbx+0x40],ymm6,{imm}", mem_=True)
+for imm in [0x00, 0x01, 0x20, 0x31, 0x88]:
+    avx(f"vperm2i128 {imm:#x}", f"vperm2i128 ymm2,ymm6,ymm3,{imm:#x}")
+for imm in [0x1b, 0x4e, 0xd8]:
+    avx(f"vpermq {imm:#x}", f"vpermq ymm2,ymm6,{imm:#x}")
+avx("vpermd", "vpermd ymm2,ymm6,ymm3")
+for op in ["vaddss", "vaddsd", "vsubss", "vsubsd", "vmulss", "vmulsd", "vdivss", "vdivsd", "vminss", "vminsd", "vmaxss", "vmaxsd", "vsqrtss", "vsqrtsd"]:
+    avx(f"{op}", f"{op} xmm2,xmm6,xmm3", floats=True)
+    width = "DWORD" if op.endswith("ss") else "QWORD"
+    avx(f"{op} [m]", f"{op} xmm2,xmm6,{width} PTR [rbx+0x40]", mem_=True, floats=True)
+avx("vmovss xmm,xmm,xmm", "vmovss xmm2,xmm6,xmm3", floats=True)
+avx("vmovsd xmm,xmm,xmm", "vmovsd xmm2,xmm6,xmm3", floats=True)
+avx("vmovss xmm,[m]", "vmovss xmm2,DWORD PTR [rbx+0x40]", mem_=True, floats=True)
+avx("vmovsd xmm,[m]", "vmovsd xmm2,QWORD PTR [rbx+0x40]", mem_=True, floats=True)
+avx("vmovss [m],xmm", "vmovss DWORD PTR [rbx+0x40],xmm2", mem_=True, floats=True)
+avx("vmovsd [m],xmm", "vmovsd QWORD PTR [rbx+0x40],xmm2", mem_=True, floats=True)
+for op in ["vcomiss", "vcomisd", "vucomiss", "vucomisd"]:
+    avx(op, f"{op} xmm2,xmm6", mask=CF | PF | ZF | SF | OF | AF, floats=True)
+for op in ["vcvtsi2ss", "vcvtsi2sd"]:
+    avx(f"{op} r32", f"{op} xmm2,xmm6,eax")
+    avx(f"{op} r64", f"{op} xmm2,xmm6,rax")
+for op in ["vcvttss2si", "vcvttsd2si", "vcvtss2si", "vcvtsd2si"]:
+    avx(f"{op} r64", f"{op} rax,xmm6", floats=True)
+avx("vcvtss2sd", "vcvtss2sd xmm2,xmm6,xmm3", floats=True)
+avx("vcvtsd2ss", "vcvtsd2ss xmm2,xmm6,xmm3", floats=True)
+for pred in [0, 1, 2, 4, 6]:
+    avx(f"vcmpps {pred}", f"vcmpps ymm2,ymm6,ymm3,{pred}", floats=True)
+    avx(f"vcmpsd {pred}", f"vcmpsd xmm2,xmm6,xmm3,{pred}", floats=True)
+for imm in [0, 1, 2, 3, 9]:
+    avx(f"vroundsd {imm}", f"vroundsd xmm2,xmm6,xmm3,{imm}", floats=True)
+    avx(f"vroundps {imm}", f"vroundps ymm2,ymm6,{imm}", floats=True)
+for op in ["vfmadd132", "vfmadd213", "vfmadd231", "vfmsub132", "vfmsub213", "vfmsub231", "vfnmadd132", "vfnmadd213", "vfnmadd231", "vfnmsub132", "vfnmsub213", "vfnmsub231"]:
+    avx(f"{op}sd", f"{op}sd xmm2,xmm6,xmm3", floats=True, finite=True)
+    avx(f"{op}ss", f"{op}ss xmm2,xmm6,xmm3", floats=True, finite=True)
+    avx(f"{op}pd ymm", f"{op}pd ymm2,ymm6,ymm3", floats=True, finite=True)
+    avx(f"{op}ps ymm", f"{op}ps ymm2,ymm6,ymm3", floats=True, finite=True)
+
 
 # ---- x87 forms -----------------------------------------------------
 # The x87 stack is not in the harness's output, so every form ends by
@@ -581,7 +703,7 @@ def make_inputs(f, rng, seed):
     regs = {r: rand_int(rng) for r in R64}
     regs["rsp"] = STACK
     for r in POINTER_REGS:
-        regs[r] = SCRATCH + rng.choice([0x00, 0x10, 0x20, 0x30])
+        regs[r] = SCRATCH + rng.choice([0x00, 0x20, 0x40, 0x60])
     if "fs" in f.setup:
         regs["rbx"] = 0x40  # fs_base + rbx + 0x20 lands in scratch
     for r, kind in f.setup.items():
@@ -640,16 +762,40 @@ def make_inputs(f, rng, seed):
     return regs, flags
 
 
+def finite_bits(rng, single):
+    import struct
+    while True:
+        v = rng.choice(SPECIAL_F64) if rng.random() < 0.3 else rng.uniform(-1e6, 1e6) * rng.choice([1, 1e-3, 1e3])
+        if not math.isfinite(v):
+            continue
+        if single:
+            if abs(v) > 3e38:
+                continue
+            return struct.unpack("<I", struct.pack("<f", v))[0]
+        return struct.unpack("<Q", struct.pack("<d", v))[0]
+
+
 def scratch_for(f, rng, seed):
     data = bytearray(scratch_bytes(seed))
+    if f.finite:
+        import struct
+        # Every lane of ymm2, ymm3 and ymm6 finite, in both widths.
+        for reg in (2, 3, 6):
+            base = 32 * reg
+            for off in range(0, 32, 8):
+                data[base + off:base + off + 8] = struct.pack("<Q", finite_bits(rng, False))
+            if rng.random() < 0.5:
+                for off in range(0, 32, 4):
+                    data[base + off:base + off + 4] = struct.pack("<I", finite_bits(rng, True))
+        return bytes(data)
     if f.floats:
         import struct
         # xmm registers come from the first 256 bytes: fill the two the
         # forms use (xmm2 at 32, xmm6 at 96) with float patterns, and the
         # memory operand at 0x40.. with more.
-        for off in [32, 40, 96, 104, 0x40, 0x48]:
+        for off in [64, 72, 192, 200, 0x40, 0x48]:
             data[off:off + 8] = struct.pack("<Q", float_bits(rng))
-        for off in [32, 36, 96, 100, 0x40, 0x44]:
+        for off in [64, 68, 192, 196, 0x40, 0x44]:
             if rng.random() < 0.5:
                 data[off:off + 4] = struct.pack("<I", float32_bits(rng))
     return bytes(data)

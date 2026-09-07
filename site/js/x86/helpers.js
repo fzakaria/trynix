@@ -325,6 +325,80 @@ export function buildHelpersModule({ shared = false } = {}) {
     m.addFunc(m.addType([], [T.f64]), c.locals, c, { export: "fpu_pop" });
   }
 
+  // ro(x, y) -> x + y rounded to odd: the nearest double when the sum
+  // is exact, else the neighbour with an odd mantissa on the exact
+  // sum's side. Adding a rounded-to-odd value to something at least
+  // as large then rounds once, which is what fma64 below relies on.
+  {
+    const c = new Code(2);
+    const sum = c.declareLocal(T.f64);
+    const t = c.declareLocal(T.f64);
+    const err = c.declareLocal(T.f64);
+    const bits = c.declareLocal(T.i64);
+    c.local_get(0).local_get(1).f64_add().local_set(sum);
+    c.local_get(sum).local_get(0).f64_sub().local_set(t);
+    c.local_get(0).local_get(sum).local_get(t).f64_sub().f64_sub();
+    c.local_get(1).local_get(t).f64_sub().f64_add().local_set(err);
+    c.local_get(err).f64_const(0).f64_eq().if_(T.empty).local_get(sum).return_().end();
+    c.local_get(sum).i64_reinterpret_f64().local_set(bits);
+    c.local_get(bits).i64_const(1).i64_and().i64_eqz().i32_eqz().if_(T.empty).local_get(sum).return_().end();
+    // even: step the magnitude towards the exact value
+    c.local_get(bits);
+    c.local_get(err).f64_const(0).f64_gt().local_get(sum).f64_const(0).f64_ge().i32_eq().if_(T.i64).i64_const(1).else_().i64_const(-1n).end();
+    c.i64_add().f64_reinterpret_i64();
+    c.end();
+    m.addFunc(m.addType([T.f64, T.f64], [T.f64]), c.locals, c, { export: "round_odd_add" });
+  }
+
+  // fma64(a, b, c) -> a * b + c rounded once, without a fused
+  // multiply-add: Boldo and Melquiond's emulation. The product's
+  // rounding error is exact (Dekker's splitting), the sum with c is
+  // exact as a pair, and the low parts are combined rounded to odd so
+  // the final addition rounds once. Huge or non-finite inputs take the
+  // plain path, where the splitting would overflow.
+  {
+    const c = new Code(3);
+    const p = c.declareLocal(T.f64);
+    const ah = c.declareLocal(T.f64);
+    const al = c.declareLocal(T.f64);
+    const bh = c.declareLocal(T.f64);
+    const bl = c.declareLocal(T.f64);
+    const perr = c.declareLocal(T.f64);
+    const th = c.declareLocal(T.f64);
+    const t = c.declareLocal(T.f64);
+    const tl = c.declareLocal(T.f64);
+    const SPLIT = 134217729; // 2^27 + 1
+    const LIMIT = 2 ** 500;
+    const ROUND_ODD = m.funcs.length - 1;
+    c.local_get(0).local_get(1).f64_mul().local_set(p);
+    c.local_get(0).f64_abs().f64_const(LIMIT).f64_lt();
+    c.local_get(1).f64_abs().f64_const(LIMIT).f64_lt().i32_and();
+    c.local_get(2).f64_abs().f64_const(LIMIT).f64_lt().i32_and();
+    c.i32_eqz().if_(T.empty);
+    c.local_get(p).local_get(2).f64_add().return_();
+    c.end();
+    // TwoProduct: p + perr = a * b
+    c.local_get(0).f64_const(SPLIT).f64_mul().local_set(t);
+    c.local_get(t).local_get(t).local_get(0).f64_sub().f64_sub().local_set(ah);
+    c.local_get(0).local_get(ah).f64_sub().local_set(al);
+    c.local_get(1).f64_const(SPLIT).f64_mul().local_set(t);
+    c.local_get(t).local_get(t).local_get(1).f64_sub().f64_sub().local_set(bh);
+    c.local_get(1).local_get(bh).f64_sub().local_set(bl);
+    c.local_get(ah).local_get(bh).f64_mul().local_get(p).f64_sub();
+    c.local_get(ah).local_get(bl).f64_mul().f64_add();
+    c.local_get(al).local_get(bh).f64_mul().f64_add();
+    c.local_get(al).local_get(bl).f64_mul().f64_add().local_set(perr);
+    // TwoSum: th + tl = c + p
+    c.local_get(2).local_get(p).f64_add().local_set(th);
+    c.local_get(th).local_get(2).f64_sub().local_set(t);
+    c.local_get(2).local_get(th).local_get(t).f64_sub().f64_sub();
+    c.local_get(p).local_get(t).f64_sub().f64_add().local_set(tl);
+    // th + ro(tl + perr)
+    c.local_get(th).local_get(tl).local_get(perr).call(ROUND_ODD).f64_add();
+    c.end();
+    m.addFunc(m.addType([T.f64, T.f64, T.f64], [T.f64]), c.locals, c, { export: "fma64" });
+  }
+
   // save_xmm(addr: i32) / load_xmm(addr: i32): the sixteen xmm
   // registers through memory, 16 bytes each, for JavaScript callers.
   {
@@ -344,7 +418,28 @@ export function buildHelpersModule({ shared = false } = {}) {
     m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "load_xmm" });
   }
 
+  // save_ymm(addr) / load_ymm(addr): the sixteen ymm registers, 32
+  // bytes each, low half then high.
+  {
+    const c = new Code(1);
+    for (let i = 0; i < 16; i++) {
+      c.local_get(0).global_get(H[`xmm${i}`]).v128_store(32 * i, 0);
+      c.local_get(0).global_get(H[`ymmh${i}`]).v128_store(32 * i + 16, 0);
+    }
+    c.end();
+    m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "save_ymm" });
+  }
+  {
+    const c = new Code(1);
+    for (let i = 0; i < 16; i++) {
+      c.local_get(0).v128_load(32 * i, 0).global_set(H[`xmm${i}`]);
+      c.local_get(0).v128_load(32 * i + 16, 0).global_set(H[`ymmh${i}`]);
+    }
+    c.end();
+    m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "load_ymm" });
+  }
+
   return m.toBytes();
 }
 
-export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs", "jump", "fpu_get", "fpu_set", "fpu_push", "fpu_pop"];
+export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs", "jump", "fpu_get", "fpu_set", "fpu_push", "fpu_pop", "round_odd_add", "fma64"];

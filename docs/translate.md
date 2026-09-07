@@ -84,69 +84,94 @@ ifunc resolvers then pick the SSE2 string routines, and the AVX2 and
 AVX-512 variants that make up 2.5% of libc's instructions are decoded
 for their length and never run.
 
-## The process model, and what it makes possible
+## The process model
 
-There is no kernel. `linux.js` implements the system calls a program
-makes, against a filesystem object with two backends: the real
-filesystem in node, which makes `/nix/store` on the developer's machine
-the test corpus, and the NAR-unpacked in-memory tree in the page, which
-is what `site/js/nar.js` already builds for the 9p share.
+There is no kernel inside the guest; there is one beside it. Each
+process, and each thread, is a Worker running translated code on its
+own thread of the browser, and what they share lives in a kernel
+Worker (`kernel.js`) reached over a synchronous request channel in a
+SharedArrayBuffer (`channel.js`): every process's file table, the
+filesystem, pipes and the terminal, each process's address-space
+allocator, the process tree with its zombies and waiters, signals,
+and the store of translated regions. The kernel is an asynchronous
+loop that waits on a bell every request rings, serves what is
+pending, and parks what it cannot answer yet, a read on an empty
+pipe, a wait for a child, a read from the terminal, until the write,
+the exit or the keystroke that answers it arrives.
 
-Because no guest state is on the wasm stack, a process is its memory
-plus a few dozen globals, and the process primitives that a CPU
-emulator on emscripten finds hard are within reach:
+A worker keeps what is its own: the memory's contents, translation
+and the block lookup, signal frames, futexes (the memory is shared,
+so Atomics on it are the futex), and the clock. Because no guest
+state lives on the wasm stack, a process is its memory plus a
+register file, which is what makes the rest cheap:
 
-- **exec** replaces the memory's mapped regions and loads a new ELF,
-  keeping the file table. Nothing else to unwind.
-- **fork** copies the memory into a new Worker and starts its run loop
-  at the instruction after the `syscall` with `rax` set to zero. The
-  copy is a `memory.copy` of the used range; a 64 MiB process forks in
-  the time it takes to move 64 MiB. Pipes between processes are ring
-  buffers in a SharedArrayBuffer with `Atomics.wait`; `waitpid` waits
-  on a status cell the same way. The file table for descriptors shared
-  across a fork lives with a kernel object on the main thread, reached
-  by synchronous message the way emscripten proxies its filesystem.
-- **threads** (`clone` with `CLONE_VM`) are Workers sharing one
-  `SharedArrayBuffer` memory. Globals are per instance, so each thread
-  instantiates the translated modules into its own table; `fs_base` is
-  per thread; `futex` is `Atomics.wait` and `Atomics.notify`; the
-  `lock` prefix maps to wasm atomics. New translations must reach
-  every thread's table, by message.
-- **signals** are delivered at syscall return, which covers `SIGCHLD`,
-  `SIGALRM`, `SIGPIPE` and a terminal's `SIGINT`. Delivery at an
-  arbitrary instruction, which Go's preemption and JITs that trap on
-  `SIGSEGV` need, is not planned.
-- **mmap** of a file copies bytes into memory; private mappings are
-  copies anyway. `mprotect` is accepted and ignored.
+- **fork** copies the parent's used ranges from its shared memory
+  into a new one and resumes the register file with rax zero. The
+  kernel duplicates the file table and parks the parent until the
+  child reports it has copied.
+- **exec** builds a fresh image in the same worker: a new memory, the
+  ELF and its interpreter loaded through the kernel, close-on-exec
+  descriptors closed, handlers reset.
+- **threads** (`clone` with `CLONE_VM`) are workers on the same
+  memory with their own register file and block lookup; `futex` is
+  `Atomics.wait` and `Atomics.notify` on the memory itself.
+- **signals** a process handles are delivered on the return of its
+  next syscall, with an rt_sigframe the restorer comes back through
+  and the alternate stack when the handler asked for it; a request the
+  process is parked in returns EINTR first. A signal left to its
+  default action ends the process in the kernel.
 
-The order of work is: static musl `hello`; static glibc `hello`, which
-adds `cpuid`, TLS, `rep movs` and the SSE2 string routines; a dynamic
-`hello`, which adds ld.so, relocations and `mmap` of shared objects;
-then `jq`, `ruby -e 1` and `python3 -c 1`, timed against the QEMU guest
-in the same browser; then `busybox sh -c 'echo hi | cat'`, which is
-fork, pipe, exec and wait in one line; then a Go binary, which is the
-threads milestone: the Go runtime is static and makes its own syscalls,
-so it skips every libc question, but it starts several threads before
-`main` runs, parks them on `futex`, and preempts with `SIGURG`. Without
-signal delivery it falls back to cooperative preemption at function
-prologues, which is enough for a command-line tool.
+`busybox sh` runs pipelines, command substitution, an exec'd glibc
+program and scripts from stdin, with the statuses `wait4` should
+report, in node and in the browser. Go programs (age, fzf) start their
+threads, park them on futexes and preempt with `SIGURG` through
+`tgkill`.
+
+Under node the same kernel runs on the main thread with worker threads
+for the processes (`tools/x86run.mjs`), which is how all of this is
+tested offline.
+
+## Caching translations
+
+Translated modules are position-independent: every address a block
+needs is emitted as an offset from the load base of the file mapping
+its region lies in, read from an immutable global each instance is
+given, and a region never crosses out of its mapping. A module
+translated from libpython at one address serves it at any other, so
+it is keyed by store path, file and offset alone, and glibc's regions
+are shared by everything that uses that glibc. The browser keeps them
+in the Cache API, loads every entry for the closure's store paths
+before the process starts, and stores what the kernel reports as
+translated. The cache is per browser; a first run pays for
+translation, a second does not. The same keys would serve from a
+shared cache filled by a nightly node run of popular closures, and
+nothing here needs one.
+
+## Code that changes
+
+A block translated from a writable mapping may be rewritten under it:
+a JIT, or the CPU probe's self-modifying-code checks. Such a region is
+never cached, and each of its blocks is entered through a wrapper
+that checksums the block's bytes and, on a mismatch, throws the region
+away and translates it afresh. Code in read-only file mappings, which
+is all ordinary code, pays nothing. The CPU probe (`nix/probe`, built
+`-march=haswell`, so AVX2, BMI and the rest) passes every check.
 
 ## What this does not cover
 
-A program that does any of the following stays on the QEMU guest, and
-the exec stub decides which lane at exec time:
-
-- **JIT compilers and self-modifying code**: Bun, node, Java, LuaJIT,
-  Ruby with YJIT enabled. Nothing invalidates a translated block when
-  the bytes under it change.
-- **Signals at arbitrary instructions**: Go's runtime, anything that
-  catches `SIGSEGV` on purpose, `sigaltstack` tricks.
 - **x87 precision**: the x87 stack is kept in `f64`, so `long double`
-  arithmetic is rounded to 53 bits. musl's `printf` formats every
-  float through `long double` and will print a wrong last digit in some
-  cases until the 80-bit type is done properly.
-- **ptrace, io_uring, seccomp, namespaces, and the rest of the kernel
-  surface a shell utility does not touch.**
+  arithmetic is rounded to 53 bits; remainders are exact.
+- **Fused multiply-add** is emulated with rounding to odd (Boldo and
+  Melquiond), which agrees with the hardware on finite inputs; the
+  sign of a NaN or an infinity a fused operation produces can differ.
+- **AVX-512**: decoded to be stepped over, never run. The CPU
+  presented has no AVX at all, so glibc picks its SSE2 routines; code
+  compiled for a newer CPU still runs, since AVX and AVX2 are
+  translated.
+- **Signals at arbitrary instructions**: delivery waits for the next
+  syscall, so a handler cannot interrupt a loop that makes none.
+- **ptrace, io_uring, seccomp, namespaces, sockets, and the rest of
+  the kernel surface a shell utility does not touch.**
 
 ## Coverage, a guess to be replaced by a count
 

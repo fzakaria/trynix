@@ -13,7 +13,7 @@ import { REGISTER_NAMES } from "../../site/js/x86/state.js";
 
 const SNIPPET = 0x601000n;
 const SCRATCH = 0x610000;
-const SCRATCH_SIZE = 256;
+const SCRATCH_SIZE = 512;
 const FLAG_MASK_DF = 1 << 10;
 
 const fixturePath = process.env.X86_SEMANTICS || new URL("../fixtures/x86/semantics.json", import.meta.url).pathname;
@@ -45,7 +45,7 @@ function runCase(c) {
   m.write(SNIPPET, new Uint8Array([...code, 0xf4]));
   const data = c.data ? Uint8Array.from(c.data.match(/../g).map((b) => parseInt(b, 16))) : scratchBytes(BigInt(`0x${c.seed}`));
   m.write(BigInt(SCRATCH), data);
-  m.helpers.load_xmm(SCRATCH);
+  m.helpers.load_ymm(SCRATCH);
   REGISTER_NAMES.forEach((r, i) => m.setReg(r, BigInt(`0x${c.regs[i]}`)));
   const flags = Number(BigInt(`0x${c.flags}`));
   m.setReg("cc_op", 0);
@@ -71,14 +71,14 @@ function runCase(c) {
   }
   if (c.out.xmm !== undefined) {
     const at = SCRATCH + 4096;
-    m.helpers.save_xmm(at);
-    const got = hex(m.read(BigInt(at), 256));
+    m.helpers.save_ymm(at);
+    const got = hex(m.read(BigInt(at), 512));
     if (got !== c.out.xmm) {
       for (let i = 0; i < 16; i++) {
-        const g = got.slice(32 * i, 32 * i + 32);
-        const w = c.out.xmm.slice(32 * i, 32 * i + 32);
+        const g = got.slice(64 * i, 64 * i + 64);
+        const w = c.out.xmm.slice(64 * i, 64 * i + 64);
         if (g !== w) {
-          problems.push(`xmm${i}: got ${g}, hardware ${w}`);
+          problems.push(`ymm${i}: got ${g}, hardware ${w}`);
         }
       }
     }

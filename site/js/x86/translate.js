@@ -82,6 +82,9 @@ export class Translator {
     // Instructions the translator has no code for, by address, for the
     // error the run loop raises if one is reached.
     this.unsupported = new Map();
+    // For each block of a volatile region, the addresses of the
+    // region's blocks, so a changed block takes its region with it.
+    this.volatileRegions = new Map();
     this.regions = 0;
     this.blocks = 0;
     this.cachedRegions = 0;
@@ -107,7 +110,11 @@ export class Translator {
     const machine = this.machine;
     const mapping = machine.locate(entry);
     const base = mapping !== null ? mapping.base : 0n;
-    const key = mapping !== null && mapping.file !== null
+    // Code in a writable mapping may be rewritten under us: such a
+    // region is never cached, and each block is entered through a
+    // check of its bytes.
+    const volatile = mapping === null || mapping.writable;
+    const key = mapping !== null && mapping.file !== null && !volatile
       ? `${mapping.file}@${(entry - base).toString(16)}#${TRANSLATION_VERSION}`
       : null;
 
@@ -138,13 +145,19 @@ export class Translator {
     }
 
     const unsupported = new Map();
-    const bytes = this.emitModule(order, blocks, base, unsupported);
+    const bytes = this.emitModule(order, blocks, base, unsupported, volatile);
     const entryBlock = {
       bytes,
       offsets: order.map((b) => b.addr - base),
       unsupported: [...unsupported].map(([addr, why]) => [addr - base, why]),
     };
     const slot = this.instantiate(entryBlock, base, key);
+    if (volatile) {
+      const addrs = order.map((b) => b.addr);
+      for (const addr of addrs) {
+        this.volatileRegions.set(addr, addrs);
+      }
+    }
     if (key !== null && machine.cache !== null) {
       machine.cache.put(key, entryBlock);
     }
@@ -157,6 +170,19 @@ export class Translator {
       this.onRegion(entry, order.length, ms, bytes.length);
     }
     return slot;
+  }
+
+  // Throws away the region holding a block whose bytes changed; the
+  // next jump to any of its blocks translates afresh.
+  invalidate(addr) {
+    const addrs = this.volatileRegions.get(addr);
+    if (addrs === undefined) {
+      return;
+    }
+    for (const a of addrs) {
+      this.machine.unregister(a);
+      this.volatileRegions.delete(a);
+    }
   }
 
   // Instantiates a region's module at a load base and registers its
@@ -224,8 +250,9 @@ export class Translator {
   }
 
   // Emits one module holding every block of the region, with every
-  // address relative to `base`.
-  emitModule(order, blocks, base, unsupported) {
+  // address relative to `base`. A volatile region's exported entries
+  // are wrappers that check the block's bytes first.
+  emitModule(order, blocks, base, unsupported, volatile = false) {
     const m = new ModuleBuilder();
     const ctx = { m, blocks, order, imports: {}, globals: {}, helpers: {}, base, unsupported };
 
@@ -247,6 +274,8 @@ export class Translator {
       fpu_set: [[T.i32, T.f64], []],
       fpu_push: [[T.f64], []],
       fpu_pop: [[], [T.f64]],
+      round_odd_add: [[T.f64, T.f64], [T.f64]],
+      fma64: [[T.f64, T.f64, T.f64], [T.f64]],
     };
     for (const name of HELPER_FUNCS) {
       const [p, r] = HELPER_TYPES[name];
@@ -279,15 +308,59 @@ export class Translator {
     }
     // Blocks are exported by position; the Machine puts them in the
     // table by hand, since a module without the table cannot have an
-    // element segment for it.
+    // element segment for it. A volatile region exports checking
+    // wrappers instead, after the blocks and trampolines.
     bodies.forEach((c, i) => {
-      m.addFunc(ctx.blockType, c.locals, c, { export: String(i) });
+      m.addFunc(ctx.blockType, c.locals, c, volatile ? {} : { export: String(i) });
     });
     for (const [, t] of ctx.trampolines) {
       const index = m.addFunc(ctx.blockType, t.code.locals, t.code);
       if (index !== t.index) {
         throw new Error("trampoline index mismatch");
       }
+    }
+    if (volatile) {
+      const mem = this.machine.bytes();
+      order.forEach((b, i) => {
+        const c = new Code(0);
+        const len = Number(b.end - b.addr);
+        const e = new Emitter(this, ctx, c, b);
+        // sum = xor of the block's words, as translated
+        let expected = 0;
+        for (let k = 0; k < len; k += 4) {
+          let word = 0;
+          for (let j = 0; j < 4 && k + j < len; j++) {
+            word |= mem[Number(b.addr) + k + j] << (8 * j);
+          }
+          expected = (expected ^ word) | 0;
+        }
+        const p = c.declareLocal(T.i32);
+        const sum = c.declareLocal(T.i32);
+        e.addrConst(b.addr);
+        c.i32_wrap_i64().local_set(p);
+        c.i32_const(0).local_set(sum);
+        for (let k = 0; k < len; k += 4) {
+          const rest = Math.min(4, len - k);
+          c.local_get(p);
+          if (rest === 4) {
+            c.i32_load(k, 0);
+          } else if (rest >= 2) {
+            c.i32_load16_u(k);
+            if (rest === 3) {
+              c.local_get(p).i32_load8_u(k + 2).i32_const(16).i32_shl().i32_or();
+            }
+          } else {
+            c.i32_load8_u(k);
+          }
+          c.local_get(sum).i32_xor().local_set(sum);
+        }
+        c.local_get(sum).i32_const(expected).i32_eq().if_(T.empty);
+        c.return_call(b.func);
+        c.end();
+        e.exit(EXIT.INVALIDATE, b.addr);
+        c.end();
+        m.addFunc(ctx.blockType, c.locals, c, { export: String(i) });
+      });
     }
     return m.toBytes();
   }
@@ -1045,6 +1118,9 @@ class Emitter {
         return this.emitBswap(ops);
       case "cmpxchg":
         return this.emitCmpxchg(ops, size, index);
+      case "cmpxchg8b":
+      case "cmpxchg16b":
+        return this.emitCmpxchgWide(m === "cmpxchg16b" ? 8 : 4, ops);
       case "xadd":
         return this.emitXadd(ops, size, index);
       case "cmovo": case "cmovno": case "cmovb": case "cmovae": case "cmove": case "cmovne":
@@ -1092,6 +1168,8 @@ class Emitter {
       case "pdep":
       case "mulx":
         return this.emitBmi(m, ops, size);
+      case "crc32":
+        return this.emitCrc32(ops);
       case "movbe": {
         if (ops[0].kind === "reg") {
           this.load(ops[1]);
@@ -1949,6 +2027,80 @@ class Emitter {
     this.setReg(REG.rax, size);
     c.end();
     this.lastFlags = { index, kind: "cmp", size, a: acc, b: va, res };
+  }
+
+  // crc32 (CRC-32C, reflected polynomial 0x82F63B78) of the source's
+  // bytes folded into the destination register, a bit at a time.
+  emitCrc32(ops) {
+    const c = this.c;
+    const [dst, src] = ops;
+    const crc = this.t32();
+    const data = this.t64();
+    const bit = this.t32();
+    const byte = this.t32();
+    this.getReg(dst.reg, 4);
+    c.i32_wrap_i64().local_set(crc);
+    this.load(src, src.size);
+    c.local_set(data);
+    for (let i = 0; i < src.size; i++) {
+      c.local_get(data).i64_const(BigInt(8 * i)).i64_shr_u().i32_wrap_i64().i32_const(0xff).i32_and();
+      c.local_get(crc).i32_xor().local_set(crc);
+      c.i32_const(0).local_set(bit);
+      c.block(T.empty).loop(T.empty);
+      c.local_get(bit).i32_const(8).i32_ge_u().br_if(1);
+      // crc = (crc >>> 1) ^ (poly & -(crc & 1))
+      c.local_get(crc).i32_const(1).i32_shr_u();
+      c.i32_const(0x82f63b78).i32_const(0).local_get(crc).i32_const(1).i32_and().i32_sub().i32_and();
+      c.i32_xor().local_set(crc);
+      c.local_get(bit).i32_const(1).i32_add().local_set(bit);
+      c.br(0);
+      c.end().end();
+    }
+    c.local_get(crc).i64_extend_i32_u();
+    this.setReg(dst.reg, dst.size === 8 ? 8 : 4);
+  }
+
+  // cmpxchg8b and cmpxchg16b: rdx:rax against the memory pair; equal
+  // stores rcx:rbx and sets ZF, unequal loads the pair into rdx:rax.
+  emitCmpxchgWide(width, ops) {
+    const c = this.c;
+    const a = this.t32();
+    const lo = this.t64();
+    const hi = this.t64();
+    const eq = this.t32();
+    this.address32(ops[0]);
+    c.local_set(a);
+    c.local_get(a);
+    this.loadMem(width);
+    c.local_set(lo);
+    c.local_get(a).i32_const(width).i32_add();
+    this.loadMem(width);
+    c.local_set(hi);
+    c.local_get(lo);
+    this.getReg(REG.rax, width);
+    c.i64_eq();
+    c.local_get(hi);
+    this.getReg(REG.rdx, width);
+    c.i64_eq();
+    c.i32_and().local_tee(eq);
+    c.if_(T.empty);
+    c.local_get(a);
+    this.getReg(REG.rbx, width);
+    this.storeMem(width);
+    c.local_get(a).i32_const(width).i32_add();
+    this.getReg(REG.rcx, width);
+    this.storeMem(width);
+    c.else_();
+    c.local_get(lo);
+    this.setReg(REG.rax, width);
+    c.local_get(hi);
+    this.setReg(REG.rdx, width);
+    c.end();
+    // ZF from the comparison; the other flags keep their values.
+    this.eflags();
+    c.i32_const(~0x40).i32_and().local_get(eq).i32_const(6).i32_shl().i32_or();
+    this.setEflags();
+    this.lastFlags = null;
   }
 
   emitXadd(ops, size, index) {

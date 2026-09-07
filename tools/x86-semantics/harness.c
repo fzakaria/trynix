@@ -34,8 +34,8 @@
 /* Where the epilogue leaves things, as offsets into OUT. */
 #define OUT_GPR 0 /* 16 x 8 bytes */
 #define OUT_FLAGS 128
-#define OUT_XMM 256 /* 16 x 16 bytes */
-#define OUT_HARNESS_RSP 512
+#define OUT_YMM 256 /* 16 x 32 bytes: low half then high */
+#define OUT_HARNESS_RSP 1024
 
 static uint64_t in_regs[16];
 static uint64_t in_flags;
@@ -55,14 +55,12 @@ static uint8_t *emit_store_gpr(uint8_t *p, int reg, uint32_t addr)
     return p + 4;
 }
 
-static uint8_t *emit_store_xmm(uint8_t *p, int reg, uint32_t addr)
+static uint8_t *emit_store_ymm(uint8_t *p, int reg, uint32_t addr)
 {
-    /* movdqu [abs32], xmm: F3 (REX.R) 0F 7F ModRM SIB disp32 */
-    *p++ = 0xf3;
-    if (reg >= 8) {
-        *p++ = 0x44;
-    }
-    *p++ = 0x0f;
+    /* vmovdqu [abs32], ymm: C4 [R=~reg8 X=1 B=1 mmmmm=00001] [W=0 vvvv=1111 L=1 pp=10] 7F ModRM SIB disp32 */
+    *p++ = 0xc4;
+    *p++ = 0x61 | (reg >= 8 ? 0 : 0x80);
+    *p++ = 0x7e;
     *p++ = 0x7f;
     *p++ = 0x04 | ((reg & 7) << 3);
     *p++ = 0x25;
@@ -81,14 +79,12 @@ static uint8_t *emit_load_gpr(uint8_t *p, int reg, uint32_t addr)
     return p + 4;
 }
 
-static uint8_t *emit_load_xmm(uint8_t *p, int reg, uint32_t addr)
+static uint8_t *emit_load_ymm(uint8_t *p, int reg, uint32_t addr)
 {
-    /* movdqu xmm, [abs32]: F3 (REX.R) 0F 6F ModRM SIB disp32 */
-    *p++ = 0xf3;
-    if (reg >= 8) {
-        *p++ = 0x44;
-    }
-    *p++ = 0x0f;
+    /* vmovdqu ymm, [abs32]: C4 [R X B 00001] [0 1111 1 10] 6F ModRM SIB disp32 */
+    *p++ = 0xc4;
+    *p++ = 0x61 | (reg >= 8 ? 0 : 0x80);
+    *p++ = 0x7e;
     *p++ = 0x6f;
     *p++ = 0x04 | ((reg & 7) << 3);
     *p++ = 0x25;
@@ -140,7 +136,7 @@ static int parse_hex(const char *s, uint8_t *out, int max)
 static void build(const uint8_t *snippet, int len)
 {
     uint8_t *p = CODE;
-    uint32_t in_addr = (uint32_t)(uintptr_t)OUT + 1024; /* input block lives after the outputs */
+    uint32_t in_addr = (uint32_t)(uintptr_t)OUT + 2048; /* input block lives after the outputs */
     uint64_t *in = (uint64_t *)(uintptr_t)in_addr;
 
     /* Input block: regs, flags, a reset mxcsr, xmm */
@@ -150,8 +146,8 @@ static void build(const uint8_t *snippet, int len)
 
     /* Save harness rsp: mov [OUT_HARNESS_RSP], rsp */
     p = emit_store_gpr(p, 4, (uint32_t)(uintptr_t)OUT + OUT_HARNESS_RSP);
-    /* Load xmm0-15 from input block + 256 */
-    for (int i = 0; i < 16; i++) p = emit_load_xmm(p, i, in_addr + 256 + 16 * i);
+    /* Load ymm0-15 from input block + 1024 */
+    for (int i = 0; i < 16; i++) p = emit_load_ymm(p, i, in_addr + 1024 + 32 * i);
     /* fninit (DB E3): the x87 stack and control word of one case must
      * not reach the next */
     *p++ = 0xdb; *p++ = 0xe3;
@@ -187,7 +183,7 @@ static void build(const uint8_t *snippet, int len)
     /* pushf; pop [OUT_FLAGS]: 9C ; 8F 04 25 disp32 */
     *p++ = 0x9c;
     *p++ = 0x8f; *p++ = 0x04; *p++ = 0x25; memcpy(p, &(uint32_t){(uint32_t)(uintptr_t)OUT + OUT_FLAGS}, 4); p += 4;
-    for (int i = 0; i < 16; i++) p = emit_store_xmm(p, i, (uint32_t)(uintptr_t)OUT + OUT_XMM + 16 * i);
+    for (int i = 0; i < 16; i++) p = emit_store_ymm(p, i, (uint32_t)(uintptr_t)OUT + OUT_YMM + 32 * i);
     *p++ = 0xc3;
 }
 
@@ -215,9 +211,9 @@ int main(void)
         tok = strtok_r(NULL, " \n", &save);
         memset(SCRATCH, 0, SCRATCH_SIZE);
         if (tok) parse_hex(tok, SCRATCH, SCRATCH_SIZE);
-        /* xmm inputs: taken from the scratch page's first 256 bytes so
-         * they are random too */
-        memcpy((uint8_t *)OUT + 1024 + 256, SCRATCH, 256);
+        /* ymm inputs: the scratch page's first 512 bytes, so they are
+         * random too */
+        memcpy((uint8_t *)OUT + 2048 + 1024, SCRATCH, 512);
 
         build(snippet, len);
         run();
@@ -225,8 +221,8 @@ int main(void)
         uint64_t *out = OUT;
         for (int i = 0; i < 16; i++) printf("%llx ", (unsigned long long)out[i]);
         printf("%llx ", (unsigned long long)(out[OUT_FLAGS / 8] & 0x8d5));
-        uint8_t *xmm = (uint8_t *)OUT + OUT_XMM;
-        for (int i = 0; i < 256; i++) printf("%02x", xmm[i]);
+        uint8_t *ymm = (uint8_t *)OUT + OUT_YMM;
+        for (int i = 0; i < 512; i++) printf("%02x", ymm[i]);
         printf(" ");
         for (int i = 0; i < SCRATCH_SIZE; i++) printf("%02x", SCRATCH[i]);
         printf("\n");
