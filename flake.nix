@@ -119,10 +119,12 @@
 
           # generate the translator's semantics fixture on this CPU:
           # nix run .#x86-semantics -- tests/fixtures/x86/semantics.json
-          x86-semantics = tool "x86-semantics" "${pkgs.python3}/bin/python3 ${./tools/x86-semantics/generate.py}" [
-            pkgs.gcc
-            pkgs.binutils
-          ];
+          x86-semantics =
+            tool "x86-semantics" "${pkgs.python3}/bin/python3 ${./tools/x86-semantics/generate.py}"
+              [
+                pkgs.gcc
+                pkgs.binutils
+              ];
 
           # publish the example package into the site as a binary cache
           make-example-cache = tool "make-example-cache" ./tools/make-example-cache.sh [

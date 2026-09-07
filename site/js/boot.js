@@ -226,10 +226,13 @@ export async function startVM({
   terminalElement,
   keyBarElement,
   engine,
+  // Optional: wraps the pty master before the terminal is attached to
+  // it, for the fast lane's frames (site/js/fastlane.js).
+  wrapMaster = null,
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
-  ui.attach(master);
+  ui.attach(wrapMaster === null ? master : wrapMaster(master));
 
   // The console transcript, tapped before the terminal draws it.
   const console_ = watchConsole(master);
@@ -314,6 +317,8 @@ export async function startVM({
   return {
     terminal: ui.terminal,
     share,
+    // The emscripten filesystem, for the fast lane's files on the share.
+    FS: mod.FS,
 
     // Finish the share and let QEMU run. `roots` are the basenames the
     // reader selected, in selection order. Resolves when the guest is

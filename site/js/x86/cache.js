@@ -37,7 +37,9 @@ export async function loadTranslations(cache, storePaths) {
   }
   const prefixes = storePaths.map((p) => `${KEY_ORIGIN}${p}`);
   const requests = await cache.keys();
-  const wanted = requests.filter((r) => prefixes.some((p) => r.url.startsWith(p)));
+  const wanted = requests.filter((r) =>
+    prefixes.some((p) => r.url.startsWith(p)),
+  );
   await Promise.all(
     wanted.map(async (request) => {
       const response = await cache.match(request);
@@ -46,14 +48,19 @@ export async function loadTranslations(cache, storePaths) {
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       const offsets = JSON.parse(response.headers.get(HEADER_OFFSETS) ?? "[]");
-      const unsupported = JSON.parse(response.headers.get(HEADER_UNSUPPORTED) ?? "[]");
+      const unsupported = JSON.parse(
+        response.headers.get(HEADER_UNSUPPORTED) ?? "[]",
+      );
       out.push({ key: fromUrl(request.url), bytes, offsets, unsupported });
     }),
   );
   return out;
 }
 
-export async function storeTranslation(cache, { key, bytes, offsets, unsupported }) {
+export async function storeTranslation(
+  cache,
+  { key, bytes, offsets, unsupported },
+) {
   if (cache === null) {
     return;
   }

@@ -15,6 +15,7 @@
 let
   vendor = import ./vendor.nix { inherit pkgs; };
   engine = import ./engine.nix { inherit pkgs; };
+  execStub = import ./exec-stub.nix { inherit pkgs; };
   outputs = import ./outputs.nix { inherit pkgs; };
   guest = (import ./guest.nix { inherit pkgs; }).guest;
 in
@@ -35,10 +36,11 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   # index.html — it would reload the page forever trying.
   mv $out/vendor/coi-serviceworker.js $out/coi-serviceworker.js
 
-  mkdir -p $out/qemu $out/guest
+  mkdir -p $out/qemu $out/guest $out/exec
   cp ${engine}/* $out/qemu/
   cp ${guest}/* $out/guest/
-  chmod -R u+w $out/qemu $out/guest
+  cp ${execStub}/bin/trynix-exec $out/exec/trynix-exec
+  chmod -R u+w $out/qemu $out/guest $out/exec
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).

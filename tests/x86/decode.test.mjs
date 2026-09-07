@@ -69,19 +69,31 @@ test("every encoding in the oracle decodes to objdump's length and mnemonic", ()
       continue;
     }
     if (insn.len !== bytes.length) {
-      failures.push(`${hex}  ${text}: length ${insn.len}, objdump ${bytes.length}`);
+      failures.push(
+        `${hex}  ${text}: length ${insn.len}, objdump ${bytes.length}`,
+      );
       continue;
     }
-    const lengthOnly = (mnemonic.startsWith("v") && mnemonic !== "verr" && mnemonic !== "verw") || mnemonic.startsWith("k");
+    const lengthOnly =
+      (mnemonic.startsWith("v") &&
+        mnemonic !== "verr" &&
+        mnemonic !== "verw") ||
+      mnemonic.startsWith("k");
     if (lengthOnly) {
       continue;
     }
     if (canonical(insn.mnemonic) !== canonical(mnemonic)) {
-      failures.push(`${hex}  ${text}: mnemonic ${insn.mnemonic}, objdump ${mnemonic}`);
+      failures.push(
+        `${hex}  ${text}: mnemonic ${insn.mnemonic}, objdump ${mnemonic}`,
+      );
     }
   }
   assert.ok(count > 1000, `oracle has only ${count} lines`);
-  assert.equal(failures.length, 0, `${failures.length} of ${count} disagree:\n${failures.slice(0, 40).join("\n")}`);
+  assert.equal(
+    failures.length,
+    0,
+    `${failures.length} of ${count} disagree:\n${failures.slice(0, 40).join("\n")}`,
+  );
 });
 
 test("an operand form: base, index, scale, displacement and rip-relative", () => {
@@ -93,15 +105,32 @@ test("an operand form: base, index, scale, displacement and rip-relative", () =>
   assert.equal(insn.operands[0].size, 8);
   assert.deepEqual(
     { ...insn.operands[1], disp: Number(insn.operands[1].disp) },
-    { kind: "mem", size: 8, base: 3, index: 1, scale: 8, disp: 16, seg: null, ripRel: false },
+    {
+      kind: "mem",
+      size: 8,
+      base: 3,
+      index: 1,
+      scale: 8,
+      disp: 16,
+      seg: null,
+      ripRel: false,
+    },
   );
   // lea rdi, [rip+0x1234] at address 0x400000: target is next rip + disp
-  insn = decode(Uint8Array.from([0x48, 0x8d, 0x3d, 0x34, 0x12, 0x00, 0x00]), 0, 0x400000n);
+  insn = decode(
+    Uint8Array.from([0x48, 0x8d, 0x3d, 0x34, 0x12, 0x00, 0x00]),
+    0,
+    0x400000n,
+  );
   assert.equal(insn.mnemonic, "lea");
   assert.equal(insn.operands[1].ripRel, true);
   assert.equal(insn.operands[1].disp, 0x400007n + 0x1234n);
   // mov rax, fs:0x28
-  insn = decode(Uint8Array.from([0x64, 0x48, 0x8b, 0x04, 0x25, 0x28, 0x00, 0x00, 0x00]), 0, 0n);
+  insn = decode(
+    Uint8Array.from([0x64, 0x48, 0x8b, 0x04, 0x25, 0x28, 0x00, 0x00, 0x00]),
+    0,
+    0n,
+  );
   assert.equal(insn.operands[1].seg, "fs");
   assert.equal(insn.operands[1].base, null);
   assert.equal(insn.operands[1].disp, 0x28n);
@@ -110,9 +139,19 @@ test("an operand form: base, index, scale, displacement and rip-relative", () =>
 test("legacy 8-bit high registers and REX low bytes are told apart", () => {
   // mov ah, 1 (b4 01) versus mov spl, 1 (40 b4 01)
   let insn = decode(Uint8Array.from([0xb4, 0x01]), 0, 0n);
-  assert.deepEqual(insn.operands[0], { kind: "reg", reg: 0, size: 1, high: true });
+  assert.deepEqual(insn.operands[0], {
+    kind: "reg",
+    reg: 0,
+    size: 1,
+    high: true,
+  });
   insn = decode(Uint8Array.from([0x40, 0xb4, 0x01]), 0, 0n);
-  assert.deepEqual(insn.operands[0], { kind: "reg", reg: 4, size: 1, high: false });
+  assert.deepEqual(insn.operands[0], {
+    kind: "reg",
+    reg: 4,
+    size: 1,
+    high: false,
+  });
 });
 
 test("immediates are sign-extended to the operand size", () => {
@@ -138,7 +177,11 @@ test("relative branches carry their absolute target", () => {
   insn = decode(Uint8Array.from([0xe8, 0xeb, 0xff, 0xff, 0xff]), 0, 0x1000n);
   assert.equal(insn.operands[0].target, 0xff0n);
   // jne
-  insn = decode(Uint8Array.from([0x0f, 0x85, 0x00, 0x01, 0x00, 0x00]), 0, 0x1000n);
+  insn = decode(
+    Uint8Array.from([0x0f, 0x85, 0x00, 0x01, 0x00, 0x00]),
+    0,
+    0x1000n,
+  );
   assert.equal(insn.mnemonic, "jne");
   assert.equal(insn.cond, 5);
 });

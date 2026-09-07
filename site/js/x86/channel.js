@@ -14,7 +14,12 @@
 //   3 pending signals (kernel writes, worker reads)   4 result lo
 //   5 result hi   6 pid   7 tid   8.. eight i64 args   then payload
 
-export const STATE = Object.freeze({ IDLE: 0, REQUEST: 1, PARKED: 2, RESPONSE: 3 });
+export const STATE = Object.freeze({
+  IDLE: 0,
+  REQUEST: 1,
+  PARKED: 2,
+  RESPONSE: 3,
+});
 
 const W_STATE = 0;
 const W_OP = 1;

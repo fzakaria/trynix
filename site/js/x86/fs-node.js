@@ -82,11 +82,19 @@ class NodeFile {
   }
 
   readdir() {
-    return wrap(() => fs.readdirSync(this.path, { withFileTypes: true })).map((d) => ({
-      name: d.name,
-      type: d.isDirectory() ? 4 : d.isSymbolicLink() ? 10 : d.isFile() ? 8 : 0,
-      ino: 0,
-    }));
+    return wrap(() => fs.readdirSync(this.path, { withFileTypes: true })).map(
+      (d) => ({
+        name: d.name,
+        type: d.isDirectory()
+          ? 4
+          : d.isSymbolicLink()
+            ? 10
+            : d.isFile()
+              ? 8
+              : 0,
+        ino: 0,
+      }),
+    );
   }
 
   close() {
@@ -96,7 +104,9 @@ class NodeFile {
 
 export class NodeFs {
   stat(path, followLinks = true) {
-    return statOf(wrap(() => (followLinks ? fs.statSync(path) : fs.lstatSync(path))));
+    return statOf(
+      wrap(() => (followLinks ? fs.statSync(path) : fs.lstatSync(path))),
+    );
   }
 
   // flags are Linux O_* bits; node's constants match on Linux.

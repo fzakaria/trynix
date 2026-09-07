@@ -78,5 +78,16 @@ export function parseElf(bytes) {
       }
     }
   }
-  return { type, pie: type === ET_DYN, entry, phoff, phentsize, phnum, phdrVaddr, segments, interp, tls };
+  return {
+    type,
+    pie: type === ET_DYN,
+    entry,
+    phoff,
+    phentsize,
+    phnum,
+    phdrVaddr,
+    segments,
+    interp,
+    tls,
+  };
 }

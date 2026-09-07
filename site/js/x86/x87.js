@@ -114,9 +114,9 @@ export function fpuOp(machine, op, arg) {
       // C2 clear: the reduction is complete. C0, C3, C1 hold the low
       // quotient bits.
       const qi = Math.abs(q);
-      sw |= (qi & 1) ? C1 : 0;
-      sw |= (qi & 2) ? C3 : 0;
-      sw |= (qi & 4) ? C0 : 0;
+      sw |= qi & 1 ? C1 : 0;
+      sw |= qi & 2 ? C3 : 0;
+      sw |= qi & 4 ? C0 : 0;
       h.fpu_sw.value = sw;
       return;
     }
@@ -154,7 +154,7 @@ function exactRemainder(a, b, shift, nearest) {
     const absIb = ib < 0n ? -ib : ib;
     const absTwice = twice < 0n ? -twice : twice;
     if (absTwice > absIb || (absTwice === absIb && (q & 1n) === 1n)) {
-      q += (ia < 0n) === (ib < 0n) ? 1n : -1n;
+      q += ia < 0n === ib < 0n ? 1n : -1n;
     }
   }
   const r = ia - q * ib;
@@ -197,13 +197,13 @@ function read80(m, addr) {
     return sign * 0;
   }
   if (exp === 0x7fff) {
-    return (mant << 1n) === 0n ? sign * Infinity : NaN;
+    return mant << 1n === 0n ? sign * Infinity : NaN;
   }
   // value = mant * 2^(exp - 16383 - 63)
   const hi = Number(mant >> 11n);
   const lo = Number(mant & 0x7ffn);
   let f = hi + lo / 2048;
-  return sign * f * Math.pow(2, exp - 16383 - 63 + 11) ;
+  return sign * f * Math.pow(2, exp - 16383 - 63 + 11);
 }
 
 function write80(m, addr, v) {
@@ -272,7 +272,12 @@ export function emitX87(e, insn, ops) {
     }
     const v = e.tF64();
     c.local_tee(v).local_get(v).f64_ne().if_(T.empty);
-    c.local_get(v).i64_reinterpret_f64().i64_const(0x0008000000000000n).i64_or().f64_reinterpret_i64().local_set(v);
+    c.local_get(v)
+      .i64_reinterpret_f64()
+      .i64_const(0x0008000000000000n)
+      .i64_or()
+      .f64_reinterpret_i64()
+      .local_set(v);
     c.end();
     c.local_get(v);
   };
@@ -304,8 +309,20 @@ export function emitX87(e, insn, ops) {
     const rc = e.t32();
     c.local_set(rc);
     c.local_get(rc).i32_eqz().if_(T.f64).local_get(v).f64_nearest();
-    c.else_().local_get(rc).i32_const(1).i32_eq().if_(T.f64).local_get(v).f64_floor();
-    c.else_().local_get(rc).i32_const(2).i32_eq().if_(T.f64).local_get(v).f64_ceil();
+    c.else_()
+      .local_get(rc)
+      .i32_const(1)
+      .i32_eq()
+      .if_(T.f64)
+      .local_get(v)
+      .f64_floor();
+    c.else_()
+      .local_get(rc)
+      .i32_const(2)
+      .i32_eq()
+      .if_(T.f64)
+      .local_get(v)
+      .f64_ceil();
     c.else_().local_get(v).f64_trunc().end().end().end();
   };
   // Stores the f64 on the stack as an integer of `size` at the address
@@ -314,8 +331,10 @@ export function emitX87(e, insn, ops) {
   const storeI = (aLocal, size) => {
     const v = e.tF64();
     c.local_set(v);
-    const limit = size === 8 ? 9223372036854775808 : size === 4 ? 2147483648 : 32768;
-    const indefinite = size === 8 ? 0x8000000000000000n : size === 4 ? 0x80000000n : 0x8000n;
+    const limit =
+      size === 8 ? 9223372036854775808 : size === 4 ? 2147483648 : 32768;
+    const indefinite =
+      size === 8 ? 0x8000000000000000n : size === 4 ? 0x80000000n : 0x8000n;
     c.local_get(aLocal);
     c.local_get(v).i64_trunc_sat_f64_s();
     c.i64_const(indefinite);
@@ -340,7 +359,13 @@ export function emitX87(e, insn, ops) {
     st0();
     c.local_set(a);
     // unordered -> C3|C2|C0; less -> C0; equal -> C3
-    c.local_get(a).local_get(a).f64_ne().local_get(b).local_get(b).f64_ne().i32_or();
+    c.local_get(a)
+      .local_get(a)
+      .f64_ne()
+      .local_get(b)
+      .local_get(b)
+      .f64_ne()
+      .i32_or();
     c.i32_const(C3 | C2 | C0).i32_mul();
     c.local_get(a).local_get(b).f64_lt().i32_const(C0).i32_mul().i32_or();
     c.local_get(a).local_get(b).f64_eq().i32_const(C3).i32_mul().i32_or();
@@ -349,7 +374,12 @@ export function emitX87(e, insn, ops) {
     // bits on stack
     const bits = e.t32();
     c.local_set(bits);
-    c.global_get(e.g.fpu_sw).i32_const(~CONDITION_BITS).i32_and().local_get(bits).i32_or().global_set(e.g.fpu_sw);
+    c.global_get(e.g.fpu_sw)
+      .i32_const(~CONDITION_BITS)
+      .i32_and()
+      .local_get(bits)
+      .i32_or()
+      .global_set(e.g.fpu_sw);
   };
   // Compare ST0 with the f64 on the stack into EFLAGS (ZF, PF, CF).
   const compareEflags = () => {
@@ -358,7 +388,13 @@ export function emitX87(e, insn, ops) {
     c.local_set(b);
     st0();
     c.local_set(a);
-    c.local_get(a).local_get(a).f64_ne().local_get(b).local_get(b).f64_ne().i32_or();
+    c.local_get(a)
+      .local_get(a)
+      .f64_ne()
+      .local_get(b)
+      .local_get(b)
+      .f64_ne()
+      .i32_or();
     c.i32_const(0x45).i32_mul();
     c.local_get(a).local_get(b).f64_lt().i32_or();
     c.local_get(a).local_get(b).f64_eq().i32_const(6).i32_shl().i32_or();
@@ -370,11 +406,20 @@ export function emitX87(e, insn, ops) {
     a();
     b();
     switch (name) {
-      case "add": c.f64_add(); break;
-      case "sub": c.f64_sub(); break;
-      case "mul": c.f64_mul(); break;
-      case "div": c.f64_div(); break;
-      default: throw new Unsupported(name);
+      case "add":
+        c.f64_add();
+        break;
+      case "sub":
+        c.f64_sub();
+        break;
+      case "mul":
+        c.f64_mul();
+        break;
+      case "div":
+        c.f64_div();
+        break;
+      default:
+        throw new Unsupported(name);
     }
   };
 
@@ -399,13 +444,34 @@ export function emitX87(e, insn, ops) {
       loadI(dst);
       push();
       return true;
-    case "fld1": c.f64_const(1); push(); return true;
-    case "fldz": c.f64_const(0); push(); return true;
-    case "fldpi": c.f64_const(Math.PI); push(); return true;
-    case "fldl2e": c.f64_const(Math.LOG2E); push(); return true;
-    case "fldln2": c.f64_const(Math.LN2); push(); return true;
-    case "fldlg2": c.f64_const(Math.log10(2)); push(); return true;
-    case "fldl2t": c.f64_const(Math.log2(10)); push(); return true;
+    case "fld1":
+      c.f64_const(1);
+      push();
+      return true;
+    case "fldz":
+      c.f64_const(0);
+      push();
+      return true;
+    case "fldpi":
+      c.f64_const(Math.PI);
+      push();
+      return true;
+    case "fldl2e":
+      c.f64_const(Math.LOG2E);
+      push();
+      return true;
+    case "fldln2":
+      c.f64_const(Math.LN2);
+      push();
+      return true;
+    case "fldlg2":
+      c.f64_const(Math.log10(2));
+      push();
+      return true;
+    case "fldl2t":
+      c.f64_const(Math.log2(10));
+      push();
+      return true;
 
     case "fst":
     case "fstp": {
@@ -453,9 +519,24 @@ export function emitX87(e, insn, ops) {
       return true;
     }
 
-    case "fadd": case "fsub": case "fsubr": case "fmul": case "fdiv": case "fdivr":
-    case "faddp": case "fsubp": case "fsubrp": case "fmulp": case "fdivp": case "fdivrp":
-    case "fiadd": case "fisub": case "fisubr": case "fimul": case "fidiv": case "fidivr": {
+    case "fadd":
+    case "fsub":
+    case "fsubr":
+    case "fmul":
+    case "fdiv":
+    case "fdivr":
+    case "faddp":
+    case "fsubp":
+    case "fsubrp":
+    case "fmulp":
+    case "fdivp":
+    case "fdivrp":
+    case "fiadd":
+    case "fisub":
+    case "fisubr":
+    case "fimul":
+    case "fidiv":
+    case "fidivr": {
       const popAfter = m.endsWith("p") && !m.startsWith("fi");
       const integer = m.startsWith("fi");
       let base = m.replace(/^fi?/, "").replace(/p$/, "");
@@ -527,16 +608,32 @@ export function emitX87(e, insn, ops) {
       }
       return true;
     case "fincstp":
-      c.global_get(e.g.fpu_top).i32_const(1).i32_add().i32_const(7).i32_and().global_set(e.g.fpu_top);
+      c.global_get(e.g.fpu_top)
+        .i32_const(1)
+        .i32_add()
+        .i32_const(7)
+        .i32_and()
+        .global_set(e.g.fpu_top);
       return true;
     case "fdecstp":
-      c.global_get(e.g.fpu_top).i32_const(1).i32_sub().i32_const(7).i32_and().global_set(e.g.fpu_top);
+      c.global_get(e.g.fpu_top)
+        .i32_const(1)
+        .i32_sub()
+        .i32_const(7)
+        .i32_and()
+        .global_set(e.g.fpu_top);
       return true;
     case "fnop":
       return true;
 
-    case "fcom": case "fcomp": case "fcompp": case "fucom": case "fucomp": case "fucompp":
-    case "ficom": case "ficomp": {
+    case "fcom":
+    case "fcomp":
+    case "fcompp":
+    case "fucom":
+    case "fucomp":
+    case "fucompp":
+    case "ficom":
+    case "ficomp": {
       if (m === "fcompp" || m === "fucompp") {
         c.i32_const(1).call(h.fpu_get);
       } else if (ops.length === 0) {
@@ -556,7 +653,10 @@ export function emitX87(e, insn, ops) {
       }
       return true;
     }
-    case "fucomi": case "fucomip": case "fcomi": case "fcomip":
+    case "fucomi":
+    case "fucomip":
+    case "fcomi":
+    case "fcomip":
       loadF(src);
       compareEflags();
       if (m.endsWith("p")) {
@@ -576,19 +676,51 @@ export function emitX87(e, insn, ops) {
       st0();
       c.local_set(v);
       c.i32_const(0).local_set(bits);
-      c.local_get(v).local_get(v).f64_ne().if_(T.empty).i32_const(C0).local_set(bits);
-      c.else_().local_get(v).f64_abs().f64_const(Infinity).f64_eq().if_(T.empty).i32_const(C2 | C0).local_set(bits);
-      c.else_().local_get(v).f64_const(0).f64_eq().if_(T.empty).i32_const(C3).local_set(bits);
+      c.local_get(v)
+        .local_get(v)
+        .f64_ne()
+        .if_(T.empty)
+        .i32_const(C0)
+        .local_set(bits);
+      c.else_()
+        .local_get(v)
+        .f64_abs()
+        .f64_const(Infinity)
+        .f64_eq()
+        .if_(T.empty)
+        .i32_const(C2 | C0)
+        .local_set(bits);
+      c.else_()
+        .local_get(v)
+        .f64_const(0)
+        .f64_eq()
+        .if_(T.empty)
+        .i32_const(C3)
+        .local_set(bits);
       c.else_().i32_const(C2).local_set(bits).end().end().end();
-      c.local_get(v).i64_reinterpret_f64().i64_const(63).i64_shr_u().i32_wrap_i64().i32_const(C1).i32_mul();
+      c.local_get(v)
+        .i64_reinterpret_f64()
+        .i64_const(63)
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(C1)
+        .i32_mul();
       c.local_get(bits).i32_or();
       setConditions();
       return true;
     }
-    case "fcmovb": case "fcmove": case "fcmovbe": case "fcmovu":
-    case "fcmovnb": case "fcmovne": case "fcmovnbe": case "fcmovnu": {
+    case "fcmovb":
+    case "fcmove":
+    case "fcmovbe":
+    case "fcmovu":
+    case "fcmovnb":
+    case "fcmovne":
+    case "fcmovnbe":
+    case "fcmovnu": {
       // Condition from EFLAGS: b=CF, e=ZF, be=CF|ZF, u=PF
-      const cond = { b: 2, e: 4, be: 6, u: 10, nb: 3, ne: 5, nbe: 7, nu: 11 }[m.slice(5)];
+      const cond = { b: 2, e: 4, be: 6, u: 10, nb: 3, ne: 5, nbe: 7, nu: 11 }[
+        m.slice(5)
+      ];
       e.condition(cond);
       c.if_(T.empty);
       loadF(src);
@@ -623,7 +755,10 @@ export function emitX87(e, insn, ops) {
     }
     case "fnclex":
     case "fclex":
-      c.global_get(e.g.fpu_sw).i32_const(~0xff).i32_and().global_set(e.g.fpu_sw);
+      c.global_get(e.g.fpu_sw)
+        .i32_const(~0xff)
+        .i32_and()
+        .global_set(e.g.fpu_sw);
       return true;
     case "fninit":
     case "finit":
@@ -640,11 +775,22 @@ export function emitX87(e, insn, ops) {
       c.local_set(a);
       c.local_get(a).i32_const(0).i32_const(28).memory_fill();
       c.local_get(a).global_get(e.g.fpu_cw).i32_store(0, 2);
-      c.local_get(a).global_get(e.g.fpu_sw).i32_const(~0x3800).i32_and().global_get(e.g.fpu_top).i32_const(11).i32_shl().i32_or().i32_store(4, 2);
+      c.local_get(a)
+        .global_get(e.g.fpu_sw)
+        .i32_const(~0x3800)
+        .i32_and()
+        .global_get(e.g.fpu_top)
+        .i32_const(11)
+        .i32_shl()
+        .i32_or()
+        .i32_store(4, 2);
       c.local_get(a).i32_const(0xffff).i32_store(8, 2);
       if (m === "fnstenv") {
         // fnstenv also masks all exceptions.
-        c.i32_const(0x3f).global_get(e.g.fpu_cw).i32_or().global_set(e.g.fpu_cw);
+        c.i32_const(0x3f)
+          .global_get(e.g.fpu_cw)
+          .i32_or()
+          .global_set(e.g.fpu_cw);
       }
       return true;
     }
@@ -653,23 +799,57 @@ export function emitX87(e, insn, ops) {
       e.address32(dst);
       c.local_set(a);
       c.local_get(a).i32_load16_u(0).global_set(e.g.fpu_cw);
-      c.local_get(a).i32_load16_u(4).i32_const(0x3800).i32_and().i32_const(11).i32_shr_u().global_set(e.g.fpu_top);
-      c.local_get(a).i32_load16_u(4).i32_const(~0x3800).i32_and().global_set(e.g.fpu_sw);
+      c.local_get(a)
+        .i32_load16_u(4)
+        .i32_const(0x3800)
+        .i32_and()
+        .i32_const(11)
+        .i32_shr_u()
+        .global_set(e.g.fpu_top);
+      c.local_get(a)
+        .i32_load16_u(4)
+        .i32_const(~0x3800)
+        .i32_and()
+        .global_set(e.g.fpu_sw);
       return true;
     }
 
-    case "f2xm1": c.i32_const(FPU.F2XM1).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fyl2x": c.i32_const(FPU.FYL2X).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fyl2xp1": c.i32_const(FPU.FYL2XP1).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fptan": c.i32_const(FPU.FPTAN).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fpatan": c.i32_const(FPU.FPATAN).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fsin": c.i32_const(FPU.FSIN).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fcos": c.i32_const(FPU.FCOS).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fsincos": c.i32_const(FPU.FSINCOS).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fscale": c.i32_const(FPU.FSCALE).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fprem": c.i32_const(FPU.FPREM).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fprem1": c.i32_const(FPU.FPREM1).i64_const(0).call(e.ctx.imports.fpu); return true;
-    case "fxtract": c.i32_const(FPU.FXTRACT).i64_const(0).call(e.ctx.imports.fpu); return true;
+    case "f2xm1":
+      c.i32_const(FPU.F2XM1).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fyl2x":
+      c.i32_const(FPU.FYL2X).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fyl2xp1":
+      c.i32_const(FPU.FYL2XP1).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fptan":
+      c.i32_const(FPU.FPTAN).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fpatan":
+      c.i32_const(FPU.FPATAN).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fsin":
+      c.i32_const(FPU.FSIN).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fcos":
+      c.i32_const(FPU.FCOS).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fsincos":
+      c.i32_const(FPU.FSINCOS).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fscale":
+      c.i32_const(FPU.FSCALE).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fprem":
+      c.i32_const(FPU.FPREM).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fprem1":
+      c.i32_const(FPU.FPREM1).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
+    case "fxtract":
+      c.i32_const(FPU.FXTRACT).i64_const(0).call(e.ctx.imports.fpu);
+      return true;
     default:
       return false;
   }

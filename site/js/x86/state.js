@@ -4,8 +4,22 @@
 // same index in both.
 
 export const REGISTER_NAMES = [
-  "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+  "rax",
+  "rcx",
+  "rdx",
+  "rbx",
+  "rsp",
+  "rbp",
+  "rsi",
+  "rdi",
+  "r8",
+  "r9",
+  "r10",
+  "r11",
+  "r12",
+  "r13",
+  "r14",
+  "r15",
 ];
 
 // name -> wasm value type
@@ -62,7 +76,15 @@ export function ccOp(kind, size) {
 }
 
 // EFLAGS bit positions.
-export const FLAG = Object.freeze({ CF: 1, PF: 4, AF: 16, ZF: 64, SF: 128, DF: 1024, OF: 2048 });
+export const FLAG = Object.freeze({
+  CF: 1,
+  PF: 4,
+  AF: 16,
+  ZF: 64,
+  SF: 128,
+  DF: 1024,
+  OF: 2048,
+});
 
 // Why a block returned to the run loop.
 export const EXIT = Object.freeze({

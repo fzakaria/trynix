@@ -15,15 +15,30 @@ import { workerPort } from "./platform.js";
 const port = await workerPort();
 const d = port.data;
 const channel = new Channel(d.channel, new Int32Array(d.bell));
-const log = (text) => channel.call(OP.LOG, [], new TextEncoder().encode(`${text}\0`));
-const trace = d.trace ? (line) => port.postMessage({ type: "log", text: `[sys ${d.pid}] ${line}` }) : null;
+const log = (text) =>
+  channel.call(OP.LOG, [], new TextEncoder().encode(`${text}\0`));
+const trace = d.trace
+  ? (line) => port.postMessage({ type: "log", text: `[sys ${d.pid}] ${line}` })
+  : null;
 
 function newMachine(memory = null, lookupBase = Number(d.lookupBase)) {
-  return new Machine({ pages: d.memoryPages, shared: true, memory, lookupBase });
+  return new Machine({
+    pages: d.memoryPages,
+    shared: true,
+    memory,
+    lookupBase,
+  });
 }
 
 function newProcess(machine) {
-  const proc = new Process({ machine, channel, pid: d.pid, tid: d.tid, ppid: d.ppid, trace });
+  const proc = new Process({
+    machine,
+    channel,
+    pid: d.pid,
+    tid: d.tid,
+    ppid: d.ppid,
+    trace,
+  });
   proc.seedTranslations(d.translations);
   if (d.stats) {
     const started = performance.now();
@@ -64,7 +79,11 @@ try {
     proc = newProcess(machine);
     proc.restore(JSON.parse(d.state));
     // The lookup copied from the parent names its table, not ours.
-    machine.u8.fill(0, machine.lookupBase, machine.lookupBase + 16 * 1024 * 1024);
+    machine.u8.fill(
+      0,
+      machine.lookupBase,
+      machine.lookupBase + 16 * 1024 * 1024,
+    );
     channel.call(OP.SPAWNED, []);
     entry = machine.reg("rip");
   } else if (d.kind === "thread") {
@@ -101,7 +120,9 @@ try {
         next.localTranslations = proc.localTranslations;
         next.sigmask = proc.sigmask;
         // Ignored dispositions survive an exec; handlers do not.
-        next.sigactions = proc.sigactions.map((a) => (a !== null && a.handler === 1n ? a : null));
+        next.sigactions = proc.sigactions.map((a) =>
+          a !== null && a.handler === 1n ? a : null,
+        );
         machine = fresh;
         proc = next;
         entry = proc.load(e.path, e.argv, e.envp);
@@ -112,7 +133,9 @@ try {
   }
 } catch (e) {
   const where = machine ? ` (rip 0x${machine.reg("rip").toString(16)})` : "";
-  log(`${e instanceof GuestFault ? "guest fault" : "error"}: ${e.message}${where}`);
+  log(
+    `${e instanceof GuestFault ? "guest fault" : "error"}: ${e.message}${where}`,
+  );
   if (!(e instanceof GuestFault)) {
     log(e.stack ?? "");
   }

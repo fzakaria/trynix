@@ -87,7 +87,13 @@ export function decodeTermios(buf) {
   while (cc.length < 32) {
     cc.push(0);
   }
-  return { iflag: v.getUint32(0, true), oflag: v.getUint32(4, true), cflag: v.getUint32(8, true), lflag: v.getUint32(12, true), cc };
+  return {
+    iflag: v.getUint32(0, true),
+    oflag: v.getUint32(4, true),
+    cflag: v.getUint32(8, true),
+    lflag: v.getUint32(12, true),
+    cc,
+  };
 }
 
 // Strings in a payload: NUL-separated UTF-8.

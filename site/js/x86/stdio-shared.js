@@ -109,7 +109,10 @@ export class InputReader {
   }
 
   size() {
-    return { rows: Atomics.load(this.header, ROWS), cols: Atomics.load(this.header, COLS) };
+    return {
+      rows: Atomics.load(this.header, ROWS),
+      cols: Atomics.load(this.header, COLS),
+    };
   }
 
   takeInterrupt() {

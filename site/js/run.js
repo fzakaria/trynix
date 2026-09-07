@@ -19,12 +19,20 @@ import { versionsOf } from "./multiverse.js";
 import { binOutputOf } from "./outputs.js";
 import { mapConcurrent } from "./net.js";
 import { ProgressPanel } from "./progress.js";
-import { readSubstituters, setExtraSubstituters, verify } from "./substituters.js";
+import {
+  readSubstituters,
+  setExtraSubstituters,
+  verify,
+} from "./substituters.js";
 import { humanBytes } from "./format.js";
 import { DIGEST_LENGTH, DIGEST_PATTERN, NAR_CONCURRENCY } from "./config.js";
 import { log, onLog } from "./log.js";
 import { createInputRing, InputWriter } from "./x86/stdio-shared.js";
-import { loadTranslations, openTranslationCache, storeTranslation } from "./x86/cache.js";
+import {
+  loadTranslations,
+  openTranslationCache,
+  storeTranslation,
+} from "./x86/cache.js";
 
 const STORE_PREFIX = "/nix/store/";
 const PARAM_EXEC = "exec";
@@ -49,7 +57,9 @@ onLog((line) => {
 });
 
 const digestFromPath = (path) => {
-  const base = path.startsWith(STORE_PREFIX) ? path.slice(STORE_PREFIX.length) : path;
+  const base = path.startsWith(STORE_PREFIX)
+    ? path.slice(STORE_PREFIX.length)
+    : path;
   const digest = base.slice(0, DIGEST_LENGTH);
   return DIGEST_PATTERN.test(digest) ? digest : null;
 };
@@ -69,7 +79,14 @@ function shareEntries(entries) {
       new Uint8Array(buffer).set(new Uint8Array(entry.data.buffer));
       shared.set(entry.data.buffer, buffer);
     }
-    return { ...entry, data: new Uint8Array(buffer, entry.data.byteOffset, entry.data.byteLength) };
+    return {
+      ...entry,
+      data: new Uint8Array(
+        buffer,
+        entry.data.byteOffset,
+        entry.data.byteLength,
+      ),
+    };
   });
 }
 
@@ -100,7 +117,8 @@ async function main() {
   setExtraSubstituters(caches);
 
   if (pkgs.length === 0 && paths.length === 0) {
-    status.textContent = "nothing selected: add ?pkg=<attribute> or ?path=<store path> to the URL";
+    status.textContent =
+      "nothing selected: add ?pkg=<attribute> or ?path=<store path> to the URL";
     return;
   }
   if (!globalThis.crossOriginIsolated) {
@@ -136,7 +154,9 @@ async function main() {
           ? versions.find((v) => v.alive !== false)
           : versions.find((v) => v.version === version);
       if (hit === undefined) {
-        throw new Error(`${attr}${version === null ? "" : ` ${version}`} is not in the index`);
+        throw new Error(
+          `${attr}${version === null ? "" : ` ${version}`} is not in the index`,
+        );
       }
       rootDigests.push(hit.digest);
     }
@@ -151,7 +171,11 @@ async function main() {
 
     const closure = new Map();
     for (const digest of allRoots) {
-      const one = await walkClosure(digest, (n) => walkRow.note(`${closure.size + n} narinfos`), closure);
+      const one = await walkClosure(
+        digest,
+        (n) => walkRow.note(`${closure.size + n} narinfos`),
+        closure,
+      );
       for (const [key, info] of one) {
         closure.set(key, info);
       }
@@ -160,12 +184,16 @@ async function main() {
     log(`closure: ${closure.size} paths from ${allRoots.length} roots`);
 
     const substituters = readSubstituters();
-    const verdicts = await Promise.all([...closure.values()].map((i) => verify(i, substituters)));
+    const verdicts = await Promise.all(
+      [...closure.values()].map((i) => verify(i, substituters)),
+    );
     const unsigned = verdicts.filter((v) => v === false).length;
     if (verdicts.some((v) => v === null)) {
       signatureRow.done("this browser cannot check Ed25519");
     } else if (unsigned > 0) {
-      signatureRow.fail(`${unsigned} of ${closure.size} unsigned by a known key`);
+      signatureRow.fail(
+        `${unsigned} of ${closure.size} unsigned by a known key`,
+      );
     } else {
       signatureRow.done(`${closure.size} verified`);
     }
@@ -181,11 +209,16 @@ async function main() {
       storePaths.push({ path: info.storePath, entries: shareEntries(entries) });
     });
     const unpacked = infos.reduce((sum, i) => sum + i.narSize, 0);
-    closureRow.done(`${humanBytes(unpacked)} unpacked in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    closureRow.done(
+      `${humanBytes(unpacked)} unpacked in ${((performance.now() - t0) / 1000).toFixed(1)} s`,
+    );
 
     // The program: exec= under bin/ of a root, else the first program
     // of the first root.
-    const rootPaths = allRoots.map((d) => closure.get(d)).filter((i) => i !== undefined).map((i) => i.storePath);
+    const rootPaths = allRoots
+      .map((d) => closure.get(d))
+      .filter((i) => i !== undefined)
+      .map((i) => i.storePath);
     let program = null;
     for (const path of rootPaths) {
       const sp = storePaths.find((s) => s.path === path);
@@ -199,15 +232,25 @@ async function main() {
       }
     }
     if (program === null) {
-      throw new Error(exec === null ? "the selection has no programs under bin/" : `no bin/${exec} in the selection`);
+      throw new Error(
+        exec === null
+          ? "the selection has no programs under bin/"
+          : `no bin/${exec} in the selection`,
+      );
     }
     const binDirs = rootPaths.map((p) => `${p}/bin`);
 
     // Translations of this closure's files from earlier runs.
     const translationCache = noCache ? null : await openTranslationCache();
     const t1 = performance.now();
-    const translations = await loadTranslations(translationCache, [...closure.values()].map((i) => i.storePath));
-    const cachedBytes = translations.reduce((sum, t) => sum + t.bytes.length, 0);
+    const translations = await loadTranslations(
+      translationCache,
+      [...closure.values()].map((i) => i.storePath),
+    );
+    const cachedBytes = translations.reduce(
+      (sum, t) => sum + t.bytes.length,
+      0,
+    );
     cacheRow.done(
       translations.length === 0
         ? "none cached yet"
@@ -249,7 +292,10 @@ async function main() {
     runRow.note("running…");
     const started = performance.now();
     let lastStats = null;
-    const worker = new Worker(new URL("./x86/kernel-worker.js", import.meta.url), { type: "module" });
+    const worker = new Worker(
+      new URL("./x86/kernel-worker.js", import.meta.url),
+      { type: "module" },
+    );
     const done = new Promise((resolve, reject) => {
       worker.onmessage = (event) => {
         const msg = event.data;
@@ -262,7 +308,9 @@ async function main() {
             slave.ioctl("TCSETS", msg.termios);
             break;
           case "translated":
-            storeTranslation(translationCache, msg).catch((e) => log(`cache put failed: ${e.message}`));
+            storeTranslation(translationCache, msg).catch((e) =>
+              log(`cache put failed: ${e.message}`),
+            );
             break;
           case "log":
             log(msg.text);
@@ -283,23 +331,22 @@ async function main() {
       worker.onerror = (e) => reject(new Error(e.message));
     });
 
-    worker.postMessage(
-      {
-        type: "start",
-        argv: [program, ...args],
-        envp: environment(binDirs),
-        cwd: "/home/user",
-        storePaths,
-        stdin: ring,
-        trace,
-        translations,
-        files: {
-          "/etc/passwd": "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:100:user:/home/user:/bin/sh\n",
-          "/etc/group": "root:x:0:\nusers:x:100:\n",
-          "/etc/hosts": "127.0.0.1 localhost\n",
-        },
+    worker.postMessage({
+      type: "start",
+      argv: [program, ...args],
+      envp: environment(binDirs),
+      cwd: "/home/user",
+      storePaths,
+      stdin: ring,
+      trace,
+      translations,
+      files: {
+        "/etc/passwd":
+          "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:100:user:/home/user:/bin/sh\n",
+        "/etc/group": "root:x:0:\nusers:x:100:\n",
+        "/etc/hosts": "127.0.0.1 localhost\n",
       },
-    );
+    });
     consoleVeil.hidden = true;
     log(`running ${program} ${args.join(" ")}`);
 

@@ -34,9 +34,25 @@ const READ_CHUNK = 1 << 20;
 
 // Auxiliary vector tags.
 const AT = Object.freeze({
-  NULL: 0, PHDR: 3, PHENT: 4, PHNUM: 5, PAGESZ: 6, BASE: 7, FLAGS: 8, ENTRY: 9,
-  UID: 11, EUID: 12, GID: 13, EGID: 14, PLATFORM: 15, HWCAP: 16, CLKTCK: 17,
-  SECURE: 23, RANDOM: 25, HWCAP2: 26, EXECFN: 31,
+  NULL: 0,
+  PHDR: 3,
+  PHENT: 4,
+  PHNUM: 5,
+  PAGESZ: 6,
+  BASE: 7,
+  FLAGS: 8,
+  ENTRY: 9,
+  UID: 11,
+  EUID: 12,
+  GID: 13,
+  EGID: 14,
+  PLATFORM: 15,
+  HWCAP: 16,
+  CLKTCK: 17,
+  SECURE: 23,
+  RANDOM: 25,
+  HWCAP2: 26,
+  EXECFN: 31,
 });
 
 const O = Object.freeze({ RDONLY: 0, CLOEXEC: 0o2000000 });
@@ -78,28 +94,148 @@ const POLL_SLICE_MS = 4;
 
 // Syscall numbers, x86-64.
 export const NR = Object.freeze({
-  read: 0, write: 1, open: 2, close: 3, stat: 4, fstat: 5, lstat: 6, poll: 7, lseek: 8, mmap: 9,
-  mprotect: 10, munmap: 11, brk: 12, rt_sigaction: 13, rt_sigprocmask: 14, rt_sigreturn: 15,
-  ioctl: 16, pread64: 17, pwrite64: 18, readv: 19, writev: 20, access: 21, pipe: 22, select: 23,
-  sched_yield: 24, mremap: 25, msync: 26, mincore: 27, madvise: 28, dup: 32, dup2: 33, pause: 34,
-  nanosleep: 35, getitimer: 36, alarm: 37, setitimer: 38, getpid: 39, socket: 41, clone: 56,
-  fork: 57, vfork: 58, execve: 59, exit: 60, wait4: 61, kill: 62, uname: 63, fcntl: 72, flock: 73,
-  fsync: 74, fdatasync: 75, truncate: 76, ftruncate: 77, getdents: 78, getcwd: 79, chdir: 80,
-  fchdir: 81, rename: 82, mkdir: 83, rmdir: 84, creat: 85, link: 86, unlink: 87, symlink: 88,
-  readlink: 89, chmod: 90, fchmod: 91, chown: 92, fchown: 93, lchown: 94, umask: 95,
-  gettimeofday: 96, getrlimit: 97, getrusage: 98, sysinfo: 99, times: 100, getuid: 102,
-  getgid: 104, setuid: 105, setgid: 106, geteuid: 107, getegid: 108, setpgid: 109, getppid: 110,
-  getpgrp: 111, setsid: 112, getgroups: 115, setresuid: 117, getresuid: 118, setresgid: 119,
-  getresgid: 120, getpgid: 121, getsid: 124, rt_sigsuspend: 130, sigaltstack: 131, statfs: 137,
-  fstatfs: 138, prctl: 157, arch_prctl: 158, gettid: 186, time: 201, futex: 202,
-  sched_getaffinity: 204, epoll_create: 213, getdents64: 217, set_tid_address: 218,
-  clock_gettime: 228, clock_getres: 229, clock_nanosleep: 230, exit_group: 231, epoll_wait: 232,
-  epoll_ctl: 233, tgkill: 234, openat: 257, mkdirat: 258, fchownat: 260, newfstatat: 262,
-  unlinkat: 263, renameat: 264, linkat: 265, symlinkat: 266, readlinkat: 267, fchmodat: 268,
-  faccessat: 269, pselect6: 270, ppoll: 271, set_robust_list: 273, get_robust_list: 274,
-  utimensat: 280, epoll_pwait: 281, eventfd2: 290, epoll_create1: 291, dup3: 292, pipe2: 293,
-  prlimit64: 302, getrandom: 318, memfd_create: 319, statx: 332, rseq: 334, clone3: 435,
-  close_range: 436, faccessat2: 439, socketpair: 53,
+  read: 0,
+  write: 1,
+  open: 2,
+  close: 3,
+  stat: 4,
+  fstat: 5,
+  lstat: 6,
+  poll: 7,
+  lseek: 8,
+  mmap: 9,
+  mprotect: 10,
+  munmap: 11,
+  brk: 12,
+  rt_sigaction: 13,
+  rt_sigprocmask: 14,
+  rt_sigreturn: 15,
+  ioctl: 16,
+  pread64: 17,
+  pwrite64: 18,
+  readv: 19,
+  writev: 20,
+  access: 21,
+  pipe: 22,
+  select: 23,
+  sched_yield: 24,
+  mremap: 25,
+  msync: 26,
+  mincore: 27,
+  madvise: 28,
+  dup: 32,
+  dup2: 33,
+  pause: 34,
+  nanosleep: 35,
+  getitimer: 36,
+  alarm: 37,
+  setitimer: 38,
+  getpid: 39,
+  socket: 41,
+  clone: 56,
+  fork: 57,
+  vfork: 58,
+  execve: 59,
+  exit: 60,
+  wait4: 61,
+  kill: 62,
+  uname: 63,
+  fcntl: 72,
+  flock: 73,
+  fsync: 74,
+  fdatasync: 75,
+  truncate: 76,
+  ftruncate: 77,
+  getdents: 78,
+  getcwd: 79,
+  chdir: 80,
+  fchdir: 81,
+  rename: 82,
+  mkdir: 83,
+  rmdir: 84,
+  creat: 85,
+  link: 86,
+  unlink: 87,
+  symlink: 88,
+  readlink: 89,
+  chmod: 90,
+  fchmod: 91,
+  chown: 92,
+  fchown: 93,
+  lchown: 94,
+  umask: 95,
+  gettimeofday: 96,
+  getrlimit: 97,
+  getrusage: 98,
+  sysinfo: 99,
+  times: 100,
+  getuid: 102,
+  getgid: 104,
+  setuid: 105,
+  setgid: 106,
+  geteuid: 107,
+  getegid: 108,
+  setpgid: 109,
+  getppid: 110,
+  getpgrp: 111,
+  setsid: 112,
+  getgroups: 115,
+  setresuid: 117,
+  getresuid: 118,
+  setresgid: 119,
+  getresgid: 120,
+  getpgid: 121,
+  getsid: 124,
+  rt_sigsuspend: 130,
+  sigaltstack: 131,
+  statfs: 137,
+  fstatfs: 138,
+  prctl: 157,
+  arch_prctl: 158,
+  gettid: 186,
+  time: 201,
+  futex: 202,
+  sched_getaffinity: 204,
+  epoll_create: 213,
+  getdents64: 217,
+  set_tid_address: 218,
+  clock_gettime: 228,
+  clock_getres: 229,
+  clock_nanosleep: 230,
+  exit_group: 231,
+  epoll_wait: 232,
+  epoll_ctl: 233,
+  tgkill: 234,
+  openat: 257,
+  mkdirat: 258,
+  fchownat: 260,
+  newfstatat: 262,
+  unlinkat: 263,
+  renameat: 264,
+  linkat: 265,
+  symlinkat: 266,
+  readlinkat: 267,
+  fchmodat: 268,
+  faccessat: 269,
+  pselect6: 270,
+  ppoll: 271,
+  set_robust_list: 273,
+  get_robust_list: 274,
+  utimensat: 280,
+  epoll_pwait: 281,
+  eventfd2: 290,
+  epoll_create1: 291,
+  dup3: 292,
+  pipe2: 293,
+  prlimit64: 302,
+  getrandom: 318,
+  memfd_create: 319,
+  statx: 332,
+  rseq: 334,
+  clone3: 435,
+  close_range: 436,
+  faccessat2: 439,
+  socketpair: 53,
 });
 const NR_NAMES = Object.fromEntries(Object.entries(NR).map(([k, v]) => [v, k]));
 
@@ -181,7 +317,11 @@ export class Process {
 
   translationPut(key, entry) {
     this.localTranslations.set(key, entry);
-    this.channel.call(OP.TRANSLATION_PUT, [], encodeTranslation({ key, ...entry }));
+    this.channel.call(
+      OP.TRANSLATION_PUT,
+      [],
+      encodeTranslation({ key, ...entry }),
+    );
   }
 
   seedTranslations(map) {
@@ -205,7 +345,13 @@ export class Process {
       return null;
     }
     const [lo, hi, base, file, prot] = this.kstrings();
-    const m = { lo: BigInt(lo), hi: BigInt(hi), base: BigInt(base), file: file === "" ? null : file, writable: prot === "w" };
+    const m = {
+      lo: BigInt(lo),
+      hi: BigInt(hi),
+      base: BigInt(base),
+      file: file === "" ? null : file,
+      writable: prot === "w",
+    };
     this.mappings.push(m);
     return m;
   }
@@ -216,14 +362,27 @@ export class Process {
 
   // Reads a whole file through the kernel.
   readFile(path) {
-    const fd = Number(this.k(OP.OPENAT, [AT_FDCWD, O.RDONLY | O.CLOEXEC, 0], packStrings([path])));
+    const fd = Number(
+      this.k(
+        OP.OPENAT,
+        [AT_FDCWD, O.RDONLY | O.CLOEXEC, 0],
+        packStrings([path]),
+      ),
+    );
     try {
       this.k(OP.FSTAT, [fd]);
-      const size = Number(new DataView(this.channel.payload.buffer, this.channel.payload.byteOffset).getBigInt64(48, true));
+      const size = Number(
+        new DataView(
+          this.channel.payload.buffer,
+          this.channel.payload.byteOffset,
+        ).getBigInt64(48, true),
+      );
       const out = new Uint8Array(size);
       let got = 0;
       while (got < size) {
-        const n = Number(this.k(OP.PREAD, [fd, Math.min(READ_CHUNK, size - got), got]));
+        const n = Number(
+          this.k(OP.PREAD, [fd, Math.min(READ_CHUNK, size - got), got]),
+        );
         if (n <= 0) {
           break;
         }
@@ -241,7 +400,9 @@ export class Process {
     const m = this.machine;
     let got = 0;
     while (got < len) {
-      const n = Number(this.k(OP.PREAD, [fd, Math.min(READ_CHUNK, len - got), offset + got]));
+      const n = Number(
+        this.k(OP.PREAD, [fd, Math.min(READ_CHUNK, len - got), offset + got]),
+      );
       if (n <= 0) {
         break;
       }
@@ -314,7 +475,23 @@ export class Process {
 
     const sp = this.buildStack(elf, base, interpBase, path, argv, envp);
     this.machine.setReg("rsp", sp);
-    for (const r of ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]) {
+    for (const r of [
+      "rax",
+      "rbx",
+      "rcx",
+      "rdx",
+      "rsi",
+      "rdi",
+      "rbp",
+      "r8",
+      "r9",
+      "r10",
+      "r11",
+      "r12",
+      "r13",
+      "r14",
+      "r15",
+    ]) {
       this.machine.setReg(r, 0n);
     }
     this.entry = entry;
@@ -373,7 +550,8 @@ export class Process {
       [AT.EXECFN, execfnAddr],
       [AT.NULL, 0n],
     ];
-    const words = 1 + argvAddrs.length + 1 + envpAddrs.length + 1 + auxv.length * 2;
+    const words =
+      1 + argvAddrs.length + 1 + envpAddrs.length + 1 + auxv.length * 2;
     sp &= ~0xfn;
     if ((words & 1) === 1) {
       sp -= 8n;
@@ -409,26 +587,61 @@ export class Process {
   serialize() {
     return {
       registers: this.machine.saveState(),
-      sigactions: this.sigactions.map((a) => (a === null ? null : { handler: a.handler.toString(), flags: a.flags.toString(), restorer: a.restorer.toString(), mask: a.mask.toString() })),
+      sigactions: this.sigactions.map((a) =>
+        a === null
+          ? null
+          : {
+              handler: a.handler.toString(),
+              flags: a.flags.toString(),
+              restorer: a.restorer.toString(),
+              mask: a.mask.toString(),
+            },
+      ),
       sigmask: this.sigmask.toString(),
-      altStack: this.altStack === null ? null : { sp: this.altStack.sp.toString(), size: this.altStack.size },
+      altStack:
+        this.altStack === null
+          ? null
+          : { sp: this.altStack.sp.toString(), size: this.altStack.size },
       tidAddress: this.tidAddress.toString(),
       exePath: this.exePath,
       argv: this.argv,
       entry: this.entry.toString(),
-      mappings: this.mappings.map((m) => ({ lo: m.lo.toString(), hi: m.hi.toString(), base: m.base.toString(), file: m.file, writable: m.writable })),
+      mappings: this.mappings.map((m) => ({
+        lo: m.lo.toString(),
+        hi: m.hi.toString(),
+        base: m.base.toString(),
+        file: m.file,
+        writable: m.writable,
+      })),
     };
   }
 
   restore(state) {
-    this.sigactions = state.sigactions.map((a) => (a === null ? null : { handler: BigInt(a.handler), flags: BigInt(a.flags), restorer: BigInt(a.restorer), mask: BigInt(a.mask) }));
+    this.sigactions = state.sigactions.map((a) =>
+      a === null
+        ? null
+        : {
+            handler: BigInt(a.handler),
+            flags: BigInt(a.flags),
+            restorer: BigInt(a.restorer),
+            mask: BigInt(a.mask),
+          },
+    );
     this.sigmask = BigInt(state.sigmask);
-    this.altStack = state.altStack ? { sp: BigInt(state.altStack.sp), size: state.altStack.size } : null;
+    this.altStack = state.altStack
+      ? { sp: BigInt(state.altStack.sp), size: state.altStack.size }
+      : null;
     this.tidAddress = BigInt(state.tidAddress);
     this.exePath = state.exePath;
     this.argv = state.argv;
     this.entry = BigInt(state.entry);
-    this.mappings = state.mappings.map((m) => ({ lo: BigInt(m.lo), hi: BigInt(m.hi), base: BigInt(m.base), file: m.file, writable: m.writable }));
+    this.mappings = state.mappings.map((m) => ({
+      lo: BigInt(m.lo),
+      hi: BigInt(m.hi),
+      base: BigInt(m.base),
+      file: m.file,
+      writable: m.writable,
+    }));
     this.machine.loadState(state.registers);
   }
 
@@ -437,7 +650,14 @@ export class Process {
   syscall(m) {
     m.syncViews();
     const nr = Number(m.reg("rax"));
-    const args = [m.reg("rdi"), m.reg("rsi"), m.reg("rdx"), m.reg("r10"), m.reg("r8"), m.reg("r9")];
+    const args = [
+      m.reg("rdi"),
+      m.reg("rsi"),
+      m.reg("rdx"),
+      m.reg("r10"),
+      m.reg("r8"),
+      m.reg("r9"),
+    ];
     const handler = this.handlers[nr];
     let result;
     this.syscalls++;
@@ -462,8 +682,13 @@ export class Process {
     }
     if (this.trace && handler !== undefined) {
       const name = NR_NAMES[nr] || `#${nr}`;
-      const shown = args.slice(0, 4).map((a) => `0x${a.toString(16)}`).join(", ");
-      this.trace(`${name}(${shown}) = ${result >= 0n ? result : `-${-result}`}`);
+      const shown = args
+        .slice(0, 4)
+        .map((a) => `0x${a.toString(16)}`)
+        .join(", ");
+      this.trace(
+        `${name}(${shown}) = ${result >= 0n ? result : `-${-result}`}`,
+      );
     }
     m.syncViews();
     m.setReg("rax", result);
@@ -561,7 +786,11 @@ export class Process {
     this.signalFrames.push(saved);
     const SA_ONSTACK = 0x08000000n;
     let sp;
-    if (action.flags & SA_ONSTACK && this.altStack !== null && !this.onAltStack()) {
+    if (
+      action.flags & SA_ONSTACK &&
+      this.altStack !== null &&
+      !this.onAltStack()
+    ) {
       sp = this.altStack.sp + BigInt(this.altStack.size);
     } else {
       sp = m.reg("rsp") - 128n;
@@ -577,7 +806,25 @@ export class Process {
     m.write32(siginfo, sig);
     // uc_mcontext.gregs at ucontext + 40
     const gregs = ucontext + 40n;
-    const order = ["r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rdi", "rsi", "rbp", "rbx", "rdx", "rax", "rcx", "rsp", "rip"];
+    const order = [
+      "r8",
+      "r9",
+      "r10",
+      "r11",
+      "r12",
+      "r13",
+      "r14",
+      "r15",
+      "rdi",
+      "rsi",
+      "rbp",
+      "rbx",
+      "rdx",
+      "rax",
+      "rcx",
+      "rsp",
+      "rip",
+    ];
     order.forEach((r, i) => m.write64(gregs + BigInt(i * 8), m.reg(r)));
     m.write64(gregs + 17n * 8n, BigInt(m.helpers.cc_eflags()));
     m.write64(ucontext + 296n, this.sigmask);
@@ -617,20 +864,31 @@ export class Process {
   }
 
   sys_pread64(fd, buf, count, offset) {
-    const n = this.k(OP.PREAD, [fd, Math.min(Number(count), READ_CHUNK), offset]);
+    const n = this.k(OP.PREAD, [
+      fd,
+      Math.min(Number(count), READ_CHUNK),
+      offset,
+    ]);
     this.copyOut(buf, Number(n));
     return n;
   }
 
   sys_pwrite64(fd, buf, count, offset) {
-    return this.k(OP.PWRITE, [fd, offset], this.guestBytes(buf, Math.min(Number(count), READ_CHUNK)));
+    return this.k(
+      OP.PWRITE,
+      [fd, offset],
+      this.guestBytes(buf, Math.min(Number(count), READ_CHUNK)),
+    );
   }
 
   iov(addr, count) {
     const m = this.machine;
     const out = [];
     for (let i = 0; i < Number(count); i++) {
-      out.push([m.read64(Number(addr) + i * 16), Number(m.read64(Number(addr) + i * 16 + 8))]);
+      out.push([
+        m.read64(Number(addr) + i * 16),
+        Number(m.read64(Number(addr) + i * 16 + 8)),
+      ]);
     }
     return out;
   }
@@ -662,7 +920,11 @@ export class Process {
   }
 
   sys_openat(dirfd, pathAddr, flags, mode) {
-    return this.k(OP.OPENAT, [BigInt.asIntN(32, dirfd), flags, mode], packStrings([this.str(pathAddr)]));
+    return this.k(
+      OP.OPENAT,
+      [BigInt.asIntN(32, dirfd), flags, mode],
+      packStrings([this.str(pathAddr)]),
+    );
   }
 
   sys_open(pathAddr, flags, mode) {
@@ -684,7 +946,11 @@ export class Process {
   }
 
   sys_newfstatat(dirfd, pathAddr, buf, flags) {
-    this.k(OP.STATAT, [BigInt.asIntN(32, dirfd), flags], packStrings([this.str(pathAddr)]));
+    this.k(
+      OP.STATAT,
+      [BigInt.asIntN(32, dirfd), flags],
+      packStrings([this.str(pathAddr)]),
+    );
     this.copyOut(buf);
     return 0;
   }
@@ -698,7 +964,11 @@ export class Process {
   }
 
   sys_statx(dirfd, pathAddr, flags, mask, buf) {
-    this.k(OP.STATAT, [BigInt.asIntN(32, dirfd), flags], packStrings([this.str(pathAddr)]));
+    this.k(
+      OP.STATAT,
+      [BigInt.asIntN(32, dirfd), flags],
+      packStrings([this.str(pathAddr)]),
+    );
     const st = this.kbytes();
     const sv = new DataView(st.buffer, st.byteOffset);
     const m = this.machine;
@@ -714,7 +984,12 @@ export class Process {
     m.write64(a + 40, sv.getBigInt64(48, true));
     m.write64(a + 48, sv.getBigInt64(64, true));
     // atime, btime, ctime, mtime
-    for (const [dst, src] of [[64, 72], [80, 72], [96, 104], [112, 88]]) {
+    for (const [dst, src] of [
+      [64, 72],
+      [80, 72],
+      [96, 104],
+      [112, 88],
+    ]) {
       m.write64(a + dst, sv.getBigInt64(src, true));
       m.write32(a + dst + 8, Number(sv.getBigInt64(src + 8, true)));
     }
@@ -722,7 +997,11 @@ export class Process {
   }
 
   sys_readlinkat(dirfd, pathAddr, buf, size) {
-    const n = this.k(OP.READLINKAT, [BigInt.asIntN(32, dirfd), size], packStrings([this.str(pathAddr)]));
+    const n = this.k(
+      OP.READLINKAT,
+      [BigInt.asIntN(32, dirfd), size],
+      packStrings([this.str(pathAddr)]),
+    );
     this.copyOut(buf, Number(n));
     return n;
   }
@@ -732,7 +1011,11 @@ export class Process {
   }
 
   sys_faccessat(dirfd, pathAddr, mode) {
-    return this.k(OP.FACCESSAT, [BigInt.asIntN(32, dirfd), mode], packStrings([this.str(pathAddr)]));
+    return this.k(
+      OP.FACCESSAT,
+      [BigInt.asIntN(32, dirfd), mode],
+      packStrings([this.str(pathAddr)]),
+    );
   }
 
   sys_access(pathAddr, mode) {
@@ -746,7 +1029,11 @@ export class Process {
   }
 
   sys_mkdirat(dirfd, pathAddr, mode) {
-    return this.k(OP.MKDIRAT, [BigInt.asIntN(32, dirfd), mode], packStrings([this.str(pathAddr)]));
+    return this.k(
+      OP.MKDIRAT,
+      [BigInt.asIntN(32, dirfd), mode],
+      packStrings([this.str(pathAddr)]),
+    );
   }
 
   sys_mkdir(pathAddr, mode) {
@@ -754,7 +1041,11 @@ export class Process {
   }
 
   sys_unlinkat(dirfd, pathAddr, flags) {
-    return this.k(OP.UNLINKAT, [BigInt.asIntN(32, dirfd), flags], packStrings([this.str(pathAddr)]));
+    return this.k(
+      OP.UNLINKAT,
+      [BigInt.asIntN(32, dirfd), flags],
+      packStrings([this.str(pathAddr)]),
+    );
   }
 
   sys_unlink(pathAddr) {
@@ -766,15 +1057,28 @@ export class Process {
   }
 
   sys_renameat(olddir, oldAddr, newdir, newAddr) {
-    return this.k(OP.RENAMEAT, [BigInt.asIntN(32, olddir), BigInt.asIntN(32, newdir)], packStrings([this.str(oldAddr), this.str(newAddr)]));
+    return this.k(
+      OP.RENAMEAT,
+      [BigInt.asIntN(32, olddir), BigInt.asIntN(32, newdir)],
+      packStrings([this.str(oldAddr), this.str(newAddr)]),
+    );
   }
 
   sys_rename(oldAddr, newAddr) {
-    return this.sys_renameat(BigInt(AT_FDCWD), oldAddr, BigInt(AT_FDCWD), newAddr);
+    return this.sys_renameat(
+      BigInt(AT_FDCWD),
+      oldAddr,
+      BigInt(AT_FDCWD),
+      newAddr,
+    );
   }
 
   sys_symlinkat(targetAddr, dirfd, pathAddr) {
-    return this.k(OP.SYMLINKAT, [BigInt.asIntN(32, dirfd)], packStrings([this.str(targetAddr), this.str(pathAddr)]));
+    return this.k(
+      OP.SYMLINKAT,
+      [BigInt.asIntN(32, dirfd)],
+      packStrings([this.str(targetAddr), this.str(pathAddr)]),
+    );
   }
 
   sys_symlink(targetAddr, pathAddr) {
@@ -782,7 +1086,11 @@ export class Process {
   }
 
   sys_fchmodat(dirfd, pathAddr, mode) {
-    return this.k(OP.FCHMODAT, [BigInt.asIntN(32, dirfd), mode], packStrings([this.str(pathAddr)]));
+    return this.k(
+      OP.FCHMODAT,
+      [BigInt.asIntN(32, dirfd), mode],
+      packStrings([this.str(pathAddr)]),
+    );
   }
 
   sys_chmod(pathAddr, mode) {
@@ -834,9 +1142,23 @@ export class Process {
   sys_ioctl(fd, req, arg) {
     const r = Number(BigInt.asUintN(32, req));
     // Requests that read a struct from the caller carry it along.
-    const inSizes = { 0x5402: 36, 0x5403: 36, 0x5404: 36, 0x402c542b: 44, 0x402c542c: 44, 0x402c542d: 44, 0x5410: 4, 0x5421: 4, 0x5414: 8 };
+    const inSizes = {
+      0x5402: 36,
+      0x5403: 36,
+      0x5404: 36,
+      0x402c542b: 44,
+      0x402c542c: 44,
+      0x402c542d: 44,
+      0x5410: 4,
+      0x5421: 4,
+      0x5414: 8,
+    };
     const size = inSizes[r] ?? 0;
-    const res = this.k(OP.IOCTL, [fd, r], size > 0 ? this.guestBytes(arg, size) : null);
+    const res = this.k(
+      OP.IOCTL,
+      [fd, r],
+      size > 0 ? this.guestBytes(arg, size) : null,
+    );
     if (this.channel.responseLength > 0 && arg !== 0n) {
       this.copyOut(arg);
     }
@@ -894,7 +1216,11 @@ export class Process {
     const rv = new DataView(req.buffer);
     for (let i = 0; i < n; i++) {
       rv.setInt32(i * 8, m.view.getInt32(Number(fds) + i * 8, true), true);
-      rv.setInt32(i * 8 + 4, m.view.getInt16(Number(fds) + i * 8 + 4, true), true);
+      rv.setInt32(
+        i * 8 + 4,
+        m.view.getInt16(Number(fds) + i * 8 + 4, true),
+        true,
+      );
     }
     for (;;) {
       const ready = Number(this.k(OP.READY, [], req));
@@ -902,7 +1228,11 @@ export class Process {
         const out = this.kbytes();
         const ov = new DataView(out.buffer, out.byteOffset);
         for (let i = 0; i < n; i++) {
-          m.view.setInt16(Number(fds) + i * 8 + 6, ov.getInt32(i * 4, true), true);
+          m.view.setInt16(
+            Number(fds) + i * 8 + 6,
+            ov.getInt32(i * 4, true),
+            true,
+          );
         }
         return ready;
       }
@@ -913,12 +1243,21 @@ export class Process {
   sys_ppoll(fds, nfds, ts) {
     let ms = -1;
     if (ts !== 0n) {
-      ms = Number(this.machine.read64(ts)) * 1000 + Number(this.machine.read64(ts + 8n)) / 1e6;
+      ms =
+        Number(this.machine.read64(ts)) * 1000 +
+        Number(this.machine.read64(ts + 8n)) / 1e6;
     }
     return this.sys_poll(fds, nfds, BigInt(Math.round(ms)));
   }
 
-  sys_select(nfds, readAddr, writeAddr, exceptAddr, timeoutAddr, isPselect = false) {
+  sys_select(
+    nfds,
+    readAddr,
+    writeAddr,
+    exceptAddr,
+    timeoutAddr,
+    isPselect = false,
+  ) {
     const m = this.machine;
     const n = Number(nfds);
     let ms = -1;
@@ -928,10 +1267,12 @@ export class Process {
       ms = sec * 1000 + (isPselect ? sub / 1e6 : sub / 1e3);
     }
     const deadline = ms < 0 ? Infinity : performance.now() + ms;
-    const bitSet = (addr, fd) => addr !== 0n && (m.u8[Number(addr) + (fd >> 3)] >> (fd & 7)) & 1;
+    const bitSet = (addr, fd) =>
+      addr !== 0n && (m.u8[Number(addr) + (fd >> 3)] >> (fd & 7)) & 1;
     const wanted = [];
     for (let fd = 0; fd < n; fd++) {
-      const ev = (bitSet(readAddr, fd) ? 1 : 0) | (bitSet(writeAddr, fd) ? 4 : 0);
+      const ev =
+        (bitSet(readAddr, fd) ? 1 : 0) | (bitSet(writeAddr, fd) ? 4 : 0);
       if (ev !== 0) {
         wanted.push([fd, ev]);
       }
@@ -978,7 +1319,14 @@ export class Process {
   // ---- memory -------------------------------------------------------
 
   sys_mmap(addr, length, prot, flags, fd, offset) {
-    const at = this.k(OP_MMAP, [addr, length, prot, flags, BigInt.asIntN(32, fd), offset]);
+    const at = this.k(OP_MMAP, [
+      addr,
+      length,
+      prot,
+      flags,
+      BigInt.asIntN(32, fd),
+      offset,
+    ]);
     const [needZero, file] = this.kstrings();
     const len = Number(length);
     const size = (len + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -1009,7 +1357,10 @@ export class Process {
     const ns = Number(newSize);
     if (ns <= os) {
       if (ns < os) {
-        this.sys_munmap(oldAddr + BigInt((ns + 0xfff) & ~0xfff), BigInt(os - ((ns + 0xfff) & ~0xfff)));
+        this.sys_munmap(
+          oldAddr + BigInt((ns + 0xfff) & ~0xfff),
+          BigInt(os - ((ns + 0xfff) & ~0xfff)),
+        );
       }
       return oldAddr;
     }
@@ -1078,7 +1429,12 @@ export class Process {
     }
     if (act !== 0n) {
       const a = Number(act);
-      this.sigactions[n] = { handler: m.read64(a), flags: m.read64(a + 8), restorer: m.read64(a + 16), mask: m.read64(a + 24) };
+      this.sigactions[n] = {
+        handler: m.read64(a),
+        flags: m.read64(a + 8),
+        restorer: m.read64(a + 16),
+        mask: m.read64(a + 24),
+      };
       if (n < 32) {
         this.reportDispositions();
       }
@@ -1094,10 +1450,17 @@ export class Process {
     if (set !== 0n) {
       const v = m.read64(set);
       switch (Number(how)) {
-        case 0: this.sigmask |= v; break;
-        case 1: this.sigmask &= ~v; break;
-        case 2: this.sigmask = v; break;
-        default: throw new Errno(E.INVAL);
+        case 0:
+          this.sigmask |= v;
+          break;
+        case 1:
+          this.sigmask &= ~v;
+          break;
+        case 2:
+          this.sigmask = v;
+          break;
+        default:
+          throw new Errno(E.INVAL);
       }
     }
     return 0;
@@ -1153,7 +1516,10 @@ export class Process {
       return false;
     }
     const rsp = this.machine.reg("rsp");
-    return rsp >= this.altStack.sp && rsp < this.altStack.sp + BigInt(this.altStack.size);
+    return (
+      rsp >= this.altStack.sp &&
+      rsp < this.altStack.sp + BigInt(this.altStack.size)
+    );
   }
 
   sys_kill(pid, sig) {
@@ -1196,7 +1562,14 @@ export class Process {
         const nsec = Number(m.read64(timeoutAddr + 8n));
         const ms = sec * 1000 + nsec / 1e6;
         // FUTEX_WAIT's timeout is relative; the bitset form's absolute.
-        deadline = cmd === FUTEX_WAIT ? performance.now() + ms : (Number(op) & 256 ? Date.now() : performance.now()) + 0 + ms - (Number(op) & 256 ? Date.now() : performance.now()) + performance.now();
+        deadline =
+          cmd === FUTEX_WAIT
+            ? performance.now() + ms
+            : (Number(op) & 256 ? Date.now() : performance.now()) +
+              0 +
+              ms -
+              (Number(op) & 256 ? Date.now() : performance.now()) +
+              performance.now();
         if (cmd === FUTEX_WAIT_BITSET) {
           const now = Number(op) & 256 ? Date.now() : performance.now();
           deadline = performance.now() + (ms - now);
@@ -1212,7 +1585,12 @@ export class Process {
         if (remaining <= 0) {
           throw new Errno(E.TIMEDOUT);
         }
-        const r = Atomics.wait(m.i32, index, expected, Math.min(remaining, WAIT_SLICE_MS));
+        const r = Atomics.wait(
+          m.i32,
+          index,
+          expected,
+          Math.min(remaining, WAIT_SLICE_MS),
+        );
         if (r === "ok" || r === "not-equal") {
           return 0;
         }
@@ -1250,7 +1628,11 @@ export class Process {
     const state = this.serialize();
     // The child resumes after this syscall with rax = 0.
     state.registers.rax = "0";
-    const pid = this.k(OP.FORK, [], new TextEncoder().encode(JSON.stringify(state)));
+    const pid = this.k(
+      OP.FORK,
+      [],
+      new TextEncoder().encode(JSON.stringify(state)),
+    );
     return pid;
   }
 
@@ -1270,7 +1652,11 @@ export class Process {
     }
     state.setTid = f & CLONE_CHILD_SETTID ? ctid.toString() : "0";
     state.clearTid = f & CLONE_CHILD_CLEARTID ? ctid.toString() : "0";
-    const tid = this.k(OP.CLONE, [flags], new TextEncoder().encode(JSON.stringify(state)));
+    const tid = this.k(
+      OP.CLONE,
+      [flags],
+      new TextEncoder().encode(JSON.stringify(state)),
+    );
     if (f & CLONE_PARENT_SETTID) {
       this.machine.write32(ptid, Number(tid));
     }
@@ -1286,7 +1672,13 @@ export class Process {
     const stack = m.read64(args + 40n);
     const stackSize = m.read64(args + 48n);
     const tls = m.read64(args + 56n);
-    return this.sys_clone(flags, stack === 0n ? 0n : stack + stackSize, ptid, ctid, tls);
+    return this.sys_clone(
+      flags,
+      stack === 0n ? 0n : stack + stackSize,
+      ptid,
+      ctid,
+      tls,
+    );
   }
 
   sys_vfork() {
@@ -1312,14 +1704,27 @@ export class Process {
     // The file must exist and be runnable; a script names its
     // interpreter on its first line.
     for (let depth = 0; depth < 4; depth++) {
-      const fd = Number(this.k(OP.OPENAT, [AT_FDCWD, O.RDONLY | O.CLOEXEC, 0], packStrings([path])));
+      const fd = Number(
+        this.k(
+          OP.OPENAT,
+          [AT_FDCWD, O.RDONLY | O.CLOEXEC, 0],
+          packStrings([path]),
+        ),
+      );
       const n = Number(this.k(OP.PREAD, [fd, 256, 0]));
       const head = this.kbytes().slice(0, n);
       this.k(OP.CLOSE, [fd]);
       if (n >= 2 && head[0] === 0x23 && head[1] === 0x21) {
-        const line = new TextDecoder().decode(head.slice(2, head.indexOf(10) === -1 ? n : head.indexOf(10))).trim();
+        const line = new TextDecoder()
+          .decode(head.slice(2, head.indexOf(10) === -1 ? n : head.indexOf(10)))
+          .trim();
         const parts = line.split(/\s+/).filter(Boolean);
-        argv = [parts[0], ...(parts.length > 1 ? [parts.slice(1).join(" ")] : []), path, ...argv.slice(1)];
+        argv = [
+          parts[0],
+          ...(parts.length > 1 ? [parts.slice(1).join(" ")] : []),
+          path,
+          ...argv.slice(1),
+        ];
         path = parts[0];
         continue;
       }
@@ -1395,7 +1800,10 @@ export class Process {
 
   sys_clock_gettime(clock, ts) {
     const m = this.machine;
-    const ns = Number(clock) === CLOCK_REALTIME ? BigInt(Date.now()) * 1000000n : BigInt(Math.round(performance.now() * 1e6));
+    const ns =
+      Number(clock) === CLOCK_REALTIME
+        ? BigInt(Date.now()) * 1000000n
+        : BigInt(Math.round(performance.now() * 1e6));
     m.write64(ts, ns / 1000000000n);
     m.write64(ts + 8n, ns % 1000000000n);
     return 0;
@@ -1443,15 +1851,21 @@ export class Process {
     const a = Number(buf);
     m.u8.fill(0, a, a + 6 * 65);
     const enc = new TextEncoder();
-    ["Linux", "trynix", "6.6.0", "#1 SMP", "x86_64", "(none)"].forEach((s, i) => {
-      m.u8.set(enc.encode(s), a + i * 65);
-    });
+    ["Linux", "trynix", "6.6.0", "#1 SMP", "x86_64", "(none)"].forEach(
+      (s, i) => {
+        m.u8.set(enc.encode(s), a + i * 65);
+      },
+    );
     return 0;
   }
 
   sys_prlimit64(pid, resource, newlim, oldlim) {
     if (oldlim !== 0n) {
-      const LIMITS = { 3: [STACK_SIZE, STACK_SIZE], 7: [1024, 4096], 6: [0, 0] };
+      const LIMITS = {
+        3: [STACK_SIZE, STACK_SIZE],
+        7: [1024, 4096],
+        6: [0, 0],
+      };
       const [cur, max] = LIMITS[Number(resource)] || [-1, -1];
       this.machine.write64(oldlim, BigInt.asUintN(64, BigInt(cur)));
       this.machine.write64(oldlim + 8n, BigInt.asUintN(64, BigInt(max)));

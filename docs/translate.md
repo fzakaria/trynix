@@ -157,6 +157,27 @@ away and translates it afresh. Code in read-only file mappings, which
 is all ordinary code, pays nothing. The CPU probe (`nix/probe`, built
 `-march=haswell`, so AVX2, BMI and the rest) passes every check.
 
+## From the VM's shell
+
+With `fast=1` on the VM page, the bin farm's links for the selected
+programs point at a static stub (`nix/exec-stub/stub.c`) the page
+writes onto the 9p share, so the guest image and the snapshot are
+untouched. A command typed at the guest's shell runs the stub, which
+announces the request on the console as an OSC escape sequence the
+page strips from the console stream before the terminal draws it. The
+page runs the program through a kernel worker with the terminal
+attached to it through a pty of its own, so keystrokes and output
+never cross the emulated serial line, and when the program exits the
+status goes back to the stub as a sequence typed into the guest, which
+it reads in raw mode and exits with. A stdout that is not the terminal
+is fed back the same way, base64 in frames, since the guest has to see
+it; a piped stdin travels in the request.
+
+The channel is the console because the share cannot be written from
+the guest: the engine's 9p backend refuses every create with EPERM.
+`python3 -c 'print(6*7)'` at the guest's prompt answers in 2.3 s with
+the closure's translations cached, against about 15 s emulated.
+
 ## What this does not cover
 
 - **x87 precision**: the x87 stack is kept in `f64`, so `long double`
@@ -189,13 +210,13 @@ static one over the closure: imports of `pthread_create`, `fork`,
 any writable-and-executable mapping. That audit has not been run yet.
 The expectation from reading what is in nixpkgs:
 
-| class                                                   | expectation |
-| ------------------------------------------------------- | ----------- |
-| single-threaded C, C++ and Rust command-line tools      | runs        |
-| interpreters without a JIT (python, ruby, lua, perl)    | runs        |
+| class                                                    | expectation                                      |
+| -------------------------------------------------------- | ------------------------------------------------ |
+| single-threaded C, C++ and Rust command-line tools       | runs                                             |
+| interpreters without a JIT (python, ruby, lua, perl)     | runs                                             |
 | tools that fork and exec other tools (git, make, shells) | runs once fork lands; not in the first milestone |
-| threaded programs (Go, tokio, rayon at startup)         | runs once threads land; correctness risk is high |
-| JITs                                                    | QEMU guest  |
+| threaded programs (Go, tokio, rayon at startup)          | runs once threads land; correctness risk is high |
+| JITs                                                     | QEMU guest                                       |
 
 Once the audit script exists, this section becomes the count over the
 top few hundred packages and stops being a guess.
@@ -210,25 +231,25 @@ browser ones from [performance.md](./performance.md).
 
 What runs, as of 2026-09-07:
 
-| program                                            | result           | wall, node |
-| -------------------------------------------------- | ---------------- | ---------- |
-| musl static `hello`                                | prints           | 0.5 s      |
-| glibc dynamic `hello` through ld.so                | prints           | 1.2 s      |
-| `jq --version`; `jq '.a \| add'` over stdin         | correct          | 0.5 s      |
-| `jj --version` (Rust)                              | prints           | 0.3 s      |
-| `python3 -c 'print(sum(range(100)))'`              | 4950             | 2.9 s      |
-| python with json, re, collections, math, `%` format | correct          | 3.5 s      |
-| `ruby -e 1`                                        | exits 0          | 4.8 s      |
-| ruby with map/select, `Math.sqrt`, Unicode upcase  | correct          | 5.0 s      |
+| program                                             | result  | wall, node |
+| --------------------------------------------------- | ------- | ---------- |
+| musl static `hello`                                 | prints  | 0.5 s      |
+| glibc dynamic `hello` through ld.so                 | prints  | 1.2 s      |
+| `jq --version`; `jq '.a \| add'` over stdin         | correct | 0.5 s      |
+| `jj --version` (Rust)                               | prints  | 0.3 s      |
+| `python3 -c 'print(sum(range(100)))'`               | 4950    | 2.9 s      |
+| python with json, re, collections, math, `%` format | correct | 3.5 s      |
+| `ruby -e 1`                                         | exits 0 | 4.8 s      |
+| ruby with map/select, `Math.sqrt`, Unicode upcase   | correct | 5.0 s      |
 
 In headless Chromium, on the site's own page (`run.html`, below), with
 the closure already fetched:
 
-| program                                        | wall  | translating |
-| ---------------------------------------------- | ----- | ----------- |
-| hello 2.12.3                                   | 0.8 s | 0.6 s       |
-| ruby 3.4.9, a map and sum                      | 5.9 s | 3.4 s       |
-| python 3.14.7, json and a sum over a million   | 5.2 s | 3.3 s       |
+| program                                      | wall  | translating |
+| -------------------------------------------- | ----- | ----------- |
+| hello 2.12.3                                 | 0.8 s | 0.6 s       |
+| ruby 3.4.9, a map and sum                    | 5.9 s | 3.4 s       |
+| python 3.14.7, json and a sum over a million | 5.2 s | 3.3 s       |
 
 For `ruby -e 1` the browser guest takes 13.7 to 16.6 s on a warm
 cache, so a first run is about 3x faster before any caching of
@@ -281,8 +302,7 @@ standard input block on a ring in a SharedArrayBuffer the page fills
 from the pty; the line discipline stays on the page and hears the
 guest's termios changes, so python's REPL gets its raw mode.
 
-Not yet built: AVX (the CPU presented has none, and `-march=haswell`
-binaries such as the CPU probe die on their first `vmovdqa`), threads,
-fork and exec, signal delivery, the exec stub in the QEMU guest so the VM's shell can
-hand a command to this lane, and caching of translated modules across
-runs.
+Built since the table above: the process model, the translation
+cache, AVX with FMA, self-modifying code, and the lane from the VM's
+shell; each has a section. Not built: signal delivery between
+syscalls, sockets, and a shared cache of translations.

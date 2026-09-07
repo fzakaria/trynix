@@ -28,7 +28,8 @@ self.onmessage = async (event) => {
     read: (out) => ring.read(out),
     size: () => ring.size(),
     takeInterrupt: () => ring.takeInterrupt(),
-    write: (stream, bytes) => self.postMessage({ type: "output", stream, bytes }),
+    write: (stream, bytes) =>
+      self.postMessage({ type: "output", stream, bytes }),
     setTermios: (t) => self.postMessage({ type: "termios", termios: t }),
   };
 
@@ -49,7 +50,8 @@ self.onmessage = async (event) => {
   const kernel = new Kernel({
     fs,
     tty,
-    spawn: (data) => spawnWorker(workerUrl, { ...data, trace: msg.trace, stats: true }),
+    spawn: (data) =>
+      spawnWorker(workerUrl, { ...data, trace: msg.trace, stats: true }),
     translations,
     onTranslation: (entry) =>
       self.postMessage({
@@ -61,6 +63,10 @@ self.onmessage = async (event) => {
       }),
     log: (text) => self.postMessage({ type: "log", text }),
   });
-  const status = await kernel.start({ argv: msg.argv, envp: msg.envp, cwd: msg.cwd });
+  const status = await kernel.start({
+    argv: msg.argv,
+    envp: msg.envp,
+    cwd: msg.cwd,
+  });
   self.postMessage({ type: "exit", code: status });
 };

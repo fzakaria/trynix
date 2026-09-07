@@ -7,7 +7,11 @@
 //
 // `data` is what the spawner passed, delivered before any message.
 
-const isNode = typeof process !== "undefined" && process.versions && process.versions.node && typeof self === "undefined";
+const isNode =
+  typeof process !== "undefined" &&
+  process.versions &&
+  process.versions.node &&
+  typeof self === "undefined";
 
 export async function spawnWorker(url, data, transfer = []) {
   if (isNode) {

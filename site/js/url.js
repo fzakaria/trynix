@@ -16,6 +16,9 @@ const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
 const PARAM_CACHE = "cache";
 const PARAM_BOOT = "boot";
+// fast=1: the selected programs run through the translator in the page
+// when typed at the guest's shell (site/js/fastlane.js).
+const PARAM_FAST = "fast";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
@@ -48,13 +51,22 @@ export function readUrl() {
     .filter((parts) => parts.length === 2)
     .map(([url, key]) => ({ url: url.replace(/\/$/, ""), key }));
 
-  return { pkgs, paths, caches, boot: params.get(PARAM_BOOT) === "1" };
+  return {
+    pkgs,
+    paths,
+    caches,
+    boot: params.get(PARAM_BOOT) === "1",
+    fast: params.get(PARAM_FAST) === "1",
+  };
 }
 
 // Rewrite the address bar to describe the current selection. `boot`
 // stays out unless asked for: a shared link should offer the boot, and
 // only the reload path wants it automatic.
-export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
+export function writeUrl(
+  { pkgs, paths, caches = [], fast = false },
+  { boot = false } = {},
+) {
   const params = new URLSearchParams();
   for (const { attr, version } of pkgs) {
     params.append(
@@ -67,6 +79,9 @@ export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
   }
   for (const { url, key } of caches) {
     params.append(PARAM_CACHE, `${url} ${key}`);
+  }
+  if (fast) {
+    params.set(PARAM_FAST, "1");
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");

@@ -2,7 +2,11 @@
 // register file, the block table and the run loop that dispatches into
 // translated code. It knows nothing about ELF files or Linux; the
 // process layer sits on top and supplies the syscall handler.
-import { buildHelpersModule, LOOKUP_ENTRY_BYTES, LOOKUP_HASH_MULTIPLIER } from "./helpers.js";
+import {
+  buildHelpersModule,
+  LOOKUP_ENTRY_BYTES,
+  LOOKUP_HASH_MULTIPLIER,
+} from "./helpers.js";
 import { Translator } from "./translate.js";
 import { EXIT, G, GLOBALS, REGISTER_NAMES } from "./state.js";
 import { fpuOp } from "./x87.js";
@@ -35,9 +39,22 @@ export class Machine {
   // process's), and keeps its block lookup at `lookupBase` in that
   // memory: LOOKUP_BYTES that the process layer reserved for it, or the
   // top of the initial memory when nothing is said.
-  constructor({ pages = 4096, maxPages = 65536, memory = null, shared = false, lookupBase = null } = {}) {
-    this.shared = shared || (memory !== null && memory.buffer instanceof SharedArrayBuffer);
-    this.memory = memory ?? new WebAssembly.Memory({ initial: pages, maximum: maxPages, shared: this.shared });
+  constructor({
+    pages = 4096,
+    maxPages = 65536,
+    memory = null,
+    shared = false,
+    lookupBase = null,
+  } = {}) {
+    this.shared =
+      shared || (memory !== null && memory.buffer instanceof SharedArrayBuffer);
+    this.memory =
+      memory ??
+      new WebAssembly.Memory({
+        initial: pages,
+        maximum: maxPages,
+        shared: this.shared,
+      });
     this.table = new WebAssembly.Table({ element: "anyfunc", initial: 1 });
     this.refreshViews();
 
@@ -57,9 +74,12 @@ export class Machine {
     this.kernelTop = lookupBase + LOOKUP_BYTES;
     this.u8.fill(0, lookupBase, lookupBase + LOOKUP_BYTES);
 
-    const helpers = new WebAssembly.Instance(new WebAssembly.Module(buildHelpersModule({ shared: this.shared })), {
-      env: { memory: this.memory, table: this.table },
-    });
+    const helpers = new WebAssembly.Instance(
+      new WebAssembly.Module(buildHelpersModule({ shared: this.shared })),
+      {
+        env: { memory: this.memory, table: this.table },
+      },
+    );
     this.helpers = helpers.exports;
     this.helpers.ht_base.value = lookupBase;
     this.helpers.ht_mask.value = this.lookupMask;
@@ -119,7 +139,15 @@ export class Machine {
         trace: (rip) => this.traceBlock(BigInt.asUintN(64, rip)),
       };
     }
-    return { env: { ...this.imports, base: new WebAssembly.Global({ value: "i64", mutable: false }, BigInt.asIntN(64, base)) } };
+    return {
+      env: {
+        ...this.imports,
+        base: new WebAssembly.Global(
+          { value: "i64", mutable: false },
+          BigInt.asIntN(64, base),
+        ),
+      },
+    };
   }
 
   bytes() {
@@ -181,7 +209,8 @@ export class Machine {
   }
 
   setReg(name, v) {
-    this.helpers[name].value = typeof v === "bigint" ? BigInt.asUintN(64, v) : v;
+    this.helpers[name].value =
+      typeof v === "bigint" ? BigInt.asUintN(64, v) : v;
   }
 
   // The whole register file as plain data: BigInt strings for the
@@ -209,7 +238,8 @@ export class Machine {
       if (state[name] === undefined) {
         continue;
       }
-      this.helpers[name].value = type === "i64" ? BigInt.asIntN(64, BigInt(state[name])) : state[name];
+      this.helpers[name].value =
+        type === "i64" ? BigInt.asIntN(64, BigInt(state[name])) : state[name];
     }
     if (state.ymm) {
       this.u8.set(state.ymm, this.scratch);
@@ -332,10 +362,14 @@ export class Machine {
           throw new GuestFault(`trap at 0x${rip.value.toString(16)}`);
         case EXIT.UNSUPPORTED: {
           const why = this.translator.unsupported.get(rip.value) || "unknown";
-          throw new GuestFault(`unsupported instruction at 0x${rip.value.toString(16)}: ${why}`);
+          throw new GuestFault(
+            `unsupported instruction at 0x${rip.value.toString(16)}: ${why}`,
+          );
         }
         default:
-          throw new GuestFault(`block returned with exit reason ${exitReason.value}`);
+          throw new GuestFault(
+            `block returned with exit reason ${exitReason.value}`,
+          );
       }
     }
   }
@@ -366,7 +400,16 @@ function defaultCpuid(m) {
       // SSE4.2 (bit 20) is withheld until pcmpistri has a translation.
       c = (1 << 0) | (1 << 1) | (1 << 9) | (1 << 13) | (1 << 19) | (1 << 23);
       // edx: fpu, tsc, cx8, cmov, clflush, mmx, fxsr, sse, sse2
-      d = (1 << 0) | (1 << 4) | (1 << 8) | (1 << 15) | (1 << 19) | (1 << 23) | (1 << 24) | (1 << 25) | (1 << 26);
+      d =
+        (1 << 0) |
+        (1 << 4) |
+        (1 << 8) |
+        (1 << 15) |
+        (1 << 19) |
+        (1 << 23) |
+        (1 << 24) |
+        (1 << 25) |
+        (1 << 26);
       break;
     case 7:
       if (sub === 0) {

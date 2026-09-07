@@ -6,7 +6,7 @@
 // docs/design.md holds the architecture.
 
 import { walkClosure } from "./closure.js";
-import { fetchNar } from "./store.js";
+import { fetchNar, programsOf } from "./store.js";
 import { startVM } from "./boot.js";
 import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
@@ -37,8 +37,13 @@ import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
 import { binOutputOf } from "./outputs.js";
 import { log, onLog } from "./log.js";
+import { FastLane, shareEntries } from "./fastlane.js";
 
 const STORE_PREFIX = "/nix/store/";
+const GUEST_STORE_PREFIX = STORE_PREFIX;
+// Whether typed commands run through the translator (site/js/fastlane.js).
+let fastLane = false;
+const lane = new FastLane();
 
 const storePathInput = document.getElementById("store-path");
 const walkForm = document.getElementById("walk-form");
@@ -95,6 +100,7 @@ let extraCaches = [];
 function urlState() {
   const entries = [...selection.values()];
   return {
+    fast: fastLane,
     pkgs: entries
       .filter((e) => e.attr !== undefined)
       .map((e) => ({ attr: e.attr, version: e.version })),
@@ -529,6 +535,7 @@ async function boot() {
         terminalElement,
         keyBarElement,
         engine,
+        wrapMaster: fastLane ? (master) => lane.wrap(master) : null,
       });
     });
 
@@ -537,11 +544,19 @@ async function boot() {
     // holds more than the few NARs in flight.
     const infos = [...closure.values()];
     closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
+    // With the fast lane on, each NAR's bytes go into a shared buffer
+    // before the share takes them, so the lane's workers read the
+    // same copy the guest does.
+    const laneStorePaths = [];
     const closurePromise = mapConcurrent(
       infos,
       NAR_CONCURRENCY,
       async (info) => {
-        const entries = await fetchNar(info, (n) => closureRow.add(n));
+        let entries = await fetchNar(info, (n) => closureRow.add(n));
+        if (fastLane) {
+          entries = shareEntries(entries);
+          laneStorePaths.push({ path: info.storePath, entries });
+        }
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);
       },
@@ -571,6 +586,24 @@ async function boot() {
     log("guest at its prompt");
     vmRow.done("running");
     consoleVeil.hidden = true;
+
+    if (fastLane) {
+      const rootPaths = basenamesOf(closure, rootDigests).map(
+        (b) => `${GUEST_STORE_PREFIX}${b}`,
+      );
+      const programs = rootPaths.flatMap((p) => {
+        const sp = laneStorePaths.find((s) => s.path === p);
+        return sp === undefined ? [] : programsOf(sp.entries);
+      });
+      lane
+        .setClosure(
+          laneStorePaths,
+          rootPaths.map((p) => `${p}/bin`),
+        )
+        .then(() => lane.install(vm.FS, programs))
+        .catch((err) => log(`fast lane failed: ${err.message}`));
+      window.trynix.lane = lane;
+    }
   } catch (err) {
     log(`boot failed: ${err.message}`);
     vmRow.fail(String(err));
@@ -725,6 +758,7 @@ async function prefetch() {
 
 const initial = readUrl();
 applyCaches(initial.caches);
+fastLane = initial.fast;
 
 // Not while a boot is already starting. A reboot lands on ?boot=1 and
 // the boot fetches these itself; racing it only doubles ~75 MB of

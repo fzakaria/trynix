@@ -16,37 +16,92 @@ import { REG } from "./decode.js";
 
 // Packed ops that are one wasm opcode applied to (dst, src).
 const BINARY = {
-  paddb: "i8x16_add", paddw: "i16x8_add", paddd: "i32x4_add", paddq: "i64x2_add",
-  psubb: "i8x16_sub", psubw: "i16x8_sub", psubd: "i32x4_sub", psubq: "i64x2_sub",
-  paddsb: "i8x16_add_sat_s", paddsw: "i16x8_add_sat_s", paddusb: "i8x16_add_sat_u", paddusw: "i16x8_add_sat_u",
-  psubsb: "i8x16_sub_sat_s", psubsw: "i16x8_sub_sat_s", psubusb: "i8x16_sub_sat_u", psubusw: "i16x8_sub_sat_u",
-  pmullw: "i16x8_mul", pmulld: "i32x4_mul", pmaddwd: "i32x4_dot_i16x8_s",
-  pavgb: "i8x16_avgr_u", pavgw: "i16x8_avgr_u",
-  pminub: "i8x16_min_u", pmaxub: "i8x16_max_u", pminsw: "i16x8_min_s", pmaxsw: "i16x8_max_s",
-  pminsb: "i8x16_min_s", pmaxsb: "i8x16_max_s", pminuw: "i16x8_min_u", pmaxuw: "i16x8_max_u",
-  pminsd: "i32x4_min_s", pmaxsd: "i32x4_max_s", pminud: "i32x4_min_u", pmaxud: "i32x4_max_u",
-  pcmpeqb: "i8x16_eq", pcmpeqw: "i16x8_eq", pcmpeqd: "i32x4_eq", pcmpeqq: "i64x2_eq",
-  pcmpgtb: "i8x16_gt_s", pcmpgtw: "i16x8_gt_s", pcmpgtd: "i32x4_gt_s", pcmpgtq: "i64x2_gt_s",
-  pand: "v128_and", por: "v128_or", pxor: "v128_xor",
-  andps: "v128_and", andpd: "v128_and", orps: "v128_or", orpd: "v128_or", xorps: "v128_xor", xorpd: "v128_xor",
-  packsswb: "i8x16_narrow_i16x8_s", packuswb: "i8x16_narrow_i16x8_u", packssdw: "i16x8_narrow_i32x4_s", packusdw: "i16x8_narrow_i32x4_u",
-  addps: "f32x4_add", addpd: "f64x2_add", subps: "f32x4_sub", subpd: "f64x2_sub",
-  mulps: "f32x4_mul", mulpd: "f64x2_mul", divps: "f32x4_div", divpd: "f64x2_div",
+  paddb: "i8x16_add",
+  paddw: "i16x8_add",
+  paddd: "i32x4_add",
+  paddq: "i64x2_add",
+  psubb: "i8x16_sub",
+  psubw: "i16x8_sub",
+  psubd: "i32x4_sub",
+  psubq: "i64x2_sub",
+  paddsb: "i8x16_add_sat_s",
+  paddsw: "i16x8_add_sat_s",
+  paddusb: "i8x16_add_sat_u",
+  paddusw: "i16x8_add_sat_u",
+  psubsb: "i8x16_sub_sat_s",
+  psubsw: "i16x8_sub_sat_s",
+  psubusb: "i8x16_sub_sat_u",
+  psubusw: "i16x8_sub_sat_u",
+  pmullw: "i16x8_mul",
+  pmulld: "i32x4_mul",
+  pmaddwd: "i32x4_dot_i16x8_s",
+  pavgb: "i8x16_avgr_u",
+  pavgw: "i16x8_avgr_u",
+  pminub: "i8x16_min_u",
+  pmaxub: "i8x16_max_u",
+  pminsw: "i16x8_min_s",
+  pmaxsw: "i16x8_max_s",
+  pminsb: "i8x16_min_s",
+  pmaxsb: "i8x16_max_s",
+  pminuw: "i16x8_min_u",
+  pmaxuw: "i16x8_max_u",
+  pminsd: "i32x4_min_s",
+  pmaxsd: "i32x4_max_s",
+  pminud: "i32x4_min_u",
+  pmaxud: "i32x4_max_u",
+  pcmpeqb: "i8x16_eq",
+  pcmpeqw: "i16x8_eq",
+  pcmpeqd: "i32x4_eq",
+  pcmpeqq: "i64x2_eq",
+  pcmpgtb: "i8x16_gt_s",
+  pcmpgtw: "i16x8_gt_s",
+  pcmpgtd: "i32x4_gt_s",
+  pcmpgtq: "i64x2_gt_s",
+  pand: "v128_and",
+  por: "v128_or",
+  pxor: "v128_xor",
+  andps: "v128_and",
+  andpd: "v128_and",
+  orps: "v128_or",
+  orpd: "v128_or",
+  xorps: "v128_xor",
+  xorpd: "v128_xor",
+  packsswb: "i8x16_narrow_i16x8_s",
+  packuswb: "i8x16_narrow_i16x8_u",
+  packssdw: "i16x8_narrow_i32x4_s",
+  packusdw: "i16x8_narrow_i32x4_u",
+  addps: "f32x4_add",
+  addpd: "f64x2_add",
+  subps: "f32x4_sub",
+  subpd: "f64x2_sub",
+  mulps: "f32x4_mul",
+  mulpd: "f64x2_mul",
+  divps: "f32x4_div",
+  divpd: "f64x2_div",
 };
 
 // Scalar float ops on lane 0 of dst with lane 0 of src.
 const SCALAR = {
-  addss: ["f32", "f32_add"], addsd: ["f64", "f64_add"],
-  subss: ["f32", "f32_sub"], subsd: ["f64", "f64_sub"],
-  mulss: ["f32", "f32_mul"], mulsd: ["f64", "f64_mul"],
-  divss: ["f32", "f32_div"], divsd: ["f64", "f64_div"],
+  addss: ["f32", "f32_add"],
+  addsd: ["f64", "f64_add"],
+  subss: ["f32", "f32_sub"],
+  subsd: ["f64", "f64_sub"],
+  mulss: ["f32", "f32_mul"],
+  mulsd: ["f64", "f64_mul"],
+  divss: ["f32", "f32_div"],
+  divsd: ["f64", "f64_div"],
 };
 
 const UNARY = {
-  pabsb: "i8x16_abs", pabsw: "i16x8_abs", pabsd: "i32x4_abs",
-  sqrtps: "f32x4_sqrt", sqrtpd: "f64x2_sqrt",
-  cvtdq2ps: "f32x4_convert_i32x4_s", cvtdq2pd: "f64x2_convert_low_i32x4_s",
-  cvtps2pd: "f64x2_promote_low_f32x4", cvtpd2ps: "f32x4_demote_f64x2_zero",
+  pabsb: "i8x16_abs",
+  pabsw: "i16x8_abs",
+  pabsd: "i32x4_abs",
+  sqrtps: "f32x4_sqrt",
+  sqrtpd: "f64x2_sqrt",
+  cvtdq2ps: "f32x4_convert_i32x4_s",
+  cvtdq2pd: "f64x2_convert_low_i32x4_s",
+  cvtps2pd: "f64x2_promote_low_f32x4",
+  cvtpd2ps: "f32x4_demote_f64x2_zero",
 };
 
 // Lane shuffles: the byte index list for i8x16.shuffle(dst, src).
@@ -66,12 +121,18 @@ function interleave(width, high) {
 }
 
 const UNPACK = {
-  punpcklbw: interleave(1, false), punpckhbw: interleave(1, true),
-  punpcklwd: interleave(2, false), punpckhwd: interleave(2, true),
-  punpckldq: interleave(4, false), punpckhdq: interleave(4, true),
-  punpcklqdq: interleave(8, false), punpckhqdq: interleave(8, true),
-  unpcklps: interleave(4, false), unpckhps: interleave(4, true),
-  unpcklpd: interleave(8, false), unpckhpd: interleave(8, true),
+  punpcklbw: interleave(1, false),
+  punpckhbw: interleave(1, true),
+  punpcklwd: interleave(2, false),
+  punpckhwd: interleave(2, true),
+  punpckldq: interleave(4, false),
+  punpckhdq: interleave(4, true),
+  punpcklqdq: interleave(8, false),
+  punpckhqdq: interleave(8, true),
+  unpcklps: interleave(4, false),
+  unpckhps: interleave(4, true),
+  unpcklpd: interleave(8, false),
+  unpckhpd: interleave(8, true),
 };
 
 function lanesOf(width, picks) {
@@ -110,11 +171,21 @@ export function emitSimd(e, insn, ops) {
     }
     e.address32(op);
     switch (size) {
-      case 16: c.v128_load(0, 0); break;
-      case 8: c.v128_load64_zero(0); break;
-      case 4: c.v128_load32_zero(0); break;
-      case 2: c.i64_load16_u(0); c.i64x2_splat(); break;
-      default: throw new Unsupported(`vector load of ${size}`);
+      case 16:
+        c.v128_load(0, 0);
+        break;
+      case 8:
+        c.v128_load64_zero(0);
+        break;
+      case 4:
+        c.v128_load32_zero(0);
+        break;
+      case 2:
+        c.i64_load16_u(0);
+        c.i64x2_splat();
+        break;
+      default:
+        throw new Unsupported(`vector load of ${size}`);
     }
   };
 
@@ -133,10 +204,17 @@ export function emitSimd(e, insn, ops) {
     e.address32(op);
     c.local_get(v);
     switch (size) {
-      case 16: c.v128_store(0, 0); break;
-      case 8: c.v128_store64_lane(0, 0); break;
-      case 4: c.v128_store32_lane(0, 0); break;
-      default: throw new Unsupported(`vector store of ${size}`);
+      case 16:
+        c.v128_store(0, 0);
+        break;
+      case 8:
+        c.v128_store64_lane(0, 0);
+        break;
+      case 4:
+        c.v128_store32_lane(0, 0);
+        break;
+      default:
+        throw new Unsupported(`vector store of ${size}`);
     }
   };
 
@@ -146,12 +224,26 @@ export function emitSimd(e, insn, ops) {
 
   const dst = ops[0];
   const src = ops[1];
-  const imm = ops.length > 2 && ops[2].kind === "imm" ? Number(ops[2].value) : ops.length > 1 && ops[1].kind === "imm" ? Number(ops[1].value) : null;
+  const imm =
+    ops.length > 2 && ops[2].kind === "imm"
+      ? Number(ops[2].value)
+      : ops.length > 1 && ops[1].kind === "imm"
+        ? Number(ops[1].value)
+        : null;
 
   // ---- moves ----
   switch (m) {
-    case "movaps": case "movups": case "movapd": case "movupd": case "movdqa": case "movdqu":
-    case "movntdq": case "movntps": case "movntpd": case "lddqu": case "movntdqa":
+    case "movaps":
+    case "movups":
+    case "movapd":
+    case "movupd":
+    case "movdqa":
+    case "movdqu":
+    case "movntdq":
+    case "movntps":
+    case "movntpd":
+    case "lddqu":
+    case "movntdqa":
       loadV(src, 16);
       storeV(dst, 16);
       return true;
@@ -161,7 +253,12 @@ export function emitSimd(e, insn, ops) {
         e.load(src, 8);
         c.i64x2_splat();
         c.v128_const(ZERO16);
-        c.i8x16_shuffle(lanesOf(8, [[0, 0], [1, 0]]));
+        c.i8x16_shuffle(
+          lanesOf(8, [
+            [0, 0],
+            [1, 0],
+          ]),
+        );
         storeV(dst);
         return true;
       }
@@ -176,7 +273,12 @@ export function emitSimd(e, insn, ops) {
         loadV(src, 8);
         if (isXmm(src)) {
           c.v128_const(ZERO16);
-          c.i8x16_shuffle(lanesOf(8, [[0, 0], [1, 0]]));
+          c.i8x16_shuffle(
+            lanesOf(8, [
+              [0, 0],
+              [1, 0],
+            ]),
+          );
         }
         storeV(dst);
         return true;
@@ -208,7 +310,14 @@ export function emitSimd(e, insn, ops) {
       if (isXmm(dst) && isXmm(src)) {
         loadV(dst);
         loadV(src);
-        c.i8x16_shuffle(lanesOf(4, [[1, 0], [0, 1], [0, 2], [0, 3]]));
+        c.i8x16_shuffle(
+          lanesOf(4, [
+            [1, 0],
+            [0, 1],
+            [0, 2],
+            [0, 3],
+          ]),
+        );
         storeV(dst);
       } else if (isXmm(dst)) {
         loadV(src, 4);
@@ -222,7 +331,12 @@ export function emitSimd(e, insn, ops) {
       if (isXmm(dst) && isXmm(src)) {
         loadV(dst);
         loadV(src);
-        c.i8x16_shuffle(lanesOf(8, [[1, 0], [0, 1]]));
+        c.i8x16_shuffle(
+          lanesOf(8, [
+            [1, 0],
+            [0, 1],
+          ]),
+        );
         storeV(dst);
       } else if (isXmm(dst)) {
         loadV(src, 8);
@@ -232,7 +346,8 @@ export function emitSimd(e, insn, ops) {
         storeV(dst, 8);
       }
       return true;
-    case "movlps": case "movlpd":
+    case "movlps":
+    case "movlpd":
       if (isXmm(dst)) {
         e.address32(src);
         loadV(dst);
@@ -243,7 +358,8 @@ export function emitSimd(e, insn, ops) {
         storeV(dst, 8);
       }
       return true;
-    case "movhps": case "movhpd":
+    case "movhps":
+    case "movhpd":
       if (isXmm(dst)) {
         e.address32(src);
         loadV(dst);
@@ -261,20 +377,35 @@ export function emitSimd(e, insn, ops) {
     case "movhlps":
       loadV(dst);
       loadV(src);
-      c.i8x16_shuffle(lanesOf(8, [[1, 1], [0, 1]]));
+      c.i8x16_shuffle(
+        lanesOf(8, [
+          [1, 1],
+          [0, 1],
+        ]),
+      );
       storeV(dst);
       return true;
     case "movlhps":
       loadV(dst);
       loadV(src);
-      c.i8x16_shuffle(lanesOf(8, [[0, 0], [1, 0]]));
+      c.i8x16_shuffle(
+        lanesOf(8, [
+          [0, 0],
+          [1, 0],
+        ]),
+      );
       storeV(dst);
       return true;
     case "movddup": {
       const v = e.t128();
       loadV(src, 8);
       c.local_tee(v).local_get(v);
-      c.i8x16_shuffle(lanesOf(8, [[0, 0], [0, 0]]));
+      c.i8x16_shuffle(
+        lanesOf(8, [
+          [0, 0],
+          [0, 0],
+        ]),
+      );
       storeV(dst);
       return true;
     }
@@ -282,7 +413,14 @@ export function emitSimd(e, insn, ops) {
       const v = e.t128();
       loadV(src);
       c.local_tee(v).local_get(v);
-      c.i8x16_shuffle(lanesOf(4, [[0, 0], [0, 0], [0, 2], [0, 2]]));
+      c.i8x16_shuffle(
+        lanesOf(4, [
+          [0, 0],
+          [0, 0],
+          [0, 2],
+          [0, 2],
+        ]),
+      );
       storeV(dst);
       return true;
     }
@@ -290,7 +428,14 @@ export function emitSimd(e, insn, ops) {
       const v = e.t128();
       loadV(src);
       c.local_tee(v).local_get(v);
-      c.i8x16_shuffle(lanesOf(4, [[0, 1], [0, 1], [0, 3], [0, 3]]));
+      c.i8x16_shuffle(
+        lanesOf(4, [
+          [0, 1],
+          [0, 1],
+          [0, 3],
+          [0, 3],
+        ]),
+      );
       storeV(dst);
       return true;
     }
@@ -336,7 +481,9 @@ export function emitSimd(e, insn, ops) {
       c.local_get(a).global_get(e.g.mxcsr).i32_store(24, 2);
       c.local_get(a).i32_const(0x2ffff).i32_store(28, 2);
       for (let i = 0; i < 16; i++) {
-        c.local_get(a).global_get(e.g[`xmm${i}`]).v128_store(160 + 16 * i, 0);
+        c.local_get(a)
+          .global_get(e.g[`xmm${i}`])
+          .v128_store(160 + 16 * i, 0);
       }
       return true;
     }
@@ -349,7 +496,9 @@ export function emitSimd(e, insn, ops) {
       c.local_get(a).i32_load16_u(2).global_set(e.g.fpu_sw);
       c.local_get(a).i32_load(24, 2).global_set(e.g.mxcsr);
       for (let i = 0; i < 16; i++) {
-        c.local_get(a).v128_load(160 + 16 * i, 0).global_set(e.g[`xmm${i}`]);
+        c.local_get(a)
+          .v128_load(160 + 16 * i, 0)
+          .global_set(e.g[`xmm${i}`]);
       }
       return true;
     }
@@ -375,7 +524,16 @@ export function emitSimd(e, insn, ops) {
   }
   if (UNPACK[m] !== undefined) {
     loadV(dst);
-    loadV(src, m.startsWith("unpck") || m.endsWith("qdq") || m.endsWith("hbw") || m.endsWith("hwd") || m.endsWith("hdq") ? 16 : 8);
+    loadV(
+      src,
+      m.startsWith("unpck") ||
+        m.endsWith("qdq") ||
+        m.endsWith("hbw") ||
+        m.endsWith("hwd") ||
+        m.endsWith("hdq")
+        ? 16
+        : 8,
+    );
     c.i8x16_shuffle(UNPACK[m]);
     storeV(dst);
     return true;
@@ -436,14 +594,26 @@ export function emitSimd(e, insn, ops) {
     case "shufps": {
       loadV(dst);
       loadV(src);
-      c.i8x16_shuffle(lanesOf(4, [[0, imm & 3], [0, (imm >> 2) & 3], [1, (imm >> 4) & 3], [1, (imm >> 6) & 3]]));
+      c.i8x16_shuffle(
+        lanesOf(4, [
+          [0, imm & 3],
+          [0, (imm >> 2) & 3],
+          [1, (imm >> 4) & 3],
+          [1, (imm >> 6) & 3],
+        ]),
+      );
       storeV(dst);
       return true;
     }
     case "shufpd": {
       loadV(dst);
       loadV(src);
-      c.i8x16_shuffle(lanesOf(8, [[0, imm & 1], [1, (imm >> 1) & 1]]));
+      c.i8x16_shuffle(
+        lanesOf(8, [
+          [0, imm & 1],
+          [1, (imm >> 1) & 1],
+        ]),
+      );
       storeV(dst);
       return true;
     }
@@ -506,11 +676,20 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "psllw": case "pslld": case "psllq":
-    case "psrlw": case "psrld": case "psrlq":
-    case "psraw": case "psrad": {
+    case "psllw":
+    case "pslld":
+    case "psllq":
+    case "psrlw":
+    case "psrld":
+    case "psrlq":
+    case "psraw":
+    case "psrad": {
       const width = m.endsWith("w") ? 16 : m.endsWith("d") ? 32 : 64;
-      const kind = m.startsWith("psll") ? "shl" : m.startsWith("psrl") ? "shr_u" : "shr_s";
+      const kind = m.startsWith("psll")
+        ? "shl"
+        : m.startsWith("psrl")
+          ? "shr_u"
+          : "shr_s";
       const lane = width === 16 ? "i16x8" : width === 32 ? "i32x4" : "i64x2";
       const count = e.t32();
       if (src.kind === "imm") {
@@ -521,19 +700,38 @@ export function emitSimd(e, insn, ops) {
         const cnt64 = e.t64();
         loadV(src, 8);
         c.i64x2_extract_lane(0);
-        c.local_tee(cnt64).i64_const(BigInt(width)).i64_gt_u().if_(T.i32).i32_const(width).else_().local_get(cnt64).i32_wrap_i64().end().local_set(count);
+        c.local_tee(cnt64)
+          .i64_const(BigInt(width))
+          .i64_gt_u()
+          .if_(T.i32)
+          .i32_const(width)
+          .else_()
+          .local_get(cnt64)
+          .i32_wrap_i64()
+          .end()
+          .local_set(count);
       }
       // wasm masks the count to the lane width; x86 gives zero (or the
       // sign) for a count at or past it.
       const wide = e.t32();
       c.local_get(count).i32_const(width).i32_ge_u().local_set(wide);
       loadV(dst);
-      c.local_get(wide).if_(T.i32).i32_const(kind === "shr_s" ? width - 1 : 0).else_().local_get(count).end();
+      c.local_get(wide)
+        .if_(T.i32)
+        .i32_const(kind === "shr_s" ? width - 1 : 0)
+        .else_()
+        .local_get(count)
+        .end();
       c[`${lane}_${kind}`]();
       if (kind !== "shr_s") {
         const shifted = e.t128();
         c.local_set(shifted);
-        c.local_get(wide).if_(T.v128).v128_const(ZERO16).else_().local_get(shifted).end();
+        c.local_get(wide)
+          .if_(T.v128)
+          .v128_const(ZERO16)
+          .else_()
+          .local_get(shifted)
+          .end();
       }
       storeV(dst);
       return true;
@@ -618,17 +816,35 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "pmovzxbw": case "pmovsxbw": case "pmovzxbd": case "pmovsxbd": case "pmovzxbq": case "pmovsxbq":
-    case "pmovzxwd": case "pmovsxwd": case "pmovzxwq": case "pmovsxwq": case "pmovzxdq": case "pmovsxdq": {
+    case "pmovzxbw":
+    case "pmovsxbw":
+    case "pmovzxbd":
+    case "pmovsxbd":
+    case "pmovzxbq":
+    case "pmovsxbq":
+    case "pmovzxwd":
+    case "pmovsxwd":
+    case "pmovzxwq":
+    case "pmovsxwq":
+    case "pmovzxdq":
+    case "pmovsxdq": {
       const s = m[4] === "z" ? "u" : "s";
       const from = m[6];
       const to = m[7];
       const srcSize = { bw: 8, bd: 4, bq: 2, wd: 8, wq: 4, dq: 8 }[from + to];
       loadV(src, srcSize);
-      const steps = { bw: ["i16x8_extend_low_i8x16"], bd: ["i16x8_extend_low_i8x16", "i32x4_extend_low_i16x8"],
-        bq: ["i16x8_extend_low_i8x16", "i32x4_extend_low_i16x8", "i64x2_extend_low_i32x4"],
-        wd: ["i32x4_extend_low_i16x8"], wq: ["i32x4_extend_low_i16x8", "i64x2_extend_low_i32x4"],
-        dq: ["i64x2_extend_low_i32x4"] }[from + to];
+      const steps = {
+        bw: ["i16x8_extend_low_i8x16"],
+        bd: ["i16x8_extend_low_i8x16", "i32x4_extend_low_i16x8"],
+        bq: [
+          "i16x8_extend_low_i8x16",
+          "i32x4_extend_low_i16x8",
+          "i64x2_extend_low_i32x4",
+        ],
+        wd: ["i32x4_extend_low_i16x8"],
+        wq: ["i32x4_extend_low_i16x8", "i64x2_extend_low_i32x4"],
+        dq: ["i64x2_extend_low_i32x4"],
+      }[from + to];
       for (const step of steps) {
         c[`${step}_${s}`]();
       }
@@ -639,7 +855,12 @@ export function emitSimd(e, insn, ops) {
     case "pmuludq":
     case "pmuldq": {
       // Even dword lanes to the low positions, then a widening multiply.
-      const gather = lanesOf(4, [[0, 0], [0, 2], [0, 0], [0, 2]]);
+      const gather = lanesOf(4, [
+        [0, 0],
+        [0, 2],
+        [0, 0],
+        [0, 2],
+      ]);
       loadV(dst);
       loadV(dst);
       c.i8x16_shuffle(gather);
@@ -693,10 +914,19 @@ export function emitSimd(e, insn, ops) {
       c.i32x4_extadd_pairwise_i16x8_u();
       c.local_tee(d);
       c.local_get(d).local_get(d);
-      c.i8x16_shuffle(lanesOf(4, [[0, 1], [0, 0], [0, 3], [0, 2]]));
+      c.i8x16_shuffle(
+        lanesOf(4, [
+          [0, 1],
+          [0, 0],
+          [0, 3],
+          [0, 2],
+        ]),
+      );
       c.i32x4_add();
       c.v128_const(ZERO16);
-      c.i8x16_shuffle([0, 1, 2, 3, 16, 16, 16, 16, 8, 9, 10, 11, 16, 16, 16, 16]);
+      c.i8x16_shuffle([
+        0, 1, 2, 3, 16, 16, 16, 16, 8, 9, 10, 11, 16, 16, 16, 16,
+      ]);
       storeV(dst);
       return true;
     }
@@ -705,7 +935,12 @@ export function emitSimd(e, insn, ops) {
       const zf = e.t32();
       loadV(dst);
       loadV(src);
-      c.v128_and().v128_any_true().i32_eqz().i32_const(6).i32_shl().local_set(zf);
+      c.v128_and()
+        .v128_any_true()
+        .i32_eqz()
+        .i32_const(6)
+        .i32_shl()
+        .local_set(zf);
       loadV(dst);
       loadV(src);
       c.v128_andnot().v128_any_true().i32_eqz();
@@ -715,8 +950,15 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "pblendvb": case "blendvps": case "blendvpd": {
-      const shift = m === "pblendvb" ? ["i8x16_shr_s", 7] : m === "blendvps" ? ["i32x4_shr_s", 31] : ["i64x2_shr_s", 63];
+    case "pblendvb":
+    case "blendvps":
+    case "blendvpd": {
+      const shift =
+        m === "pblendvb"
+          ? ["i8x16_shr_s", 7]
+          : m === "blendvps"
+            ? ["i32x4_shr_s", 31]
+            : ["i64x2_shr_s", 63];
       loadV(src);
       loadV(dst);
       c.global_get(e.g.xmm0);
@@ -726,7 +968,9 @@ export function emitSimd(e, insn, ops) {
       storeV(dst);
       return true;
     }
-    case "pblendw": case "blendps": case "blendpd": {
+    case "pblendw":
+    case "blendps":
+    case "blendpd": {
       const width = m === "pblendw" ? 2 : m === "blendps" ? 4 : 8;
       const mask = new Uint8Array(16);
       for (let i = 0; i < 16 / width; i++) {
@@ -742,16 +986,29 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "minps": case "maxps": case "minpd": case "maxpd": {
+    case "minps":
+    case "maxps":
+    case "minpd":
+    case "maxpd": {
       // x86 returns the second operand when either is NaN or both are
       // zero, which is wasm's pmin/pmax with the operands swapped.
       loadV(src);
       loadV(dst);
-      c[{ minps: "f32x4_pmin", maxps: "f32x4_pmax", minpd: "f64x2_pmin", maxpd: "f64x2_pmax" }[m]]();
+      c[
+        {
+          minps: "f32x4_pmin",
+          maxps: "f32x4_pmax",
+          minpd: "f64x2_pmin",
+          maxpd: "f64x2_pmax",
+        }[m]
+      ]();
       storeV(dst);
       return true;
     }
-    case "minss": case "maxss": case "minsd": case "maxsd": {
+    case "minss":
+    case "maxss":
+    case "minsd":
+    case "maxsd": {
       const f32 = m.endsWith("ss");
       const a = f32 ? e.tF32() : e.tF64();
       const b = f32 ? e.tF32() : e.tF64();
@@ -774,7 +1031,10 @@ export function emitSimd(e, insn, ops) {
       storeV(dst);
       return true;
     }
-    case "sqrtss": case "sqrtsd": case "rcpss": case "rsqrtss": {
+    case "sqrtss":
+    case "sqrtsd":
+    case "rcpss":
+    case "rsqrtss": {
       const f32 = m.endsWith("ss");
       loadV(dst);
       loadV(src, f32 ? 4 : 8);
@@ -809,7 +1069,10 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "comiss": case "comisd": case "ucomiss": case "ucomisd": {
+    case "comiss":
+    case "comisd":
+    case "ucomiss":
+    case "ucomisd": {
       const f32 = m.endsWith("ss");
       const a = f32 ? e.tF32() : e.tF64();
       const b = f32 ? e.tF32() : e.tF64();
@@ -840,7 +1103,10 @@ export function emitSimd(e, insn, ops) {
       return true;
     }
 
-    case "cmpss": case "cmpsd": case "cmpps": case "cmppd": {
+    case "cmpss":
+    case "cmpsd":
+    case "cmpps":
+    case "cmppd": {
       const f32 = m.endsWith("ss") || m.endsWith("ps");
       const packed = m.endsWith("ps") || m.endsWith("pd");
       const pred = imm & 7;
@@ -848,13 +1114,28 @@ export function emitSimd(e, insn, ops) {
         const lane = f32 ? "f32x4" : "f64x2";
         const emitCmp = (p) => {
           switch (p) {
-            case 0: c[`${lane}_eq`](); break;
-            case 1: c[`${lane}_lt`](); break;
-            case 2: c[`${lane}_le`](); break;
-            case 4: c[`${lane}_ne`](); break;
-            case 5: c[`${lane}_lt`](); c.v128_not(); break;
-            case 6: c[`${lane}_le`](); c.v128_not(); break;
-            default: throw new Unsupported(`cmp predicate ${p}`);
+            case 0:
+              c[`${lane}_eq`]();
+              break;
+            case 1:
+              c[`${lane}_lt`]();
+              break;
+            case 2:
+              c[`${lane}_le`]();
+              break;
+            case 4:
+              c[`${lane}_ne`]();
+              break;
+            case 5:
+              c[`${lane}_lt`]();
+              c.v128_not();
+              break;
+            case 6:
+              c[`${lane}_le`]();
+              c.v128_not();
+              break;
+            default:
+              throw new Unsupported(`cmp predicate ${p}`);
           }
         };
         if (pred === 3 || pred === 7) {
@@ -897,27 +1178,58 @@ export function emitSimd(e, insn, ops) {
         c.i32_or();
       };
       switch (pred) {
-        case 0: c.local_get(a).local_get(b); c[`${ty}_eq`](); break;
-        case 1: c.local_get(a).local_get(b); c[`${ty}_lt`](); break;
-        case 2: c.local_get(a).local_get(b); c[`${ty}_le`](); break;
-        case 3: unordered(); break;
-        case 4: c.local_get(a).local_get(b); c[`${ty}_ne`](); break;
-        case 5: c.local_get(a).local_get(b); c[`${ty}_lt`](); c.i32_eqz(); break;
-        case 6: c.local_get(a).local_get(b); c[`${ty}_le`](); c.i32_eqz(); break;
-        case 7: unordered(); c.i32_eqz(); break;
-        default: throw new Unsupported(`cmp predicate ${pred}`);
+        case 0:
+          c.local_get(a).local_get(b);
+          c[`${ty}_eq`]();
+          break;
+        case 1:
+          c.local_get(a).local_get(b);
+          c[`${ty}_lt`]();
+          break;
+        case 2:
+          c.local_get(a).local_get(b);
+          c[`${ty}_le`]();
+          break;
+        case 3:
+          unordered();
+          break;
+        case 4:
+          c.local_get(a).local_get(b);
+          c[`${ty}_ne`]();
+          break;
+        case 5:
+          c.local_get(a).local_get(b);
+          c[`${ty}_lt`]();
+          c.i32_eqz();
+          break;
+        case 6:
+          c.local_get(a).local_get(b);
+          c[`${ty}_le`]();
+          c.i32_eqz();
+          break;
+        case 7:
+          unordered();
+          c.i32_eqz();
+          break;
+        default:
+          throw new Unsupported(`cmp predicate ${pred}`);
       }
       // true -> all ones in the lane
       if (f32) {
         c.i32_const(-1).i32_mul().f32_reinterpret_i32().f32x4_replace_lane(0);
       } else {
-        c.i64_extend_i32_u().i64_const(-1n).i64_mul().f64_reinterpret_i64().f64x2_replace_lane(0);
+        c.i64_extend_i32_u()
+          .i64_const(-1n)
+          .i64_mul()
+          .f64_reinterpret_i64()
+          .f64x2_replace_lane(0);
       }
       storeV(dst);
       return true;
     }
 
-    case "cvtsi2ss": case "cvtsi2sd": {
+    case "cvtsi2ss":
+    case "cvtsi2sd": {
       const f32 = m.endsWith("ss");
       loadV(dst);
       e.load(src, src.size);
@@ -931,7 +1243,10 @@ export function emitSimd(e, insn, ops) {
       storeV(dst);
       return true;
     }
-    case "cvttss2si": case "cvttsd2si": case "cvtss2si": case "cvtsd2si": {
+    case "cvttss2si":
+    case "cvttsd2si":
+    case "cvtss2si":
+    case "cvtsd2si": {
       // Saturation matches the hardware below the range; above it, and
       // for NaN, the hardware returns the "integer indefinite", the
       // minimum value.
@@ -1026,13 +1341,16 @@ export function emitSimd(e, insn, ops) {
       c.local_get(x).v128_const(limit).f64x2_ge();
       c.v128_or();
       c.v128_const(ZERO16);
-      c.i8x16_shuffle([0, 1, 2, 3, 8, 9, 10, 11, 16, 16, 16, 16, 16, 16, 16, 16]);
+      c.i8x16_shuffle([
+        0, 1, 2, 3, 8, 9, 10, 11, 16, 16, 16, 16, 16, 16, 16, 16,
+      ]);
       c.v128_bitselect();
       storeV(dst);
       return true;
     }
 
-    case "roundss": case "roundsd": {
+    case "roundss":
+    case "roundsd": {
       const f32 = m.endsWith("ss");
       const mode = imm & 4 ? 0 : imm & 3;
       loadV(dst);
@@ -1045,12 +1363,23 @@ export function emitSimd(e, insn, ops) {
       storeV(dst);
       return true;
     }
-    case "roundps": case "roundpd": {
+    case "roundps":
+    case "roundpd": {
       const f32 = m.endsWith("ps");
       const mode = imm & 4 ? 0 : imm & 3;
       loadV(src);
-      const ops32 = ["f32x4_nearest", "f32x4_floor", "f32x4_ceil", "f32x4_trunc"];
-      const ops64 = ["f64x2_nearest", "f64x2_floor", "f64x2_ceil", "f64x2_trunc"];
+      const ops32 = [
+        "f32x4_nearest",
+        "f32x4_floor",
+        "f32x4_ceil",
+        "f32x4_trunc",
+      ];
+      const ops64 = [
+        "f64x2_nearest",
+        "f64x2_floor",
+        "f64x2_ceil",
+        "f64x2_trunc",
+      ];
       c[(f32 ? ops32 : ops64)[mode]]();
       storeV(dst);
       return true;
@@ -1066,7 +1395,6 @@ export function emitSimd(e, insn, ops) {
   }
 }
 
-
 // ---- AVX ----------------------------------------------------------
 //
 // A ymm register is its xmm global and a ymmh global for the upper
@@ -1078,7 +1406,18 @@ export function emitSimd(e, insn, ops) {
 // VEX.128 write clears the upper half. The instructions that cross
 // halves, or have no SSE form, are written out here.
 
-const VEX_SHIFT_IMM = new Set(["vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad", "vpsllw", "vpslld", "vpsllq", "vpsrldq", "vpslldq"]);
+const VEX_SHIFT_IMM = new Set([
+  "vpsrlw",
+  "vpsrld",
+  "vpsrlq",
+  "vpsraw",
+  "vpsrad",
+  "vpsllw",
+  "vpslld",
+  "vpsllq",
+  "vpsrldq",
+  "vpslldq",
+]);
 
 function emitVex(e, insn, ops, loadV, storeV) {
   const c = e.c;
@@ -1098,7 +1437,12 @@ function emitVex(e, insn, ops, loadV, storeV) {
   const half = (op, h, size = 16) => {
     if (isXmm(op)) {
       const g = regHalf(op.reg, h);
-      return { kind: "xmm", reg: op.reg, size, lane: { get: () => c.global_get(g), set: () => c.global_set(g) } };
+      return {
+        kind: "xmm",
+        reg: op.reg,
+        size,
+        lane: { get: () => c.global_get(g), set: () => c.global_set(g) },
+      };
     }
     if (isMem(op)) {
       return { ...op, size, disp: op.disp + BigInt(16 * h) };
@@ -1126,7 +1470,13 @@ function emitVex(e, insn, ops, loadV, storeV) {
   const perHalf = (name, build) => {
     for (let h = 0; h < halves; h++) {
       const legacy = build(h);
-      if (!emitSimd(e, { ...insn, mnemonic: name, vex: false, operands: legacy }, legacy)) {
+      if (
+        !emitSimd(
+          e,
+          { ...insn, mnemonic: name, vex: false, operands: legacy },
+          legacy,
+        )
+      ) {
         throw new Unsupported(`${m} via ${name}`);
       }
     }
@@ -1136,8 +1486,21 @@ function emitVex(e, insn, ops, loadV, storeV) {
 
   // Forms that write no vector register: the SSE emitter as is.
   const DIRECT = new Set([
-    "vcomiss", "vcomisd", "vucomiss", "vucomisd", "vpextrb", "vpextrw", "vpextrd", "vpextrq", "vextractps",
-    "vcvttss2si", "vcvttsd2si", "vcvtss2si", "vcvtsd2si", "vstmxcsr", "vldmxcsr",
+    "vcomiss",
+    "vcomisd",
+    "vucomiss",
+    "vucomisd",
+    "vpextrb",
+    "vpextrw",
+    "vpextrd",
+    "vpextrq",
+    "vextractps",
+    "vcvttss2si",
+    "vcvttsd2si",
+    "vcvtss2si",
+    "vcvtsd2si",
+    "vstmxcsr",
+    "vldmxcsr",
   ]);
   if (DIRECT.has(m)) {
     return emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops);
@@ -1145,7 +1508,16 @@ function emitVex(e, insn, ops, loadV, storeV) {
 
   switch (m) {
     // ---- moves ----
-    case "vmovdqu": case "vmovdqa": case "vmovups": case "vmovaps": case "vmovupd": case "vmovapd": case "vlddqu": case "vmovntdq": case "vmovntps": case "vmovntpd": {
+    case "vmovdqu":
+    case "vmovdqa":
+    case "vmovups":
+    case "vmovaps":
+    case "vmovupd":
+    case "vmovapd":
+    case "vlddqu":
+    case "vmovntdq":
+    case "vmovntps":
+    case "vmovntpd": {
       const src = ops[1];
       if (isXmm(dst)) {
         for (let h = 0; h < halves; h++) {
@@ -1161,17 +1533,23 @@ function emitVex(e, insn, ops, loadV, storeV) {
       }
       return true;
     }
-    case "vmovd": case "vmovq": {
+    case "vmovd":
+    case "vmovq": {
       const wrote = emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops);
       if (wrote && isXmm(dst)) {
         zeroUpper(dst.reg);
       }
       return wrote;
     }
-    case "vmovss": case "vmovsd": {
+    case "vmovss":
+    case "vmovsd": {
       if (ops.length === 3 && isMem(ops[2])) {
         // A load: the register operand in the middle is not used.
-        const wrote = emitSimd(e, { ...insn, mnemonic: base, vex: false, operands: [dst, ops[2]] }, [dst, ops[2]]);
+        const wrote = emitSimd(
+          e,
+          { ...insn, mnemonic: base, vex: false, operands: [dst, ops[2]] },
+          [dst, ops[2]],
+        );
         if (wrote) {
           zeroUpper(dst.reg);
         }
@@ -1182,7 +1560,19 @@ function emitVex(e, insn, ops, loadV, storeV) {
         const width = m === "vmovss" ? 4 : 8;
         loadV(ops[1]);
         loadV(ops[2]);
-        c.i8x16_shuffle(width === 4 ? lanesOf(4, [[1, 0], [0, 1], [0, 2], [0, 3]]) : lanesOf(8, [[1, 0], [0, 1]]));
+        c.i8x16_shuffle(
+          width === 4
+            ? lanesOf(4, [
+                [1, 0],
+                [0, 1],
+                [0, 2],
+                [0, 3],
+              ])
+            : lanesOf(8, [
+                [1, 0],
+                [0, 1],
+              ]),
+        );
         c.global_set(e.g[`xmm${dst.reg}`]);
         zeroUpper(dst.reg);
         return true;
@@ -1193,7 +1583,10 @@ function emitVex(e, insn, ops, loadV, storeV) {
       }
       return wrote;
     }
-    case "vmovlps": case "vmovhps": case "vmovlpd": case "vmovhpd": {
+    case "vmovlps":
+    case "vmovhps":
+    case "vmovlpd":
+    case "vmovhpd": {
       if (ops.length === 3) {
         // dst = src1 with one half from memory
         loadV(ops[1]);
@@ -1206,7 +1599,9 @@ function emitVex(e, insn, ops, loadV, storeV) {
         c.drop();
         e.address32(ops[2]);
         c.local_get(v);
-        m.endsWith("lps") || m.endsWith("lpd") ? c.v128_load64_lane(0, 0) : c.v128_load64_lane(1, 0);
+        m.endsWith("lps") || m.endsWith("lpd")
+          ? c.v128_load64_lane(0, 0)
+          : c.v128_load64_lane(1, 0);
         c.global_set(e.g[`xmm${dst.reg}`]);
         zeroUpper(dst.reg);
         return true;
@@ -1226,8 +1621,20 @@ function emitVex(e, insn, ops, loadV, storeV) {
       return true;
 
     // ---- broadcasts ----
-    case "vpbroadcastb": case "vpbroadcastw": case "vpbroadcastd": case "vpbroadcastq": case "vbroadcastss": case "vbroadcastsd": {
-      const width = { vpbroadcastb: 1, vpbroadcastw: 2, vpbroadcastd: 4, vpbroadcastq: 8, vbroadcastss: 4, vbroadcastsd: 8 }[m];
+    case "vpbroadcastb":
+    case "vpbroadcastw":
+    case "vpbroadcastd":
+    case "vpbroadcastq":
+    case "vbroadcastss":
+    case "vbroadcastsd": {
+      const width = {
+        vpbroadcastb: 1,
+        vpbroadcastw: 2,
+        vpbroadcastd: 4,
+        vpbroadcastq: 8,
+        vbroadcastss: 4,
+        vbroadcastsd: 8,
+      }[m];
       const src = ops[1];
       if (isMem(src)) {
         e.address32(src);
@@ -1254,10 +1661,17 @@ function emitVex(e, insn, ops, loadV, storeV) {
     }
 
     // ---- masks over both halves ----
-    case "vpmovmskb": case "vmovmskps": case "vmovmskpd": {
+    case "vpmovmskb":
+    case "vmovmskps":
+    case "vmovmskpd": {
       const src = ops[1];
       const bits = m === "vpmovmskb" ? 16 : m === "vmovmskps" ? 4 : 2;
-      const op = m === "vpmovmskb" ? "i8x16_bitmask" : m === "vmovmskps" ? "i32x4_bitmask" : "i64x2_bitmask";
+      const op =
+        m === "vpmovmskb"
+          ? "i8x16_bitmask"
+          : m === "vmovmskps"
+            ? "i32x4_bitmask"
+            : "i64x2_bitmask";
       const wide2 = src.size === 32;
       c.global_get(regHalf(src.reg, 0));
       c[op]();
@@ -1282,8 +1696,22 @@ function emitVex(e, insn, ops, loadV, storeV) {
         loadV(half(ops[1], h), 16);
         c.local_set(b0);
         c.local_set(a0);
-        c.local_get(a0).local_get(b0).v128_and().v128_any_true().i32_eqz().local_get(zf).i32_and().local_set(zf);
-        c.local_get(b0).local_get(a0).v128_andnot().v128_any_true().i32_eqz().local_get(cf).i32_and().local_set(cf);
+        c.local_get(a0)
+          .local_get(b0)
+          .v128_and()
+          .v128_any_true()
+          .i32_eqz()
+          .local_get(zf)
+          .i32_and()
+          .local_set(zf);
+        c.local_get(b0)
+          .local_get(a0)
+          .v128_andnot()
+          .v128_any_true()
+          .i32_eqz()
+          .local_get(cf)
+          .i32_and()
+          .local_set(cf);
       }
       c.local_get(zf).i32_const(6).i32_shl().local_get(cf).i32_or();
       e.setEflags();
@@ -1292,12 +1720,27 @@ function emitVex(e, insn, ops, loadV, storeV) {
     }
 
     // ---- widening and narrowing across halves ----
-    case "vpmovzxbw": case "vpmovsxbw": case "vpmovzxbd": case "vpmovsxbd": case "vpmovzxbq": case "vpmovsxbq":
-    case "vpmovzxwd": case "vpmovsxwd": case "vpmovzxwq": case "vpmovsxwq": case "vpmovzxdq": case "vpmovsxdq": {
+    case "vpmovzxbw":
+    case "vpmovsxbw":
+    case "vpmovzxbd":
+    case "vpmovsxbd":
+    case "vpmovzxbq":
+    case "vpmovsxbq":
+    case "vpmovzxwd":
+    case "vpmovsxwd":
+    case "vpmovzxwq":
+    case "vpmovsxwq":
+    case "vpmovzxdq":
+    case "vpmovsxdq": {
       const src = ops[1];
-      const srcHalfBytes = { bw: 8, bd: 4, bq: 2, wd: 8, wq: 4, dq: 8 }[m.slice(7, 9)];
+      const srcHalfBytes = { bw: 8, bd: 4, bq: 2, wd: 8, wq: 4, dq: 8 }[
+        m.slice(7, 9)
+      ];
       if (!wide) {
-        return emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) && (zeroUpper(dst.reg), true);
+        return (
+          emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) &&
+          (zeroUpper(dst.reg), true)
+        );
       }
       // Two halves from the low 16 bytes of the source: the second
       // from the bytes srcHalfBytes on.
@@ -1305,59 +1748,108 @@ function emitVex(e, insn, ops, loadV, storeV) {
       loadV(isMem(src) ? { ...src, size: 16 } : src, 16);
       c.local_set(v);
       for (let h = 0; h < halves; h++) {
-        const shifted = { kind: "xmm", reg: 0, size: 16, lane: { get: () => {
-          c.local_get(v);
-          if (h === 1) {
-            const lanes = [];
-            for (let i = 0; i < 16; i++) {
-              lanes.push(i + srcHalfBytes < 16 ? i + srcHalfBytes : 16);
-            }
-            c.v128_const(new Uint8Array(16)).i8x16_shuffle(lanes);
-          }
-        }, set: () => {} } };
+        const shifted = {
+          kind: "xmm",
+          reg: 0,
+          size: 16,
+          lane: {
+            get: () => {
+              c.local_get(v);
+              if (h === 1) {
+                const lanes = [];
+                for (let i = 0; i < 16; i++) {
+                  lanes.push(i + srcHalfBytes < 16 ? i + srcHalfBytes : 16);
+                }
+                c.v128_const(new Uint8Array(16)).i8x16_shuffle(lanes);
+              }
+            },
+            set: () => {},
+          },
+        };
         const legacy = [dstLane(dst, h), shifted];
-        emitSimd(e, { ...insn, mnemonic: base, vex: false, operands: legacy }, legacy);
+        emitSimd(
+          e,
+          { ...insn, mnemonic: base, vex: false, operands: legacy },
+          legacy,
+        );
       }
       return true;
     }
-    case "vcvtdq2pd": case "vcvtps2pd": {
+    case "vcvtdq2pd":
+    case "vcvtps2pd": {
       if (!wide) {
-        return emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) && (zeroUpper(dst.reg), true);
+        return (
+          emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) &&
+          (zeroUpper(dst.reg), true)
+        );
       }
       const src = ops[1];
       const v = e.t128();
       loadV(isMem(src) ? { ...src, size: 16 } : src, 16);
       c.local_set(v);
       c.local_get(v);
-      m === "vcvtdq2pd" ? c.f64x2_convert_low_i32x4_s() : c.f64x2_promote_low_f32x4();
+      m === "vcvtdq2pd"
+        ? c.f64x2_convert_low_i32x4_s()
+        : c.f64x2_promote_low_f32x4();
       c.global_set(regHalf(dst.reg, 0));
-      c.local_get(v).local_get(v).i8x16_shuffle(lanesOf(8, [[0, 1], [0, 1]]));
-      m === "vcvtdq2pd" ? c.f64x2_convert_low_i32x4_s() : c.f64x2_promote_low_f32x4();
+      c.local_get(v)
+        .local_get(v)
+        .i8x16_shuffle(
+          lanesOf(8, [
+            [0, 1],
+            [0, 1],
+          ]),
+        );
+      m === "vcvtdq2pd"
+        ? c.f64x2_convert_low_i32x4_s()
+        : c.f64x2_promote_low_f32x4();
       c.global_set(regHalf(dst.reg, 1));
       return true;
     }
-    case "vcvtpd2ps": case "vcvttpd2dq": case "vcvtpd2dq": {
+    case "vcvtpd2ps":
+    case "vcvttpd2dq":
+    case "vcvtpd2dq": {
       const src = ops[1];
       if (src.size !== 32) {
-        return emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) && (zeroUpper(dst.reg), true);
+        return (
+          emitSimd(e, { ...insn, mnemonic: base, vex: false }, ops) &&
+          (zeroUpper(dst.reg), true)
+        );
       }
       // Each half narrows to 8 bytes; the results sit side by side.
       const lo = e.t128();
       const hi = e.t128();
-      const tmpLane = (local) => ({ kind: "xmm", reg: 0, size: 16, lane: { get: () => c.local_get(local), set: () => c.local_set(local) } });
+      const tmpLane = (local) => ({
+        kind: "xmm",
+        reg: 0,
+        size: 16,
+        lane: { get: () => c.local_get(local), set: () => c.local_set(local) },
+      });
       for (let h = 0; h < 2; h++) {
         const out = h === 0 ? lo : hi;
         const legacy = [tmpLane(out), half(src, h)];
-        emitSimd(e, { ...insn, mnemonic: base, vex: false, operands: legacy }, legacy);
+        emitSimd(
+          e,
+          { ...insn, mnemonic: base, vex: false, operands: legacy },
+          legacy,
+        );
       }
-      c.local_get(lo).local_get(hi).i8x16_shuffle(lanesOf(8, [[0, 0], [1, 0]]));
+      c.local_get(lo)
+        .local_get(hi)
+        .i8x16_shuffle(
+          lanesOf(8, [
+            [0, 0],
+            [1, 0],
+          ]),
+        );
       c.global_set(e.g[`xmm${dst.reg}`]);
       zeroUpper(dst.reg);
       return true;
     }
 
     // ---- lane moves ----
-    case "vextracti128": case "vextractf128": {
+    case "vextracti128":
+    case "vextractf128": {
       const which = Number(ops[2].value) & 1;
       c.global_get(regHalf(ops[1].reg, which));
       if (isXmm(dst)) {
@@ -1368,7 +1860,8 @@ function emitVex(e, insn, ops, loadV, storeV) {
       }
       return true;
     }
-    case "vinserti128": case "vinsertf128": {
+    case "vinserti128":
+    case "vinsertf128": {
       const which = Number(ops[3].value) & 1;
       for (let h = 0; h < 2; h++) {
         if (h === which) {
@@ -1380,7 +1873,8 @@ function emitVex(e, insn, ops, loadV, storeV) {
       }
       return true;
     }
-    case "vperm2i128": case "vperm2f128": {
+    case "vperm2i128":
+    case "vperm2f128": {
       const imm = Number(ops[3].value);
       const pick = (sel) => {
         if (sel & 8) {
@@ -1400,7 +1894,8 @@ function emitVex(e, insn, ops, loadV, storeV) {
       c.local_get(hi).global_set(regHalf(dst.reg, 1));
       return true;
     }
-    case "vpermq": case "vpermpd": {
+    case "vpermq":
+    case "vpermpd": {
       const imm = Number(ops[2].value);
       const lo = e.t128();
       const hi = e.t128();
@@ -1413,12 +1908,18 @@ function emitVex(e, insn, ops, loadV, storeV) {
         const a = qword((imm >> (4 * h)) & 3);
         const b = qword((imm >> (4 * h + 2)) & 3);
         c.local_get(lo).local_get(hi);
-        c.i8x16_shuffle(lanesOf(8, [[a.op, a.lane], [b.op, b.lane]]));
+        c.i8x16_shuffle(
+          lanesOf(8, [
+            [a.op, a.lane],
+            [b.op, b.lane],
+          ]),
+        );
         c.global_set(regHalf(dst.reg, h));
       }
       return true;
     }
-    case "vpermd": case "vpermps": {
+    case "vpermd":
+    case "vpermps": {
       // Each dword of the result selects one of the eight source
       // dwords by the index in the first source: done by extracting.
       const idx = ops[1];
@@ -1437,12 +1938,18 @@ function emitVex(e, insn, ops, loadV, storeV) {
         for (let lane = 0; lane < 4; lane++) {
           // value = select(index & 4 ? hi : lo)[index & 3]
           const i = e.t32();
-          c.local_get(sel).i32x4_extract_lane(lane).i32_const(7).i32_and().local_set(i);
+          c.local_get(sel)
+            .i32x4_extract_lane(lane)
+            .i32_const(7)
+            .i32_and()
+            .local_set(i);
           const val = e.t32();
           c.i32_const(0).local_set(val);
           for (let k = 0; k < 8; k++) {
             c.local_get(i).i32_const(k).i32_eq().if_(T.empty);
-            c.local_get(k < 4 ? lo : hi).i32x4_extract_lane(k & 3).local_set(val);
+            c.local_get(k < 4 ? lo : hi)
+              .i32x4_extract_lane(k & 3)
+              .local_set(val);
             c.end();
           }
           c.local_get(val).i32x4_replace_lane(lane);
@@ -1468,8 +1975,15 @@ function emitVex(e, insn, ops, loadV, storeV) {
       finish();
       return true;
     }
-    case "vpblendvb": case "vblendvps": case "vblendvpd": {
-      const shift = m === "vpblendvb" ? ["i8x16_shr_s", 7] : m === "vblendvps" ? ["i32x4_shr_s", 31] : ["i64x2_shr_s", 63];
+    case "vpblendvb":
+    case "vblendvps":
+    case "vblendvpd": {
+      const shift =
+        m === "vpblendvb"
+          ? ["i8x16_shr_s", 7]
+          : m === "vblendvps"
+            ? ["i32x4_shr_s", 31]
+            : ["i64x2_shr_s", 63];
       for (let h = 0; h < halves; h++) {
         loadV(half(ops[2], h), 16);
         loadV(half(ops[1], h), 16);
@@ -1511,7 +2025,12 @@ function emitVex(e, insn, ops, loadV, storeV) {
       loadV(half(ops[2], h), scalar ? (f32 ? 4 : 8) : 16);
       c.local_set(cc);
       // 132: a*c + b; 213: b*a + c; 231: b*c + a
-      const [x, y, z] = order === "132" ? [a, cc, b] : order === "213" ? [b, a, cc] : [b, cc, a];
+      const [x, y, z] =
+        order === "132"
+          ? [a, cc, b]
+          : order === "213"
+            ? [b, a, cc]
+            : [b, cc, a];
       // The untouched lanes of a scalar form come from the destination.
       c.local_get(a).local_set(out);
       for (let lane = 0; lane < lanes; lane++) {
@@ -1540,13 +2059,28 @@ function emitVex(e, insn, ops, loadV, storeV) {
           // is rounded to odd so the demotion is the one rounding.
           const zz = e.tF64();
           const r = e.tF32();
-          c.local_set(zz).f64_mul().local_get(zz).call(e.ctx.helpers.round_odd_add).f32_demote_f64().local_tee(r);
-          c.i32_const(0xffc00000 | 0).f32_reinterpret_i32().local_get(r).local_get(r).f32_eq().select();
+          c.local_set(zz)
+            .f64_mul()
+            .local_get(zz)
+            .call(e.ctx.helpers.round_odd_add)
+            .f32_demote_f64()
+            .local_tee(r);
+          c.i32_const(0xffc00000 | 0)
+            .f32_reinterpret_i32()
+            .local_get(r)
+            .local_get(r)
+            .f32_eq()
+            .select();
           c.f32x4_replace_lane(lane);
         } else {
           const r = e.tF64();
           c.call(fma64).local_tee(r);
-          c.i64_const(0xfff8000000000000n).f64_reinterpret_i64().local_get(r).local_get(r).f64_eq().select();
+          c.i64_const(0xfff8000000000000n)
+            .f64_reinterpret_i64()
+            .local_get(r)
+            .local_get(r)
+            .f64_eq()
+            .select();
           c.f64x2_replace_lane(lane);
         }
         c.local_set(out);
@@ -1570,10 +2104,18 @@ function emitVex(e, insn, ops, loadV, storeV) {
     return perHalf(base, (h) => [dstLane(sources[0], h), imms[0]]);
   }
   if (sources.length === 1) {
-    return perHalf(base, (h) => [dstLane(sources[0], h), half(sources[0], h, laneSize(sources[0])), ...imms]);
+    return perHalf(base, (h) => [
+      dstLane(sources[0], h),
+      half(sources[0], h, laneSize(sources[0])),
+      ...imms,
+    ]);
   }
   if (sources.length === 2) {
-    return perHalf(base, (h) => [dstLane(sources[0], h), half(sources[1], h, laneSize(sources[1])), ...imms]);
+    return perHalf(base, (h) => [
+      dstLane(sources[0], h),
+      half(sources[1], h, laneSize(sources[1])),
+      ...imms,
+    ]);
   }
   throw new Unsupported(m);
 }

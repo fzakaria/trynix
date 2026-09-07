@@ -18,7 +18,15 @@ import { Channel, createChannel, STATE } from "./channel.js";
 import { E, Errno } from "./errno.js";
 import { OP } from "./ops.js";
 import { waitAsync } from "./platform.js";
-import { DEFAULT_TERMIOS, decodeTermios, encodeDirents, encodeStat, encodeTermios, packStrings, unpackStrings } from "./structs.js";
+import {
+  DEFAULT_TERMIOS,
+  decodeTermios,
+  encodeDirents,
+  encodeStat,
+  encodeTermios,
+  packStrings,
+  unpackStrings,
+} from "./structs.js";
 
 const PAGE_SIZE = 4096n;
 const PAGE_MASK = ~0xfffn;
@@ -89,9 +97,27 @@ const EPOLL_CTL_MOD = 3;
 
 const WNOHANG = 1;
 
-const SIG = Object.freeze({ HUP: 1, INT: 2, QUIT: 3, KILL: 9, PIPE: 13, ALRM: 14, TERM: 15, CHLD: 17, CONT: 18, STOP: 19, TSTP: 20, WINCH: 28, URG: 23 });
+const SIG = Object.freeze({
+  HUP: 1,
+  INT: 2,
+  QUIT: 3,
+  KILL: 9,
+  PIPE: 13,
+  ALRM: 14,
+  TERM: 15,
+  CHLD: 17,
+  CONT: 18,
+  STOP: 19,
+  TSTP: 20,
+  WINCH: 28,
+  URG: 23,
+});
 // Signals whose default action is to do nothing.
-const DEFAULT_IGNORED = (1 << (SIG.CHLD - 1)) | (1 << (SIG.WINCH - 1)) | (1 << (SIG.URG - 1)) | (1 << (SIG.CONT - 1));
+const DEFAULT_IGNORED =
+  (1 << (SIG.CHLD - 1)) |
+  (1 << (SIG.WINCH - 1)) |
+  (1 << (SIG.URG - 1)) |
+  (1 << (SIG.CONT - 1));
 const MAX_SIGNAL = 31;
 
 const INIT_PID = 1;
@@ -176,7 +202,15 @@ export class Kernel {
   // spawn: (data) -> Promise<worker port>, where data says what kind
   //   of task to start; store: passed to every worker so it can read
   //   store files itself (null when the kernel reads for it).
-  constructor({ fs, tty, spawn, translations = new Map(), onTranslation = null, log = () => {}, memoryPages = 16384 }) {
+  constructor({
+    fs,
+    tty,
+    spawn,
+    translations = new Map(),
+    onTranslation = null,
+    log = () => {},
+    memoryPages = 16384,
+  }) {
     this.fs = fs;
     this.tty = tty;
     this.spawn = spawn;
@@ -308,7 +342,9 @@ export class Kernel {
       if (e instanceof Errno) {
         result = -e.errno;
       } else {
-        this.log(`kernel: op ${ch.op} from ${task.proc.pid}: ${e.stack ?? e.message}`);
+        this.log(
+          `kernel: op ${ch.op} from ${task.proc.pid}: ${e.stack ?? e.message}`,
+        );
         result = -E.IO;
       }
     }
@@ -373,14 +409,34 @@ export class Kernel {
   statOf(d) {
     switch (d.kind) {
       case "tty":
-        return { mode: S_IFCHR | 0o620, size: 0, blksize: 1024, nlink: 1, rdev: 0x8800, ino: d.id };
+        return {
+          mode: S_IFCHR | 0o620,
+          size: 0,
+          blksize: 1024,
+          nlink: 1,
+          rdev: 0x8800,
+          ino: d.id,
+        };
       case "pipe-r":
       case "pipe-w":
-        return { mode: S_IFIFO | 0o600, size: d.pipe.length, blksize: 4096, nlink: 1, ino: d.id };
+        return {
+          mode: S_IFIFO | 0o600,
+          size: d.pipe.length,
+          blksize: 4096,
+          nlink: 1,
+          ino: d.id,
+        };
       case "eventfd":
       case "epoll":
       case "device":
-        return { mode: S_IFCHR | 0o666, size: 0, blksize: 4096, nlink: 1, ino: d.id, rdev: 0x103 };
+        return {
+          mode: S_IFCHR | 0o666,
+          size: 0,
+          blksize: 4096,
+          nlink: 1,
+          ino: d.id,
+          rdev: 0x103,
+        };
       default:
         return d.file.stat();
     }
@@ -395,19 +451,34 @@ export class Kernel {
     if (path.startsWith("/")) {
       return normalize(path);
     }
-    const base = Number(BigInt.asIntN(32, BigInt(dirfd))) === AT_FDCWD ? proc.cwd : this.desc(proc, dirfd).path;
+    const base =
+      Number(BigInt.asIntN(32, BigInt(dirfd))) === AT_FDCWD
+        ? proc.cwd
+        : this.desc(proc, dirfd).path;
     return normalize(base.endsWith("/") ? base + path : `${base}/${path}`);
   }
 
   // The devices every program expects: the terminal, null, zero, the
   // random sources, and the standard streams by name.
   openDevice(proc, path, flags) {
-    const STREAMS = { "/dev/stdin": 0, "/dev/stdout": 1, "/dev/stderr": 2, "/proc/self/fd/0": 0, "/proc/self/fd/1": 1, "/proc/self/fd/2": 2 };
+    const STREAMS = {
+      "/dev/stdin": 0,
+      "/dev/stdout": 1,
+      "/dev/stderr": 2,
+      "/proc/self/fd/0": 0,
+      "/proc/self/fd/1": 1,
+      "/proc/self/fd/2": 2,
+    };
     let d;
     if (path === "/dev/tty" || path === "/dev/console") {
       d = this.newDesc("tty");
       d.stream = 1;
-    } else if (path === "/dev/null" || path === "/dev/zero" || path === "/dev/urandom" || path === "/dev/random") {
+    } else if (
+      path === "/dev/null" ||
+      path === "/dev/zero" ||
+      path === "/dev/urandom" ||
+      path === "/dev/random"
+    ) {
       d = this.newDesc("device");
       d.device = path.slice(5);
     } else if (STREAMS[path] !== undefined) {
@@ -463,7 +534,9 @@ export class Kernel {
       return proc.memory.buffer.byteLength;
     }
     // Before the worker reports its memory, the initial size.
-    return proc.free.reduce((max, r) => (r[1] > max ? r[1] : max), 0n) > 0n ? Number(proc.free[proc.free.length - 1][1]) : this.memoryPages * WASM_PAGE;
+    return proc.free.reduce((max, r) => (r[1] > max ? r[1] : max), 0n) > 0n
+      ? Number(proc.free[proc.free.length - 1][1])
+      : this.memoryPages * WASM_PAGE;
   }
 
   growMemory(proc, pages) {
@@ -508,7 +581,10 @@ export class Kernel {
     proc.free = out;
     const size = BigInt(this.memorySize(proc));
     if (hi > size) {
-      this.growMemory(proc, Number((hi - size + BigInt(WASM_PAGE) - 1n) / BigInt(WASM_PAGE)));
+      this.growMemory(
+        proc,
+        Number((hi - size + BigInt(WASM_PAGE) - 1n) / BigInt(WASM_PAGE)),
+      );
     }
   }
 
@@ -519,7 +595,13 @@ export class Kernel {
 
   addMapping(proc, lo, hi, file, fileOffset, writable = true) {
     this.dropMapping(proc, lo, hi);
-    proc.mappings.push({ lo, hi, file, base: lo - BigInt(fileOffset), writable });
+    proc.mappings.push({
+      lo,
+      hi,
+      file,
+      base: lo - BigInt(fileOffset),
+      writable,
+    });
   }
 
   // Changes the writability of [lo, hi), splitting mappings at the
@@ -534,7 +616,12 @@ export class Kernel {
       if (m.lo < lo) {
         out.push({ ...m, hi: lo });
       }
-      out.push({ ...m, lo: m.lo > lo ? m.lo : lo, hi: m.hi < hi ? m.hi : hi, writable });
+      out.push({
+        ...m,
+        lo: m.lo > lo ? m.lo : lo,
+        hi: m.hi < hi ? m.hi : hi,
+        writable,
+      });
       if (m.hi > hi) {
         out.push({ ...m, lo: hi });
       }
@@ -622,7 +709,9 @@ export class Kernel {
   }
 
   tryWait(proc, pid, options) {
-    let candidates = [...proc.children].map((p) => this.procs.get(p)).filter(Boolean);
+    let candidates = [...proc.children]
+      .map((p) => this.procs.get(p))
+      .filter(Boolean);
     if (pid > 0) {
       candidates = candidates.filter((c) => c.pid === pid);
     } else if (pid === 0) {
@@ -679,7 +768,9 @@ export class Kernel {
     if (kind === "tty") {
       this.ttyWaiters = this.ttyWaiters.filter((t) => t !== task);
     } else if (kind === "pipe") {
-      task.parked.pipe.waiting = task.parked.pipe.waiting.filter((t) => t !== task);
+      task.parked.pipe.waiting = task.parked.pipe.waiting.filter(
+        (t) => t !== task,
+      );
     }
     if (kind === "fork") {
       return;
@@ -865,7 +956,11 @@ export class Kernel {
         const d = this.newDesc(isDir ? "dir" : "file");
         d.path = real;
         d.flags = flags & ~O_CLOEXEC;
-        d.file = this.fs.open(real, flags & ~(O_CLOEXEC | O_NONBLOCK), mode & ~proc.umask);
+        d.file = this.fs.open(
+          real,
+          flags & ~(O_CLOEXEC | O_NONBLOCK),
+          mode & ~proc.umask,
+        );
         const fd = this.install(proc, d);
         if (flags & O_CLOEXEC) {
           proc.cloexec.add(fd);
@@ -906,7 +1001,9 @@ export class Kernel {
           const out = new Uint8Array(Math.min(len, ch.payload.length));
           if (d.device !== "zero") {
             for (let i = 0; i < out.length; i += 65536) {
-              crypto.getRandomValues(out.subarray(i, Math.min(out.length, i + 65536)));
+              crypto.getRandomValues(
+                out.subarray(i, Math.min(out.length, i + 65536)),
+              );
             }
           }
           return { result: out.length, payload: out };
@@ -934,7 +1031,10 @@ export class Kernel {
           return data.length;
         }
         if (d.kind === "eventfd") {
-          d.count += new DataView(data.buffer, data.byteOffset).getBigUint64(0, true);
+          d.count += new DataView(data.buffer, data.byteOffset).getBigUint64(
+            0,
+            true,
+          );
           return 8;
         }
         if (d.kind === "device") {
@@ -993,25 +1093,46 @@ export class Kernel {
         return pos;
       }
       case OP.FSTAT:
-        return { result: 0, payload: encodeStat(this.statOf(this.desc(proc, a(0)))) };
+        return {
+          result: 0,
+          payload: encodeStat(this.statOf(this.desc(proc, a(0)))),
+        };
       case OP.STATAT: {
         const [path] = strings();
         const flags = Number(a(1));
         if (path === "" && flags & AT_EMPTY_PATH) {
-          return { result: 0, payload: encodeStat(this.statOf(this.desc(proc, a(0)))) };
+          return {
+            result: 0,
+            payload: encodeStat(this.statOf(this.desc(proc, a(0)))),
+          };
         }
         const resolved = this.resolvePath(proc, a(0), path);
         const virt = this.virtual(proc, resolved);
         if (virt !== null && flags & AT_SYMLINK_NOFOLLOW) {
-          return { result: 0, payload: encodeStat({ mode: S_IFLNK | 0o777, size: virt.length, nlink: 1 }) };
+          return {
+            result: 0,
+            payload: encodeStat({
+              mode: S_IFLNK | 0o777,
+              size: virt.length,
+              nlink: 1,
+            }),
+          };
         }
-        return { result: 0, payload: encodeStat(this.fs.stat(virt ?? resolved, !(flags & AT_SYMLINK_NOFOLLOW))) };
+        return {
+          result: 0,
+          payload: encodeStat(
+            this.fs.stat(virt ?? resolved, !(flags & AT_SYMLINK_NOFOLLOW)),
+          ),
+        };
       }
       case OP.READLINKAT: {
         const [path] = strings();
         const resolved = this.resolvePath(proc, a(0), path);
-        const target = this.virtual(proc, resolved) ?? this.fs.readlink(resolved);
-        const bytes = new TextEncoder().encode(target).subarray(0, Number(a(1)));
+        const target =
+          this.virtual(proc, resolved) ?? this.fs.readlink(resolved);
+        const bytes = new TextEncoder()
+          .encode(target)
+          .subarray(0, Number(a(1)));
         return { result: bytes.length, payload: bytes };
       }
       case OP.FACCESSAT: {
@@ -1021,7 +1142,10 @@ export class Kernel {
       }
       case OP.MKDIRAT: {
         const [path] = strings();
-        this.fs.mkdir(this.resolvePath(proc, a(0), path), Number(a(1)) & ~proc.umask);
+        this.fs.mkdir(
+          this.resolvePath(proc, a(0), path),
+          Number(a(1)) & ~proc.umask,
+        );
         return 0;
       }
       case OP.UNLINKAT: {
@@ -1036,7 +1160,10 @@ export class Kernel {
       }
       case OP.RENAMEAT: {
         const [from, to] = strings();
-        this.fs.rename(this.resolvePath(proc, a(0), from), this.resolvePath(proc, a(1), to));
+        this.fs.rename(
+          this.resolvePath(proc, a(0), from),
+          this.resolvePath(proc, a(1), to),
+        );
         return 0;
       }
       case OP.SYMLINKAT: {
@@ -1060,9 +1187,17 @@ export class Kernel {
           throw new Errno(E.NOTDIR);
         }
         if (d.entries === null) {
-          d.entries = [{ name: ".", type: 4, ino: 1 }, { name: "..", type: 4, ino: 1 }, ...d.file.readdir()];
+          d.entries = [
+            { name: ".", type: 4, ino: 1 },
+            { name: "..", type: 4, ino: 1 },
+            ...d.file.readdir(),
+          ];
         }
-        const { bytes, consumed } = encodeDirents(d.entries, d.pos, Math.min(Number(a(1)), ch.payload.length));
+        const { bytes, consumed } = encodeDirents(
+          d.entries,
+          d.pos,
+          Math.min(Number(a(1)), ch.payload.length),
+        );
         d.pos += consumed;
         return { result: bytes.length, payload: bytes };
       }
@@ -1280,7 +1415,14 @@ export class Kernel {
           file = d.path;
         }
         const prot = Number(a(2));
-        this.addMapping(proc, at, at + BigInt(size), file, file === null ? 0 : offset, (prot & PROT_WRITE) !== 0);
+        this.addMapping(
+          proc,
+          at,
+          at + BigInt(size),
+          file,
+          file === null ? 0 : offset,
+          (prot & PROT_WRITE) !== 0,
+        );
         // The worker fills the range: zero below the high-water mark,
         // then the file's bytes; it is told whether zeroing is needed.
         const needZero = at < proc.highWater ? 1n : 0n;
@@ -1288,7 +1430,10 @@ export class Kernel {
         if (hi > proc.highWater) {
           proc.highWater = hi;
         }
-        return { result: at, payload: packStrings([needZero.toString(), file ?? ""]) };
+        return {
+          result: at,
+          payload: packStrings([needZero.toString(), file ?? ""]),
+        };
       }
       case OP_MUNMAP: {
         const lo = BigInt.asUintN(64, a(0)) & PAGE_MASK;
@@ -1334,7 +1479,14 @@ export class Kernel {
         // The loader's segments: a file's code is read-only, the rest
         // writable, which is what decides whether translated blocks
         // must watch for their bytes changing.
-        this.addMapping(proc, lo, hi, file === "" ? null : file, Number(a(2)), file === "");
+        this.addMapping(
+          proc,
+          lo,
+          hi,
+          file === "" ? null : file,
+          Number(a(2)),
+          file === "",
+        );
         const needZero = lo < proc.highWater ? 1n : 0n;
         if (hi > proc.highWater) {
           proc.highWater = hi;
@@ -1354,7 +1506,16 @@ export class Kernel {
         const addr = BigInt.asUintN(64, a(0));
         for (const m of proc.mappings) {
           if (addr >= m.lo && addr < m.hi) {
-            return { result: 1, payload: packStrings([m.lo.toString(), m.hi.toString(), m.base.toString(), m.file ?? "", m.writable ? "w" : "r"]) };
+            return {
+              result: 1,
+              payload: packStrings([
+                m.lo.toString(),
+                m.hi.toString(),
+                m.base.toString(),
+                m.file ?? "",
+                m.writable ? "w" : "r",
+              ]),
+            };
           }
         }
         return 0;
@@ -1507,14 +1668,23 @@ export class Kernel {
         if (entry === undefined) {
           return -1;
         }
-        return { result: entry.bytes.length, payload: encodeTranslation(entry) };
+        return {
+          result: entry.bytes.length,
+          payload: encodeTranslation(entry),
+        };
       }
       case OP.TRANSLATION_PUT: {
         const entry = decodeTranslation(payload());
         if (!this.translations.has(entry.key)) {
-          const shared = new Uint8Array(new SharedArrayBuffer(entry.bytes.length));
+          const shared = new Uint8Array(
+            new SharedArrayBuffer(entry.bytes.length),
+          );
           shared.set(entry.bytes);
-          const stored = { bytes: shared, offsets: entry.offsets, unsupported: entry.unsupported };
+          const stored = {
+            bytes: shared,
+            offsets: entry.offsets,
+            unsupported: entry.unsupported,
+          };
           this.translations.set(entry.key, stored);
           if (this.onTranslation) {
             this.onTranslation({ key: entry.key, ...stored });
@@ -1535,14 +1705,18 @@ export class Kernel {
   ioctl(proc, d, req, data) {
     // A terminal descriptor answers as a terminal only when the tty
     // behind it is one: under node with a pipe on stdin, it is not.
-    const isTty = d.kind === "tty" && !(this.tty.isTerminal && !this.tty.isTerminal());
+    const isTty =
+      d.kind === "tty" && !(this.tty.isTerminal && !this.tty.isTerminal());
     switch (req) {
       case TCGETS:
       case TCGETS2:
         if (!isTty) {
           throw new Errno(E.NOTTY);
         }
-        return { result: 0, payload: encodeTermios(this.termios, req === TCGETS2) };
+        return {
+          result: 0,
+          payload: encodeTermios(this.termios, req === TCGETS2),
+        };
       case TCSETS:
       case TCSETSW:
       case TCSETSF:
@@ -1586,16 +1760,25 @@ export class Kernel {
         if (!isTty) {
           throw new Errno(E.NOTTY);
         }
-        this.foreground = new DataView(data.buffer, data.byteOffset).getInt32(0, true);
+        this.foreground = new DataView(data.buffer, data.byteOffset).getInt32(
+          0,
+          true,
+        );
         return 0;
       case FIONREAD: {
         const out = new Uint8Array(4);
-        const n = isTty ? this.tty.available() : d.kind === "pipe-r" ? d.pipe.length : 0;
+        const n = isTty
+          ? this.tty.available()
+          : d.kind === "pipe-r"
+            ? d.pipe.length
+            : 0;
         new DataView(out.buffer).setInt32(0, n, true);
         return { result: 0, payload: out };
       }
       case FIONBIO:
-        if (new DataView(data.buffer, data.byteOffset).getInt32(0, true) !== 0) {
+        if (
+          new DataView(data.buffer, data.byteOffset).getInt32(0, true) !== 0
+        ) {
           d.flags |= O_NONBLOCK;
         } else {
           d.flags &= ~O_NONBLOCK;

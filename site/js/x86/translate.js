@@ -54,12 +54,41 @@ const JS_IMPORTS = [
 
 const VALTYPE = { i32: T.i32, i64: T.i64, f64: T.f64, v128: T.v128 };
 
-const MASK = [0n, 0xffn, 0xffffn, 0n, 0xffffffffn, 0n, 0n, 0n, 0xffffffffffffffffn];
+const MASK = [
+  0n,
+  0xffn,
+  0xffffn,
+  0n,
+  0xffffffffn,
+  0n,
+  0n,
+  0n,
+  0xffffffffffffffffn,
+];
 const BITS = [0, 8, 16, 0, 32, 0, 0, 0, 64];
 
 const CONTROL = new Set([
-  "jmp", "call", "ret", "syscall", "hlt", "ud2", "int3", "int", "int1", "iret", "sysret",
-  "loop", "loope", "loopne", "jrcxz", "retf", "jmpf", "callf", "ud0", "ud1", "xbegin",
+  "jmp",
+  "call",
+  "ret",
+  "syscall",
+  "hlt",
+  "ud2",
+  "int3",
+  "int",
+  "int1",
+  "iret",
+  "sysret",
+  "loop",
+  "loope",
+  "loopne",
+  "jrcxz",
+  "retf",
+  "jmpf",
+  "callf",
+  "ud0",
+  "ud1",
+  "xbegin",
 ]);
 
 // One translated block: its address, instructions and how it ends.
@@ -114,11 +143,15 @@ export class Translator {
     // region is never cached, and each block is entered through a
     // check of its bytes.
     const volatile = mapping === null || mapping.writable;
-    const key = mapping !== null && mapping.file !== null && !volatile
-      ? `${mapping.file}@${(entry - base).toString(16)}#${TRANSLATION_VERSION}`
-      : null;
+    const key =
+      mapping !== null && mapping.file !== null && !volatile
+        ? `${mapping.file}@${(entry - base).toString(16)}#${TRANSLATION_VERSION}`
+        : null;
 
-    const cached = key !== null && machine.cache !== null ? machine.cache.get(key) : undefined;
+    const cached =
+      key !== null && machine.cache !== null
+        ? machine.cache.get(key)
+        : undefined;
     if (cached !== undefined) {
       const slot = this.instantiate(cached, base, key);
       this.cachedRegions++;
@@ -130,7 +163,8 @@ export class Translator {
     const blocks = new Map();
     const order = [];
     const worklist = [entry];
-    const inMapping = (addr) => mapping === null || (addr >= mapping.lo && addr < mapping.hi);
+    const inMapping = (addr) =>
+      mapping === null || (addr >= mapping.lo && addr < mapping.hi);
     while (worklist.length > 0 && order.length < MAX_BLOCKS_PER_REGION) {
       const addr = worklist.pop();
       if (blocks.has(addr) || machine.lookup(addr) !== 0 || !inMapping(addr)) {
@@ -194,11 +228,16 @@ export class Translator {
     try {
       // Cached bytes may sit in shared memory, which a compiler will
       // not read from.
-      module = new WebAssembly.Module(bytes.buffer instanceof SharedArrayBuffer ? bytes.slice() : bytes);
+      module = new WebAssembly.Module(
+        bytes.buffer instanceof SharedArrayBuffer ? bytes.slice() : bytes,
+      );
     } catch (e) {
       throw new Error(`${key ?? "region"}: ${e.message}`);
     }
-    const instance = new WebAssembly.Instance(module, machine.importObject(base));
+    const instance = new WebAssembly.Instance(
+      module,
+      machine.importObject(base),
+    );
     offsets.forEach((off, i) => {
       machine.register(base + off, first + i, instance.exports[i]);
     });
@@ -226,7 +265,10 @@ export class Translator {
       }
       block.insns.push(insn);
       pc = BigInt.asUintN(64, pc + BigInt(insn.len));
-      if (CONTROL.has(insn.mnemonic) || (insn.cond !== undefined && insn.mnemonic.startsWith("j"))) {
+      if (
+        CONTROL.has(insn.mnemonic) ||
+        (insn.cond !== undefined && insn.mnemonic.startsWith("j"))
+      ) {
         break;
       }
     }
@@ -239,7 +281,12 @@ export class Translator {
       block.targets.push(last.operands[0].target, pc);
     } else if (last.cond !== undefined && m.startsWith("j")) {
       block.targets.push(last.operands[0].target, pc);
-    } else if (m === "loop" || m === "loope" || m === "loopne" || m === "jrcxz") {
+    } else if (
+      m === "loop" ||
+      m === "loope" ||
+      m === "loopne" ||
+      m === "jrcxz"
+    ) {
       block.targets.push(last.operands[0].target, pc);
     } else if (m === "syscall" || !CONTROL.has(m)) {
       // A syscall re-dispatches on rip; a block cut by the size cap
@@ -254,12 +301,25 @@ export class Translator {
   // are wrappers that check the block's bytes first.
   emitModule(order, blocks, base, unsupported, volatile = false) {
     const m = new ModuleBuilder();
-    const ctx = { m, blocks, order, imports: {}, globals: {}, helpers: {}, base, unsupported };
+    const ctx = {
+      m,
+      blocks,
+      order,
+      imports: {},
+      globals: {},
+      helpers: {},
+      base,
+      unsupported,
+    };
 
     // Imports, in a fixed order the Machine's import object matches.
     // The block table is not among them: indirect jumps go through the
     // helpers' `jump`, which is the one place the table is imported.
-    m.importMemory("env", "memory", { min: 1, max: 65536, shared: this.machine.shared });
+    m.importMemory("env", "memory", {
+      min: 1,
+      max: 65536,
+      shared: this.machine.shared,
+    });
     for (const [name, params, results] of JS_IMPORTS) {
       ctx.imports[name] = m.importFunc("env", name, m.addType(params, results));
     }
@@ -311,7 +371,12 @@ export class Translator {
     // element segment for it. A volatile region exports checking
     // wrappers instead, after the blocks and trampolines.
     bodies.forEach((c, i) => {
-      m.addFunc(ctx.blockType, c.locals, c, volatile ? {} : { export: String(i) });
+      m.addFunc(
+        ctx.blockType,
+        c.locals,
+        c,
+        volatile ? {} : { export: String(i) },
+      );
     });
     for (const [, t] of ctx.trampolines) {
       const index = m.addFunc(ctx.blockType, t.code.locals, t.code);
@@ -347,7 +412,11 @@ export class Translator {
           } else if (rest >= 2) {
             c.i32_load16_u(k);
             if (rest === 3) {
-              c.local_get(p).i32_load8_u(k + 2).i32_const(16).i32_shl().i32_or();
+              c.local_get(p)
+                .i32_load8_u(k + 2)
+                .i32_const(16)
+                .i32_shl()
+                .i32_or();
             }
           } else {
             c.i32_load8_u(k);
@@ -448,7 +517,8 @@ class Emitter {
       this.usedF32 = 0;
       this.usedF64 = 0;
       this.next = BigInt.asUintN(64, insn.addr + BigInt(insn.len));
-      const foldable = this.lastFlags !== null && this.lastFlags.index === i - 1;
+      const foldable =
+        this.lastFlags !== null && this.lastFlags.index === i - 1;
       if (!foldable) {
         this.lastFlags = null;
       }
@@ -469,7 +539,10 @@ class Emitter {
       this.exit(EXIT.UNSUPPORTED, b.end);
     } else {
       const last = b.insns[b.insns.length - 1];
-      if (!CONTROL.has(last.mnemonic) && !(last.cond !== undefined && last.mnemonic.startsWith("j"))) {
+      if (
+        !CONTROL.has(last.mnemonic) &&
+        !(last.cond !== undefined && last.mnemonic.startsWith("j"))
+      ) {
         // Cut by the size cap: continue at the next address.
         this.jumpTo(b.end);
       }
@@ -483,7 +556,9 @@ class Emitter {
   // depend on where the file was mapped.
   addrConst(addr) {
     const c = this.c;
-    c.global_get(this.ctx.baseGlobal).i64_const(BigInt.asIntN(64, addr - this.ctx.base)).i64_add();
+    c.global_get(this.ctx.baseGlobal)
+      .i64_const(BigInt.asIntN(64, addr - this.ctx.base))
+      .i64_add();
   }
 
   // ---- state access -------------------------------------------------
@@ -568,22 +643,40 @@ class Emitter {
   loadMem(size) {
     const c = this.c;
     switch (size) {
-      case 1: c.i64_load8_u(); break;
-      case 2: c.i64_load16_u(0, 0); break;
-      case 4: c.i64_load32_u(0, 0); break;
-      case 8: c.i64_load(0, 0); break;
-      default: throw new Unsupported(`load of ${size} bytes`);
+      case 1:
+        c.i64_load8_u();
+        break;
+      case 2:
+        c.i64_load16_u(0, 0);
+        break;
+      case 4:
+        c.i64_load32_u(0, 0);
+        break;
+      case 8:
+        c.i64_load(0, 0);
+        break;
+      default:
+        throw new Unsupported(`load of ${size} bytes`);
     }
   }
 
   storeMem(size) {
     const c = this.c;
     switch (size) {
-      case 1: c.i64_store8(); break;
-      case 2: c.i64_store16(0, 0); break;
-      case 4: c.i64_store32(0, 0); break;
-      case 8: c.i64_store(0, 0); break;
-      default: throw new Unsupported(`store of ${size} bytes`);
+      case 1:
+        c.i64_store8();
+        break;
+      case 2:
+        c.i64_store16(0, 0);
+        break;
+      case 4:
+        c.i64_store32(0, 0);
+        break;
+      case 8:
+        c.i64_store(0, 0);
+        break;
+      default:
+        throw new Unsupported(`store of ${size} bytes`);
     }
   }
 
@@ -595,7 +688,9 @@ class Emitter {
         this.getReg(op.reg, size, op.high);
         return;
       case "imm":
-        c.i64_const(BigInt.asUintN(size * 8, BigInt.asIntN(op.size * 8, op.value)));
+        c.i64_const(
+          BigInt.asUintN(size * 8, BigInt.asIntN(op.size * 8, op.value)),
+        );
         return;
       case "mem":
         this.address32(op);
@@ -654,10 +749,17 @@ class Emitter {
   signExtend(size) {
     const c = this.c;
     switch (size) {
-      case 1: c.i64_extend8_s(); break;
-      case 2: c.i64_extend16_s(); break;
-      case 4: c.i64_extend32_s(); break;
-      default: break;
+      case 1:
+        c.i64_extend8_s();
+        break;
+      case 2:
+        c.i64_extend16_s();
+        break;
+      case 4:
+        c.i64_extend32_s();
+        break;
+      default:
+        break;
     }
   }
 
@@ -677,9 +779,26 @@ class Emitter {
   zspFlags(res, size) {
     const c = this.c;
     c.local_get(res).i64_eqz().i32_const(6).i32_shl();
-    c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().i32_const(7).i32_shl();
+    c.local_get(res)
+      .i64_const(BigInt(BITS[size] - 1))
+      .i64_shr_u()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .i32_const(7)
+      .i32_shl();
     c.i32_or();
-    c.local_get(res).i64_const(0xff).i64_and().i64_popcnt().i32_wrap_i64().i32_const(1).i32_and().i32_const(1).i32_xor().i32_const(2).i32_shl();
+    c.local_get(res)
+      .i64_const(0xff)
+      .i64_and()
+      .i64_popcnt()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .i32_const(1)
+      .i32_xor()
+      .i32_const(2)
+      .i32_shl();
     c.i32_or();
   }
 
@@ -786,29 +905,88 @@ class Emitter {
     let done = false;
     if (f.kind === "cmp") {
       switch (base) {
-        case 4: c.local_get(a).local_get(b).i64_eq(); done = true; break; // e
-        case 2: c.local_get(a).local_get(b).i64_lt_u(); done = true; break; // b
-        case 6: c.local_get(a).local_get(b).i64_le_u(); done = true; break; // be
-        case 12: sext(a); sext(b); c.i64_lt_s(); done = true; break; // l
-        case 14: sext(a); sext(b); c.i64_le_s(); done = true; break; // le
-        case 8: c.local_get(res); this.signExtend(size); c.i64_const(0).i64_lt_s(); done = true; break; // s
-        default: break;
+        case 4:
+          c.local_get(a).local_get(b).i64_eq();
+          done = true;
+          break; // e
+        case 2:
+          c.local_get(a).local_get(b).i64_lt_u();
+          done = true;
+          break; // b
+        case 6:
+          c.local_get(a).local_get(b).i64_le_u();
+          done = true;
+          break; // be
+        case 12:
+          sext(a);
+          sext(b);
+          c.i64_lt_s();
+          done = true;
+          break; // l
+        case 14:
+          sext(a);
+          sext(b);
+          c.i64_le_s();
+          done = true;
+          break; // le
+        case 8:
+          c.local_get(res);
+          this.signExtend(size);
+          c.i64_const(0).i64_lt_s();
+          done = true;
+          break; // s
+        default:
+          break;
       }
     } else if (f.kind === "test") {
       switch (base) {
-        case 4: c.local_get(res).i64_eqz(); done = true; break; // e
-        case 8: c.local_get(res); this.signExtend(size); c.i64_const(0).i64_lt_s(); done = true; break; // s
-        case 12: c.local_get(res); this.signExtend(size); c.i64_const(0).i64_lt_s(); done = true; break; // l: sf^of, of=0
-        case 14: c.local_get(res); this.signExtend(size); c.i64_const(0).i64_le_s(); done = true; break; // le
-        case 2: c.i32_const(0); done = true; break; // b: cf = 0
-        case 6: c.local_get(res).i64_eqz(); done = true; break; // be: zf
-        default: break;
+        case 4:
+          c.local_get(res).i64_eqz();
+          done = true;
+          break; // e
+        case 8:
+          c.local_get(res);
+          this.signExtend(size);
+          c.i64_const(0).i64_lt_s();
+          done = true;
+          break; // s
+        case 12:
+          c.local_get(res);
+          this.signExtend(size);
+          c.i64_const(0).i64_lt_s();
+          done = true;
+          break; // l: sf^of, of=0
+        case 14:
+          c.local_get(res);
+          this.signExtend(size);
+          c.i64_const(0).i64_le_s();
+          done = true;
+          break; // le
+        case 2:
+          c.i32_const(0);
+          done = true;
+          break; // b: cf = 0
+        case 6:
+          c.local_get(res).i64_eqz();
+          done = true;
+          break; // be: zf
+        default:
+          break;
       }
     } else if (f.kind === "arith") {
       switch (base) {
-        case 4: c.local_get(res).i64_eqz(); done = true; break;
-        case 8: c.local_get(res); this.signExtend(size); c.i64_const(0).i64_lt_s(); done = true; break;
-        default: break;
+        case 4:
+          c.local_get(res).i64_eqz();
+          done = true;
+          break;
+        case 8:
+          c.local_get(res);
+          this.signExtend(size);
+          c.i64_const(0).i64_lt_s();
+          done = true;
+          break;
+        default:
+          break;
       }
     }
     if (!done) {
@@ -964,7 +1142,9 @@ class Emitter {
       case "push": {
         const width = insn.opsize === 2 ? 2 : 8;
         if (ops[0].kind === "imm") {
-          c.i64_const(BigInt.asUintN(64, BigInt.asIntN(ops[0].size * 8, ops[0].value)));
+          c.i64_const(
+            BigInt.asUintN(64, BigInt.asIntN(ops[0].size * 8, ops[0].value)),
+          );
         } else {
           this.load(ops[0], width);
         }
@@ -987,13 +1167,23 @@ class Emitter {
         this.eflags();
         c.i64_extend_i32_u();
         c.i64_const(0x202n).i64_or(); // IF and the reserved bit 1
-        c.global_get(this.g.df).i64_extend_i32_u().i64_const(10).i64_shl().i64_or();
+        c.global_get(this.g.df)
+          .i64_extend_i32_u()
+          .i64_const(10)
+          .i64_shl()
+          .i64_or();
         this.push64();
         return;
       case "popf": {
         const v = this.t64();
         this.pop64();
-        c.local_tee(v).i64_const(10).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().global_set(this.g.df);
+        c.local_tee(v)
+          .i64_const(10)
+          .i64_shr_u()
+          .i32_wrap_i64()
+          .i32_const(1)
+          .i32_and()
+          .global_set(this.g.df);
         c.local_get(v).i32_wrap_i64().i32_const(0x8d5).i32_and();
         this.setEflags();
         return;
@@ -1062,7 +1252,10 @@ class Emitter {
         if (ops.length > 0) {
           const t = this.t64();
           c.local_set(t);
-          c.global_get(this.g.rsp).i64_const(ops[0].value).i64_add().global_set(this.g.rsp);
+          c.global_get(this.g.rsp)
+            .i64_const(ops[0].value)
+            .i64_add()
+            .global_set(this.g.rsp);
           c.local_get(t);
         }
         this.jumpIndirect();
@@ -1087,12 +1280,21 @@ class Emitter {
         return;
 
       case "jrcxz":
-        c.global_get(this.g.rcx).i64_eqz().if_(T.empty).return_call(this.blockFunc(ops[0].target)).end();
+        c.global_get(this.g.rcx)
+          .i64_eqz()
+          .if_(T.empty)
+          .return_call(this.blockFunc(ops[0].target))
+          .end();
         this.jumpTo(this.next);
         return;
       case "loop":
         c.global_get(this.g.rcx).i64_const(1).i64_sub().global_set(this.g.rcx);
-        c.global_get(this.g.rcx).i64_eqz().i32_eqz().if_(T.empty).return_call(this.blockFunc(ops[0].target)).end();
+        c.global_get(this.g.rcx)
+          .i64_eqz()
+          .i32_eqz()
+          .if_(T.empty)
+          .return_call(this.blockFunc(ops[0].target))
+          .end();
         this.jumpTo(this.next);
         return;
 
@@ -1123,9 +1325,22 @@ class Emitter {
         return this.emitCmpxchgWide(m === "cmpxchg16b" ? 8 : 4, ops);
       case "xadd":
         return this.emitXadd(ops, size, index);
-      case "cmovo": case "cmovno": case "cmovb": case "cmovae": case "cmove": case "cmovne":
-      case "cmovbe": case "cmova": case "cmovs": case "cmovns": case "cmovp": case "cmovnp":
-      case "cmovl": case "cmovge": case "cmovle": case "cmovg": {
+      case "cmovo":
+      case "cmovno":
+      case "cmovb":
+      case "cmovae":
+      case "cmove":
+      case "cmovne":
+      case "cmovbe":
+      case "cmova":
+      case "cmovs":
+      case "cmovns":
+      case "cmovp":
+      case "cmovnp":
+      case "cmovl":
+      case "cmovge":
+      case "cmovle":
+      case "cmovg": {
         const v = this.t64();
         const cond = this.t32();
         this.condition(insn.cond);
@@ -1145,9 +1360,22 @@ class Emitter {
         c.end();
         return;
       }
-      case "seto": case "setno": case "setb": case "setae": case "sete": case "setne":
-      case "setbe": case "seta": case "sets": case "setns": case "setp": case "setnp":
-      case "setl": case "setge": case "setle": case "setg": {
+      case "seto":
+      case "setno":
+      case "setb":
+      case "setae":
+      case "sete":
+      case "setne":
+      case "setbe":
+      case "seta":
+      case "sets":
+      case "setns":
+      case "setp":
+      case "setnp":
+      case "setl":
+      case "setge":
+      case "setle":
+      case "setg": {
         const a = this.prepareDest(ops[0]);
         this.condition(insn.cond);
         c.i64_extend_i32_u();
@@ -1188,7 +1416,10 @@ class Emitter {
         c.global_get(this.g.rbp);
         this.push64();
         c.global_get(this.g.rsp).global_set(this.g.rbp);
-        c.global_get(this.g.rsp).i64_const(ops[0].value).i64_sub().global_set(this.g.rsp);
+        c.global_get(this.g.rsp)
+          .i64_const(ops[0].value)
+          .i64_sub()
+          .global_set(this.g.rsp);
         return;
       }
       default:
@@ -1248,7 +1479,12 @@ class Emitter {
   emitMov(insn, ops, size) {
     const c = this.c;
     const [dst, src] = ops;
-    if (dst.kind === "sreg" || src.kind === "sreg" || dst.kind === "creg" || src.kind === "creg") {
+    if (
+      dst.kind === "sreg" ||
+      src.kind === "sreg" ||
+      dst.kind === "creg" ||
+      src.kind === "creg"
+    ) {
       throw new Unsupported("segment or control register move");
     }
     if (dst.kind === "reg") {
@@ -1337,7 +1573,14 @@ class Emitter {
       this.store(dst, size, a);
     }
     this.setFlags(kind, size, res, vb, carry);
-    const foldKind = m === "cmp" || m === "sub" ? "cmp" : m === "test" || m === "and" ? "test" : kind === CC.LOGIC || kind === CC.ADD ? "arith" : null;
+    const foldKind =
+      m === "cmp" || m === "sub"
+        ? "cmp"
+        : m === "test" || m === "and"
+          ? "test"
+          : kind === CC.LOGIC || kind === CC.ADD
+            ? "arith"
+            : null;
     if (foldKind !== null) {
       this.lastFlags = { index, kind: foldKind, size, a: va, b: vb, res };
     }
@@ -1390,7 +1633,9 @@ class Emitter {
     const res = this.t64();
     const cf = this.t64();
     this.load(cnt, 1);
-    c.i64_const(size === 8 ? 63n : 31n).i64_and().local_set(count);
+    c.i64_const(size === 8 ? 63n : 31n)
+      .i64_and()
+      .local_set(count);
     this.loadDest(dst, size, a);
     c.local_set(val);
     // A zero count changes nothing, flags included.
@@ -1400,10 +1645,24 @@ class Emitter {
       this.mask(size);
       c.local_set(res);
       // cf = bit (bits - count) of val
-      c.local_get(val).i64_const(BITS[size]).local_get(count).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
+      c.local_get(val)
+        .i64_const(BITS[size])
+        .local_get(count)
+        .i64_sub()
+        .i64_shr_u()
+        .i64_const(1)
+        .i64_and()
+        .local_set(cf);
     } else if (m === "shr") {
       c.local_get(val).local_get(count).i64_shr_u().local_set(res);
-      c.local_get(val).local_get(count).i64_const(1).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
+      c.local_get(val)
+        .local_get(count)
+        .i64_const(1)
+        .i64_sub()
+        .i64_shr_u()
+        .i64_const(1)
+        .i64_and()
+        .local_set(cf);
     } else {
       c.local_get(val);
       this.signExtend(size);
@@ -1412,11 +1671,23 @@ class Emitter {
       c.local_set(res);
       c.local_get(val);
       this.signExtend(size);
-      c.local_get(count).i64_const(1).i64_sub().i64_shr_s().i64_const(1).i64_and().local_set(cf);
+      c.local_get(count)
+        .i64_const(1)
+        .i64_sub()
+        .i64_shr_s()
+        .i64_const(1)
+        .i64_and()
+        .local_set(cf);
     }
     c.local_get(res);
     this.store(dst, size, a);
-    this.setFlags(m === "shl" ? CC.SHL : m === "shr" ? CC.SHR : CC.SAR, size, res, cf, val);
+    this.setFlags(
+      m === "shl" ? CC.SHL : m === "shr" ? CC.SHR : CC.SAR,
+      size,
+      res,
+      cf,
+      val,
+    );
     c.end();
     this.lastFlags = null;
   }
@@ -1451,10 +1722,20 @@ class Emitter {
       const bits = BigInt(BITS[size]);
       if (m === "rol") {
         c.local_get(val).local_get(count).i64_shl();
-        c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i64_or();
+        c.local_get(val)
+          .i64_const(bits)
+          .local_get(count)
+          .i64_sub()
+          .i64_shr_u()
+          .i64_or();
       } else {
         c.local_get(val).local_get(count).i64_shr_u();
-        c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shl().i64_or();
+        c.local_get(val)
+          .i64_const(bits)
+          .local_get(count)
+          .i64_sub()
+          .i64_shl()
+          .i64_or();
       }
       this.mask(size);
       c.local_set(res);
@@ -1468,13 +1749,26 @@ class Emitter {
     const msb = this.t32();
     this.eflags();
     c.i32_const(~0x801).i32_and().local_set(f);
-    c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(msb);
+    c.local_get(res)
+      .i64_const(BigInt(BITS[size] - 1))
+      .i64_shr_u()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .local_set(msb);
     if (m === "rol") {
       c.local_get(res).i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
       c.local_get(msb).local_get(cf).i32_xor();
     } else {
       c.local_get(msb).local_set(cf);
-      c.local_get(res).i64_const(BigInt(BITS[size] - 2)).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_get(msb).i32_xor();
+      c.local_get(res)
+        .i64_const(BigInt(BITS[size] - 2))
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(1)
+        .i32_and()
+        .local_get(msb)
+        .i32_xor();
     }
     c.i32_const(11).i32_shl().local_get(cf).i32_or().local_get(f).i32_or();
     this.setEflags();
@@ -1508,27 +1802,61 @@ class Emitter {
     if (m === "rcl") {
       // res = val << c | cf << (c-1) | val >> (bits + 1 - c); CF = bit (bits - c) of val
       c.local_get(val).local_get(count).i64_shl();
-      c.local_get(cfIn).local_get(count).i64_const(1).i64_sub().i64_shl().i64_or();
+      c.local_get(cfIn)
+        .local_get(count)
+        .i64_const(1)
+        .i64_sub()
+        .i64_shl()
+        .i64_or();
       // The wrapped-around part exists only for counts of 2 and up; at
       // 1 its shift would be the full width, which wasm reads as none.
       c.local_get(count).i64_const(1).i64_gt_u().if_(T.i64);
-      c.local_get(val).i64_const(bits + 1n).local_get(count).i64_sub().i64_shr_u();
+      c.local_get(val)
+        .i64_const(bits + 1n)
+        .local_get(count)
+        .i64_sub()
+        .i64_shr_u();
       c.else_().i64_const(0).end();
       c.i64_or();
       this.mask(size);
       c.local_set(res);
-      c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+      c.local_get(val)
+        .i64_const(bits)
+        .local_get(count)
+        .i64_sub()
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(1)
+        .i32_and()
+        .local_set(cf);
     } else {
       // res = val >> c | cf << (bits - c) | val << (bits + 1 - c); CF = bit (c-1) of val
       c.local_get(val).local_get(count).i64_shr_u();
-      c.local_get(cfIn).i64_const(bits).local_get(count).i64_sub().i64_shl().i64_or();
+      c.local_get(cfIn)
+        .i64_const(bits)
+        .local_get(count)
+        .i64_sub()
+        .i64_shl()
+        .i64_or();
       c.local_get(count).i64_const(1).i64_gt_u().if_(T.i64);
-      c.local_get(val).i64_const(bits + 1n).local_get(count).i64_sub().i64_shl();
+      c.local_get(val)
+        .i64_const(bits + 1n)
+        .local_get(count)
+        .i64_sub()
+        .i64_shl();
       c.else_().i64_const(0).end();
       c.i64_or();
       this.mask(size);
       c.local_set(res);
-      c.local_get(val).local_get(count).i64_const(1).i64_sub().i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+      c.local_get(val)
+        .local_get(count)
+        .i64_const(1)
+        .i64_sub()
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(1)
+        .i32_and()
+        .local_set(cf);
     }
     c.local_get(res);
     this.store(dst, size, a);
@@ -1536,11 +1864,24 @@ class Emitter {
     const msb = this.t32();
     this.eflags();
     c.i32_const(~0x801).i32_and().local_set(f);
-    c.local_get(res).i64_const(bits - 1n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(msb);
+    c.local_get(res)
+      .i64_const(bits - 1n)
+      .i64_shr_u()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .local_set(msb);
     if (m === "rcl") {
       c.local_get(msb).local_get(cf).i32_xor();
     } else {
-      c.local_get(res).i64_const(bits - 2n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_get(msb).i32_xor();
+      c.local_get(res)
+        .i64_const(bits - 2n)
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(1)
+        .i32_and()
+        .local_get(msb)
+        .i32_xor();
     }
     c.i32_const(11).i32_shl().local_get(cf).i32_or().local_get(f).i32_or();
     this.setEflags();
@@ -1558,7 +1899,9 @@ class Emitter {
     const res = this.t64();
     const cf = this.t64();
     this.load(cnt, 1);
-    c.i64_const(size === 8 ? 63n : 31n).i64_and().local_set(count);
+    c.i64_const(size === 8 ? 63n : 31n)
+      .i64_and()
+      .local_set(count);
     this.loadDest(dst, size, a);
     c.local_set(val);
     this.load(src, size);
@@ -1568,24 +1911,58 @@ class Emitter {
     if (m === "shld") {
       // res = val << c | other >> (bits - c); CF = bit (bits - c) of val
       c.local_get(val).local_get(count).i64_shl();
-      c.local_get(other).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i64_or();
+      c.local_get(other)
+        .i64_const(bits)
+        .local_get(count)
+        .i64_sub()
+        .i64_shr_u()
+        .i64_or();
       this.mask(size);
       c.local_set(res);
-      c.local_get(val).i64_const(bits).local_get(count).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
+      c.local_get(val)
+        .i64_const(bits)
+        .local_get(count)
+        .i64_sub()
+        .i64_shr_u()
+        .i64_const(1)
+        .i64_and()
+        .local_set(cf);
     } else {
       // res = val >> c | other << (bits - c); CF = bit (c - 1) of val
       c.local_get(val).local_get(count).i64_shr_u();
-      c.local_get(other).i64_const(bits).local_get(count).i64_sub().i64_shl().i64_or();
+      c.local_get(other)
+        .i64_const(bits)
+        .local_get(count)
+        .i64_sub()
+        .i64_shl()
+        .i64_or();
       this.mask(size);
       c.local_set(res);
-      c.local_get(val).local_get(count).i64_const(1).i64_sub().i64_shr_u().i64_const(1).i64_and().local_set(cf);
+      c.local_get(val)
+        .local_get(count)
+        .i64_const(1)
+        .i64_sub()
+        .i64_shr_u()
+        .i64_const(1)
+        .i64_and()
+        .local_set(cf);
     }
     c.local_get(res);
     this.store(dst, size, a);
     // ZF, SF, PF from the result, CF as computed, OF = the sign changed.
     this.zspFlags(res, size);
     c.local_get(cf).i32_wrap_i64().i32_or();
-    c.local_get(val).local_get(res).i64_xor().i64_const(bits - 1n).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().i32_const(11).i32_shl().i32_or();
+    c.local_get(val)
+      .local_get(res)
+      .i64_xor()
+      .i64_const(bits - 1n)
+      .i64_shr_u()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .i32_const(11)
+      .i32_shl()
+      .i32_or();
     this.setEflags();
     c.end();
     this.lastFlags = null;
@@ -1606,11 +1983,19 @@ class Emitter {
       if (size === 8) {
         const ra = this.t64();
         c.local_tee(ra).local_get(src).i64_mul().local_set(lo);
-        c.local_get(ra).local_get(src).call(this.ctx.helpers.mulhs).local_set(hi);
+        c.local_get(ra)
+          .local_get(src)
+          .call(this.ctx.helpers.mulhs)
+          .local_set(hi);
         c.local_get(lo).global_set(this.g.rax);
         c.local_get(hi).global_set(this.g.rdx);
         // overflow iff hi != lo >> 63
-        c.local_get(hi).local_get(lo).i64_const(63).i64_shr_s().i64_ne().i64_extend_i32_u();
+        c.local_get(hi)
+          .local_get(lo)
+          .i64_const(63)
+          .i64_shr_s()
+          .i64_ne()
+          .i64_extend_i32_u();
       } else {
         const full = this.t64();
         c.local_get(src).i64_mul().local_set(full);
@@ -1658,7 +2043,12 @@ class Emitter {
       c.local_get(a).local_get(b).i64_mul().local_tee(res);
       this.setReg(ops[0].reg, 8);
       c.local_get(a).local_get(b).call(this.ctx.helpers.mulhs);
-      c.local_get(res).i64_const(63).i64_shr_s().i64_ne().i64_extend_i32_u().local_set(ov);
+      c.local_get(res)
+        .i64_const(63)
+        .i64_shr_s()
+        .i64_ne()
+        .i64_extend_i32_u()
+        .local_set(ov);
     } else {
       const full = this.t64();
       c.local_get(a).local_get(b).i64_mul().local_tee(full);
@@ -1681,7 +2071,10 @@ class Emitter {
     this.load(ops[0], size);
     c.local_set(src);
     if (size === 8) {
-      c.global_get(this.g.rax).local_get(src).call(this.ctx.helpers.mulhu).local_set(hi);
+      c.global_get(this.g.rax)
+        .local_get(src)
+        .call(this.ctx.helpers.mulhu)
+        .local_set(hi);
       c.global_get(this.g.rax).local_get(src).i64_mul().local_set(lo);
       c.local_get(lo).global_set(this.g.rax);
       c.local_get(hi).global_set(this.g.rdx);
@@ -1796,7 +2189,13 @@ class Emitter {
     const step = BigInt(size);
     // delta = df ? -size : size
     const delta = this.t64();
-    c.global_get(this.g.df).if_(T.i64).i64_const(-step).else_().i64_const(step).end().local_set(delta);
+    c.global_get(this.g.df)
+      .if_(T.i64)
+      .i64_const(-step)
+      .else_()
+      .i64_const(step)
+      .end()
+      .local_set(delta);
     const body = () => {
       switch (m) {
         case "movs":
@@ -1804,20 +2203,32 @@ class Emitter {
           c.global_get(this.g.rsi).i32_wrap_i64();
           this.loadMem(size);
           this.storeMem(size);
-          c.global_get(this.g.rsi).local_get(delta).i64_add().global_set(this.g.rsi);
-          c.global_get(this.g.rdi).local_get(delta).i64_add().global_set(this.g.rdi);
+          c.global_get(this.g.rsi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rsi);
+          c.global_get(this.g.rdi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rdi);
           break;
         case "stos":
           c.global_get(this.g.rdi).i32_wrap_i64();
           this.getReg(REG.rax, size);
           this.storeMem(size);
-          c.global_get(this.g.rdi).local_get(delta).i64_add().global_set(this.g.rdi);
+          c.global_get(this.g.rdi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rdi);
           break;
         case "lods":
           c.global_get(this.g.rsi).i32_wrap_i64();
           this.loadMem(size);
           this.setReg(REG.rax, size);
-          c.global_get(this.g.rsi).local_get(delta).i64_add().global_set(this.g.rsi);
+          c.global_get(this.g.rsi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rsi);
           break;
         case "scas": {
           // cmp rax, [rdi]
@@ -1833,7 +2244,10 @@ class Emitter {
           this.mask(size);
           c.local_set(res);
           this.setFlags(CC.SUB, size, res, vb);
-          c.global_get(this.g.rdi).local_get(delta).i64_add().global_set(this.g.rdi);
+          c.global_get(this.g.rdi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rdi);
           break;
         }
         case "cmps": {
@@ -1851,8 +2265,14 @@ class Emitter {
           this.mask(size);
           c.local_set(res);
           this.setFlags(CC.SUB, size, res, vb);
-          c.global_get(this.g.rsi).local_get(delta).i64_add().global_set(this.g.rsi);
-          c.global_get(this.g.rdi).local_get(delta).i64_add().global_set(this.g.rdi);
+          c.global_get(this.g.rsi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rsi);
+          c.global_get(this.g.rdi)
+            .local_get(delta)
+            .i64_add()
+            .global_set(this.g.rdi);
           break;
         }
         default:
@@ -1902,18 +2322,34 @@ class Emitter {
       if (bit.kind === "reg") {
         c.local_get(idx);
         this.signExtend(bit.size);
-        c.i64_const(BigInt(Math.log2(BITS[size]))).i64_shr_s().i64_const(BigInt(Math.log2(size))).i64_shl().i64_add();
-        c.local_get(idx).i64_const(BigInt(BITS[size] - 1)).i64_and().local_set(idx);
+        c.i64_const(BigInt(Math.log2(BITS[size])))
+          .i64_shr_s()
+          .i64_const(BigInt(Math.log2(size)))
+          .i64_shl()
+          .i64_add();
+        c.local_get(idx)
+          .i64_const(BigInt(BITS[size] - 1))
+          .i64_and()
+          .local_set(idx);
       }
       c.i32_wrap_i64().local_set(a);
       c.local_get(a);
       this.loadMem(size);
     } else {
-      c.local_get(idx).i64_const(BigInt(BITS[size] - 1)).i64_and().local_set(idx);
+      c.local_get(idx)
+        .i64_const(BigInt(BITS[size] - 1))
+        .i64_and()
+        .local_set(idx);
       this.load(dst, size);
     }
     c.local_set(val);
-    c.local_get(val).local_get(idx).i64_shr_u().i32_wrap_i64().i32_const(1).i32_and().local_set(cf);
+    c.local_get(val)
+      .local_get(idx)
+      .i64_shr_u()
+      .i32_wrap_i64()
+      .i32_const(1)
+      .i32_and()
+      .local_set(cf);
     if (m !== "bt") {
       c.local_get(val).i64_const(1).local_get(idx).i64_shl();
       if (m === "bts") {
@@ -1949,16 +2385,40 @@ class Emitter {
         this.setEflags();
         break;
       case "tzcnt":
-        c.local_get(src).i64_eqz().if_(T.i64).i64_const(BigInt(bits)).else_().local_get(src).i64_ctz().end().local_tee(res);
+        c.local_get(src)
+          .i64_eqz()
+          .if_(T.i64)
+          .i64_const(BigInt(bits))
+          .else_()
+          .local_get(src)
+          .i64_ctz()
+          .end()
+          .local_tee(res);
         this.setReg(ops[0].reg, size);
         // CF = src == 0, ZF = res == 0
-        c.local_get(src).i64_eqz().local_get(res).i64_eqz().i32_const(6).i32_shl().i32_or();
+        c.local_get(src)
+          .i64_eqz()
+          .local_get(res)
+          .i64_eqz()
+          .i32_const(6)
+          .i32_shl()
+          .i32_or();
         this.setEflags();
         break;
       case "lzcnt":
-        c.local_get(src).i64_clz().i64_const(BigInt(64 - bits)).i64_sub().local_tee(res);
+        c.local_get(src)
+          .i64_clz()
+          .i64_const(BigInt(64 - bits))
+          .i64_sub()
+          .local_tee(res);
         this.setReg(ops[0].reg, size);
-        c.local_get(src).i64_eqz().local_get(res).i64_eqz().i32_const(6).i32_shl().i32_or();
+        c.local_get(src)
+          .i64_eqz()
+          .local_get(res)
+          .i64_eqz()
+          .i32_const(6)
+          .i32_shl()
+          .i32_or();
         this.setEflags();
         break;
       case "bsf":
@@ -1991,7 +2451,13 @@ class Emitter {
     c.i64_const(0).local_set(r);
     for (let i = 0; i < size; i++) {
       c.local_get(r).i64_const(8).i64_shl();
-      c.local_get(v).i64_const(BigInt(8 * i)).i64_shr_u().i64_const(0xff).i64_and().i64_or().local_set(r);
+      c.local_get(v)
+        .i64_const(BigInt(8 * i))
+        .i64_shr_u()
+        .i64_const(0xff)
+        .i64_and()
+        .i64_or()
+        .local_set(r);
     }
     c.local_get(r);
   }
@@ -2043,14 +2509,25 @@ class Emitter {
     this.load(src, src.size);
     c.local_set(data);
     for (let i = 0; i < src.size; i++) {
-      c.local_get(data).i64_const(BigInt(8 * i)).i64_shr_u().i32_wrap_i64().i32_const(0xff).i32_and();
+      c.local_get(data)
+        .i64_const(BigInt(8 * i))
+        .i64_shr_u()
+        .i32_wrap_i64()
+        .i32_const(0xff)
+        .i32_and();
       c.local_get(crc).i32_xor().local_set(crc);
       c.i32_const(0).local_set(bit);
       c.block(T.empty).loop(T.empty);
       c.local_get(bit).i32_const(8).i32_ge_u().br_if(1);
       // crc = (crc >>> 1) ^ (poly & -(crc & 1))
       c.local_get(crc).i32_const(1).i32_shr_u();
-      c.i32_const(0x82f63b78).i32_const(0).local_get(crc).i32_const(1).i32_and().i32_sub().i32_and();
+      c.i32_const(0x82f63b78)
+        .i32_const(0)
+        .local_get(crc)
+        .i32_const(1)
+        .i32_and()
+        .i32_sub()
+        .i32_and();
       c.i32_xor().local_set(crc);
       c.local_get(bit).i32_const(1).i32_add().local_set(bit);
       c.br(0);
@@ -2164,7 +2641,10 @@ class Emitter {
         if (size === 8) {
           c.i64_const(ops[2].value & 63n).i64_rotr();
         } else {
-          c.i32_wrap_i64().i32_const(Number(ops[2].value & 31n)).i32_rotr().i64_extend_i32_u();
+          c.i32_wrap_i64()
+            .i32_const(Number(ops[2].value & 31n))
+            .i32_rotr()
+            .i64_extend_i32_u();
         }
         this.setReg(ops[0].reg, size);
         return;
@@ -2178,13 +2658,25 @@ class Emitter {
         c.local_get(n).i64_const(BigInt(BITS[size])).i64_ge_u().if_(T.i64);
         c.local_get(a);
         c.else_();
-        c.local_get(a).i64_const(1).local_get(n).i64_shl().i64_const(1).i64_sub().i64_and();
+        c.local_get(a)
+          .i64_const(1)
+          .local_get(n)
+          .i64_shl()
+          .i64_const(1)
+          .i64_sub()
+          .i64_and();
         c.end();
         c.local_tee(res);
         this.setReg(ops[0].reg, size);
         // flags: ZF, SF from result, CF as above
         c.local_get(res).i64_eqz().i32_const(6).i32_shl();
-        c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(7).i32_shl().i32_or();
+        c.local_get(res)
+          .i64_const(BigInt(BITS[size] - 1))
+          .i64_shr_u()
+          .i32_wrap_i64()
+          .i32_const(7)
+          .i32_shl()
+          .i32_or();
         c.local_get(n).i64_const(BigInt(BITS[size])).i64_ge_u().i32_or();
         this.setEflags();
         return;
@@ -2208,7 +2700,13 @@ class Emitter {
         this.setReg(ops[0].reg, size);
         // CF = src == 0 (blsr, blsmsk) or src != 0 (blsi); ZF from result
         c.local_get(res).i64_eqz().i32_const(6).i32_shl();
-        c.local_get(res).i64_const(BigInt(BITS[size] - 1)).i64_shr_u().i32_wrap_i64().i32_const(7).i32_shl().i32_or();
+        c.local_get(res)
+          .i64_const(BigInt(BITS[size] - 1))
+          .i64_shr_u()
+          .i32_wrap_i64()
+          .i32_const(7)
+          .i32_shl()
+          .i32_or();
         c.local_get(a).i64_eqz();
         if (m === "blsi") {
           c.i32_eqz();
@@ -2224,14 +2722,30 @@ class Emitter {
         this.load(ops[2], size);
         c.local_set(b);
         c.local_get(b).i64_const(0xff).i64_and().local_set(start);
-        c.local_get(b).i64_const(8).i64_shr_u().i64_const(0xff).i64_and().local_set(len);
+        c.local_get(b)
+          .i64_const(8)
+          .i64_shr_u()
+          .i64_const(0xff)
+          .i64_and()
+          .local_set(len);
         this.load(ops[1], size);
         c.local_set(a);
         c.local_get(start).i64_const(BigInt(BITS[size])).i64_ge_u().if_(T.i64);
         c.i64_const(0);
         c.else_();
         c.local_get(a).local_get(start).i64_shr_u();
-        c.local_get(len).i64_const(64).i64_ge_u().if_(T.i64).i64_const(-1n).else_().i64_const(1).local_get(len).i64_shl().i64_const(1).i64_sub().end();
+        c.local_get(len)
+          .i64_const(64)
+          .i64_ge_u()
+          .if_(T.i64)
+          .i64_const(-1n)
+          .else_()
+          .i64_const(1)
+          .local_get(len)
+          .i64_shl()
+          .i64_const(1)
+          .i64_sub()
+          .end();
         c.i64_and();
         c.end();
         this.mask(size);
@@ -2257,13 +2771,38 @@ class Emitter {
         c.i64_const(0).local_set(bit);
         c.block(T.empty).loop(T.empty);
         c.local_get(bit).i64_const(BigInt(BITS[size])).i64_ge_u().br_if(1);
-        c.local_get(maskv).local_get(bit).i64_shr_u().i64_const(1).i64_and().i64_eqz().i32_eqz().if_(T.empty);
+        c.local_get(maskv)
+          .local_get(bit)
+          .i64_shr_u()
+          .i64_const(1)
+          .i64_and()
+          .i64_eqz()
+          .i32_eqz()
+          .if_(T.empty);
         if (m === "pdep") {
           // res |= ((src >> k) & 1) << bit
-          c.local_get(res).local_get(srcv).local_get(k).i64_shr_u().i64_const(1).i64_and().local_get(bit).i64_shl().i64_or().local_set(res);
+          c.local_get(res)
+            .local_get(srcv)
+            .local_get(k)
+            .i64_shr_u()
+            .i64_const(1)
+            .i64_and()
+            .local_get(bit)
+            .i64_shl()
+            .i64_or()
+            .local_set(res);
         } else {
           // res |= ((src >> bit) & 1) << k
-          c.local_get(res).local_get(srcv).local_get(bit).i64_shr_u().i64_const(1).i64_and().local_get(k).i64_shl().i64_or().local_set(res);
+          c.local_get(res)
+            .local_get(srcv)
+            .local_get(bit)
+            .i64_shr_u()
+            .i64_const(1)
+            .i64_and()
+            .local_get(k)
+            .i64_shl()
+            .i64_or()
+            .local_set(res);
         }
         c.local_get(k).i64_const(1).i64_add().local_set(k);
         c.end();
@@ -2310,8 +2849,22 @@ class Emitter {
 }
 
 const REGNAME = [
-  "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+  "rax",
+  "rcx",
+  "rdx",
+  "rbx",
+  "rsp",
+  "rbp",
+  "rsi",
+  "rdi",
+  "r8",
+  "r9",
+  "r10",
+  "r11",
+  "r12",
+  "r13",
+  "r14",
+  "r15",
 ];
 
 export class Unsupported extends Error {}

@@ -16,7 +16,9 @@ const SCRATCH = 0x610000;
 const SCRATCH_SIZE = 512;
 const FLAG_MASK_DF = 1 << 10;
 
-const fixturePath = process.env.X86_SEMANTICS || new URL("../fixtures/x86/semantics.json", import.meta.url).pathname;
+const fixturePath =
+  process.env.X86_SEMANTICS ||
+  new URL("../fixtures/x86/semantics.json", import.meta.url).pathname;
 
 // The same xorshift as generate.py, so memory comes from the seed.
 function scratchBytes(seed) {
@@ -43,7 +45,9 @@ function runCase(c) {
   const m = new Machine({ pages: 2048 });
   const code = Uint8Array.from(c.code.match(/../g).map((b) => parseInt(b, 16)));
   m.write(SNIPPET, new Uint8Array([...code, 0xf4]));
-  const data = c.data ? Uint8Array.from(c.data.match(/../g).map((b) => parseInt(b, 16))) : scratchBytes(BigInt(`0x${c.seed}`));
+  const data = c.data
+    ? Uint8Array.from(c.data.match(/../g).map((b) => parseInt(b, 16)))
+    : scratchBytes(BigInt(`0x${c.seed}`));
   m.write(BigInt(SCRATCH), data);
   m.helpers.load_ymm(SCRATCH);
   REGISTER_NAMES.forEach((r, i) => m.setReg(r, BigInt(`0x${c.regs[i]}`)));
@@ -60,14 +64,18 @@ function runCase(c) {
     const got = m.reg(r);
     const want = BigInt(`0x${c.out.regs[i]}`);
     if (got !== want) {
-      problems.push(`${r}: got ${got.toString(16)}, hardware ${want.toString(16)}`);
+      problems.push(
+        `${r}: got ${got.toString(16)}, hardware ${want.toString(16)}`,
+      );
     }
   });
   const mask = Number(BigInt(`0x${c.mask}`));
   const gotFlags = m.helpers.cc_eflags() & mask;
   const wantFlags = Number(BigInt(`0x${c.out.flags}`)) & mask;
   if (gotFlags !== wantFlags) {
-    problems.push(`flags: got ${gotFlags.toString(16)}, hardware ${wantFlags.toString(16)} (mask ${mask.toString(16)})`);
+    problems.push(
+      `flags: got ${gotFlags.toString(16)}, hardware ${wantFlags.toString(16)} (mask ${mask.toString(16)})`,
+    );
   }
   if (c.out.xmm !== undefined) {
     const at = SCRATCH + 4096;
@@ -88,7 +96,9 @@ function runCase(c) {
   if (gotMem !== wantMem) {
     for (let i = 0; i < SCRATCH_SIZE * 2; i += 16) {
       if (gotMem.slice(i, i + 16) !== wantMem.slice(i, i + 16)) {
-        problems.push(`mem+0x${(i / 2).toString(16)}: got ${gotMem.slice(i, i + 16)}, hardware ${wantMem.slice(i, i + 16)}`);
+        problems.push(
+          `mem+0x${(i / 2).toString(16)}: got ${gotMem.slice(i, i + 16)}, hardware ${wantMem.slice(i, i + 16)}`,
+        );
       }
     }
   }
@@ -97,7 +107,9 @@ function runCase(c) {
 
 if (!existsSync(fixturePath)) {
   test("semantics fixture is present", () => {
-    assert.fail(`no fixture at ${fixturePath}; run nix run .#x86-semantics -- ${fixturePath}`);
+    assert.fail(
+      `no fixture at ${fixturePath}; run nix run .#x86-semantics -- ${fixturePath}`,
+    );
   });
 } else {
   const { cases } = JSON.parse(readFileSync(fixturePath, "utf8"));
@@ -119,11 +131,17 @@ if (!existsSync(fixturePath)) {
           problems = [`threw ${e.message}`];
         }
         if (problems.length > 0) {
-          failures.push(`${name} [${c.code}] regs=${c.regs.join(",")} flags=${c.flags}\n    ${problems.join("\n    ")}`);
+          failures.push(
+            `${name} [${c.code}] regs=${c.regs.join(",")} flags=${c.flags}\n    ${problems.join("\n    ")}`,
+          );
           break;
         }
       }
     }
-    assert.equal(failures.length, 0, `${failures.length} of ${byName.size} forms disagree:\n${failures.slice(0, 60).join("\n")}`);
+    assert.equal(
+      failures.length,
+      0,
+      `${failures.length} of ${byName.size} forms disagree:\n${failures.slice(0, 60).join("\n")}`,
+    );
   });
 }

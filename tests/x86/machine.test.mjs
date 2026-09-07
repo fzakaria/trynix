@@ -57,7 +57,9 @@ test("call and ret through the guest stack", () => {
 test("push, pop and imul inside a callee", () => {
   // lea rsp, [rip+0x100000]; mov rdi, 3; mov rsi, 4; call 1f; hlt
   // 1: push rbx; mov rbx, rdi; imul rbx, rsi; mov rax, rbx; pop rbx; ret
-  const m = boot("488d250000100048c7c70300000048c7c604000000e801000000f4534889fb480fafde4889d85bc3");
+  const m = boot(
+    "488d250000100048c7c70300000048c7c604000000e801000000f4534889fb480fafde4889d85bc3",
+  );
   m.setReg("rbx", 0x1111n);
   m.run(CODE);
   assert.equal(m.reg("rax"), 12n);

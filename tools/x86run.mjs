@@ -17,7 +17,9 @@ import { NodeFs } from "../site/js/x86/fs-node.js";
 import { spawnWorker } from "../site/js/x86/platform.js";
 
 function usage() {
-  console.error("usage: x86run [--trace] [--stats] [--cache <dir>] <program> [args...]");
+  console.error(
+    "usage: x86run [--trace] [--stats] [--cache <dir>] <program> [args...]",
+  );
   process.exit(2);
 }
 
@@ -79,7 +81,10 @@ const tty = {
     inputLength -= n;
     return n;
   },
-  size: () => ({ rows: process.stdout.rows || 24, cols: process.stdout.columns || 80 }),
+  size: () => ({
+    rows: process.stdout.rows || 24,
+    cols: process.stdout.columns || 80,
+  }),
   isTerminal: () => Boolean(process.stdin.isTTY),
   takeInterrupt: () => {
     const was = interrupted;
@@ -116,7 +121,10 @@ function storeCacheEntry(dir, entry) {
     unsupported: entry.unsupported.map(([o, why]) => [o.toString(), why]),
   });
   const name = entry.key.replace(/[^A-Za-z0-9._@#-]/g, "_");
-  fs.writeFileSync(`${dir}/${name}`, Buffer.concat([Buffer.from(`${header}\n`), Buffer.from(entry.bytes)]));
+  fs.writeFileSync(
+    `${dir}/${name}`,
+    Buffer.concat([Buffer.from(`${header}\n`), Buffer.from(entry.bytes)]),
+  );
 }
 
 const translations = cacheDir !== null ? loadCacheDir(cacheDir) : new Map();
@@ -127,7 +135,8 @@ const kernel = new Kernel({
   tty,
   spawn: (data) => spawnWorker(workerUrl, { ...data, trace, stats }),
   translations,
-  onTranslation: cacheDir !== null ? (entry) => storeCacheEntry(cacheDir, entry) : null,
+  onTranslation:
+    cacheDir !== null ? (entry) => storeCacheEntry(cacheDir, entry) : null,
   log: (text) => fs.writeSync(2, `${text}\n`),
 });
 

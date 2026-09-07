@@ -24,13 +24,41 @@ const SIZE = Object.freeze({ byte: 1, word: 2, dword: 4, qword: 8, xmm: 16 });
 
 // Register numbers, as the hardware encodes them.
 export const REG = Object.freeze({
-  rax: 0, rcx: 1, rdx: 2, rbx: 3, rsp: 4, rbp: 5, rsi: 6, rdi: 7,
-  r8: 8, r9: 9, r10: 10, r11: 11, r12: 12, r13: 13, r14: 14, r15: 15,
+  rax: 0,
+  rcx: 1,
+  rdx: 2,
+  rbx: 3,
+  rsp: 4,
+  rbp: 5,
+  rsi: 6,
+  rdi: 7,
+  r8: 8,
+  r9: 9,
+  r10: 10,
+  r11: 11,
+  r12: 12,
+  r13: 13,
+  r14: 14,
+  r15: 15,
 });
 
 export const REG_NAMES = Object.freeze([
-  "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+  "rax",
+  "rcx",
+  "rdx",
+  "rbx",
+  "rsp",
+  "rbp",
+  "rsi",
+  "rdi",
+  "r8",
+  "r9",
+  "r10",
+  "r11",
+  "r12",
+  "r13",
+  "r14",
+  "r15",
 ]);
 
 const SEGMENTS = Object.freeze(["es", "cs", "ss", "ds", "fs", "gs"]);
@@ -38,8 +66,22 @@ const SEGMENTS = Object.freeze(["es", "cs", "ss", "ds", "fs", "gs"]);
 // Condition codes, in encoding order. Odd codes negate the even one
 // below them.
 export const COND_NAMES = Object.freeze([
-  "o", "no", "b", "ae", "e", "ne", "be", "a",
-  "s", "ns", "p", "np", "l", "ge", "le", "g",
+  "o",
+  "no",
+  "b",
+  "ae",
+  "e",
+  "ne",
+  "be",
+  "a",
+  "s",
+  "ns",
+  "p",
+  "np",
+  "l",
+  "ge",
+  "le",
+  "g",
 ]);
 
 // Thrown when the bytes do not form an instruction the decoder knows.
@@ -68,7 +110,9 @@ for (let i = 0; i < 8; i++) {
   ONE_BYTE[i * 8 + 5] = `${m} rAX,Iz`;
 }
 ONE_BYTE[0x0f] = { escape: "0f" };
-for (const b of [0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65, 0x66, 0x67, 0xf0, 0xf2, 0xf3]) {
+for (const b of [
+  0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65, 0x66, 0x67, 0xf0, 0xf2, 0xf3,
+]) {
   ONE_BYTE[b] = { prefix: 1 };
 }
 for (let b = 0x40; b <= 0x4f; b++) {
@@ -105,7 +149,9 @@ ONE_BYTE[0x8b] = "mov Gv,Ev";
 ONE_BYTE[0x8c] = "mov Ev,Sw";
 ONE_BYTE[0x8d] = "lea Gv,M";
 ONE_BYTE[0x8e] = "mov Sw,Ew";
-ONE_BYTE[0x8f] = { group: ["pop Ev !64", null, null, null, null, null, null, null] };
+ONE_BYTE[0x8f] = {
+  group: ["pop Ev !64", null, null, null, null, null, null, null],
+};
 ONE_BYTE[0x90] = "nop";
 for (let i = 1; i < 8; i++) {
   ONE_BYTE[0x90 + i] = "xchg Zv,rAX";
@@ -143,8 +189,30 @@ ONE_BYTE[0xc2] = "ret Iw !64";
 ONE_BYTE[0xc3] = "ret !64";
 ONE_BYTE[0xc4] = { vex: 3 };
 ONE_BYTE[0xc5] = { vex: 2 };
-ONE_BYTE[0xc6] = { group: ["mov Eb,Ib", null, null, null, null, null, null, { reg: "xabort Ub" }] };
-ONE_BYTE[0xc7] = { group: ["mov Ev,Iz", null, null, null, null, null, null, { reg: "xbegin Jz" }] };
+ONE_BYTE[0xc6] = {
+  group: [
+    "mov Eb,Ib",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    { reg: "xabort Ub" },
+  ],
+};
+ONE_BYTE[0xc7] = {
+  group: [
+    "mov Ev,Iz",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    { reg: "xbegin Jz" },
+  ],
+};
 ONE_BYTE[0xc8] = "enter Iw,Ub";
 ONE_BYTE[0xc9] = "leave !64";
 ONE_BYTE[0xca] = "retf Iw";
@@ -178,30 +246,85 @@ ONE_BYTE[0xef] = "out DX,eAX";
 ONE_BYTE[0xf1] = "int1";
 ONE_BYTE[0xf4] = "hlt";
 ONE_BYTE[0xf5] = "cmc";
-ONE_BYTE[0xf6] = { group: ["test Eb,Ib", "test Eb,Ib", "not Eb", "neg Eb", "mul Eb", "imul Eb", "div Eb", "idiv Eb"] };
-ONE_BYTE[0xf7] = { group: ["test Ev,Iz", "test Ev,Iz", "not Ev", "neg Ev", "mul Ev", "imul Ev", "div Ev", "idiv Ev"] };
+ONE_BYTE[0xf6] = {
+  group: [
+    "test Eb,Ib",
+    "test Eb,Ib",
+    "not Eb",
+    "neg Eb",
+    "mul Eb",
+    "imul Eb",
+    "div Eb",
+    "idiv Eb",
+  ],
+};
+ONE_BYTE[0xf7] = {
+  group: [
+    "test Ev,Iz",
+    "test Ev,Iz",
+    "not Ev",
+    "neg Ev",
+    "mul Ev",
+    "imul Ev",
+    "div Ev",
+    "idiv Ev",
+  ],
+};
 ONE_BYTE[0xf8] = "clc";
 ONE_BYTE[0xf9] = "stc";
 ONE_BYTE[0xfa] = "cli";
 ONE_BYTE[0xfb] = "sti";
 ONE_BYTE[0xfc] = "cld";
 ONE_BYTE[0xfd] = "std";
-ONE_BYTE[0xfe] = { group: ["inc Eb", "dec Eb", null, null, null, null, null, null] };
-ONE_BYTE[0xff] = { group: ["inc Ev", "dec Ev", "call Ev !64", "callf Mp", "jmp Ev !64", "jmpf Mp", "push Ev !64", null] };
+ONE_BYTE[0xfe] = {
+  group: ["inc Eb", "dec Eb", null, null, null, null, null, null],
+};
+ONE_BYTE[0xff] = {
+  group: [
+    "inc Ev",
+    "dec Ev",
+    "call Ev !64",
+    "callf Mp",
+    "jmp Ev !64",
+    "jmpf Mp",
+    "push Ev !64",
+    null,
+  ],
+};
 
 // The two-byte map (0F xx). Entries keyed by mandatory prefix are
 // objects with np, 66, f3 and f2 members.
 const TWO_BYTE = new Array(256).fill(null);
 
-TWO_BYTE[0x00] = { group: ["sldt Ew", "str Ew", "lldt Ew", "ltr Ew", "verr Ew", "verw Ew", null, null] };
+TWO_BYTE[0x00] = {
+  group: [
+    "sldt Ew",
+    "str Ew",
+    "lldt Ew",
+    "ltr Ew",
+    "verr Ew",
+    "verw Ew",
+    null,
+    null,
+  ],
+};
 TWO_BYTE[0x01] = {
   group: [
     { mem: "sgdt M", reg: {} },
-    { mem: "sidt M", reg: { 0xc8: "monitor", 0xc9: "mwait", 0xca: "clac", 0xcb: "stac" } },
-    { mem: "lgdt M", reg: { 0xd0: "xgetbv", 0xd1: "xsetbv", 0xd5: "xend", 0xd6: "xtest" } },
+    {
+      mem: "sidt M",
+      reg: { 0xc8: "monitor", 0xc9: "mwait", 0xca: "clac", 0xcb: "stac" },
+    },
+    {
+      mem: "lgdt M",
+      reg: { 0xd0: "xgetbv", 0xd1: "xsetbv", 0xd5: "xend", 0xd6: "xtest" },
+    },
     { mem: "lidt M", reg: {} },
     "smsw Ew",
-    { mem: { f3: "rstorssp Mq" }, reg: { 0xea: "saveprevssp", 0xee: "rdpkru", 0xef: "wrpkru" } },
+    {
+      mem: { f3: "rstorssp Mq" },
+      reg: { 0xea: "saveprevssp", 0xee: "rdpkru", 0xef: "wrpkru" },
+    },
     "lmsw Ew",
     { mem: "invlpg M", reg: { 0xf8: "swapgs", 0xf9: "rdtscp" } },
   ],
@@ -214,16 +337,57 @@ TWO_BYTE[0x07] = "sysret";
 TWO_BYTE[0x08] = "invd";
 TWO_BYTE[0x09] = "wbinvd";
 TWO_BYTE[0x0b] = "ud2";
-TWO_BYTE[0x0d] = { group: ["prefetch M", "prefetchw M", "prefetchwt1 M", "prefetch M", "prefetch M", "prefetch M", "prefetch M", "prefetch M"] };
-TWO_BYTE[0x10] = { np: "movups Vx,Wx", 66: "movupd Vx,Wx", f3: "movss Vx,Wss", f2: "movsd Vx,Wsd" };
-TWO_BYTE[0x11] = { np: "movups Wx,Vx", 66: "movupd Wx,Vx", f3: "movss Wss,Vx", f2: "movsd Wsd,Vx" };
-TWO_BYTE[0x12] = { np: { mem: "movlps Vx,Mq", reg: "movhlps Vx,Ux" }, 66: "movlpd Vx,Mq", f3: "movsldup Vx,Wx", f2: "movddup Vx,Wq" };
+TWO_BYTE[0x0d] = {
+  group: [
+    "prefetch M",
+    "prefetchw M",
+    "prefetchwt1 M",
+    "prefetch M",
+    "prefetch M",
+    "prefetch M",
+    "prefetch M",
+    "prefetch M",
+  ],
+};
+TWO_BYTE[0x10] = {
+  np: "movups Vx,Wx",
+  66: "movupd Vx,Wx",
+  f3: "movss Vx,Wss",
+  f2: "movsd Vx,Wsd",
+};
+TWO_BYTE[0x11] = {
+  np: "movups Wx,Vx",
+  66: "movupd Wx,Vx",
+  f3: "movss Wss,Vx",
+  f2: "movsd Wsd,Vx",
+};
+TWO_BYTE[0x12] = {
+  np: { mem: "movlps Vx,Mq", reg: "movhlps Vx,Ux" },
+  66: "movlpd Vx,Mq",
+  f3: "movsldup Vx,Wx",
+  f2: "movddup Vx,Wq",
+};
 TWO_BYTE[0x13] = { np: "movlps Mq,Vx", 66: "movlpd Mq,Vx" };
 TWO_BYTE[0x14] = { np: "unpcklps Vx,Wx", 66: "unpcklpd Vx,Wx" };
 TWO_BYTE[0x15] = { np: "unpckhps Vx,Wx", 66: "unpckhpd Vx,Wx" };
-TWO_BYTE[0x16] = { np: { mem: "movhps Vx,Mq", reg: "movlhps Vx,Ux" }, 66: "movhpd Vx,Mq", f3: "movshdup Vx,Wx" };
+TWO_BYTE[0x16] = {
+  np: { mem: "movhps Vx,Mq", reg: "movlhps Vx,Ux" },
+  66: "movhpd Vx,Mq",
+  f3: "movshdup Vx,Wx",
+};
 TWO_BYTE[0x17] = { np: "movhps Mq,Vx", 66: "movhpd Mq,Vx" };
-TWO_BYTE[0x18] = { group: ["prefetchnta M", "prefetcht0 M", "prefetcht1 M", "prefetcht2 M", "nop Ev", "nop Ev", "nop Ev", "nop Ev"] };
+TWO_BYTE[0x18] = {
+  group: [
+    "prefetchnta M",
+    "prefetcht0 M",
+    "prefetcht1 M",
+    "prefetcht2 M",
+    "nop Ev",
+    "nop Ev",
+    "nop Ev",
+    "nop Ev",
+  ],
+};
 for (let b = 0x19; b <= 0x1f; b++) {
   TWO_BYTE[b] = "nop Ev";
 }
@@ -231,7 +395,12 @@ TWO_BYTE[0x1e] = {
   np: "nop Ev",
   66: "nop Ev",
   f2: "nop Ev",
-  f3: { mem: "nop Ev", reg: { 0xfa: "endbr64", 0xfb: "endbr32" }, regGroup: [null, "rdsspq Ey", null, null, null, null, null, null], regDefault: "nop Ev" },
+  f3: {
+    mem: "nop Ev",
+    reg: { 0xfa: "endbr64", 0xfb: "endbr32" },
+    regGroup: [null, "rdsspq Ey", null, null, null, null, null, null],
+    regDefault: "nop Ev",
+  },
 };
 TWO_BYTE[0x20] = "mov Rq,Cq";
 TWO_BYTE[0x21] = "mov Rq,Dq";
@@ -239,10 +408,25 @@ TWO_BYTE[0x22] = "mov Cq,Rq";
 TWO_BYTE[0x23] = "mov Dq,Rq";
 TWO_BYTE[0x28] = { np: "movaps Vx,Wx", 66: "movapd Vx,Wx" };
 TWO_BYTE[0x29] = { np: "movaps Wx,Vx", 66: "movapd Wx,Vx" };
-TWO_BYTE[0x2a] = { np: "cvtpi2ps Vx,Qq", 66: "cvtpi2pd Vx,Qq", f3: "cvtsi2ss Vx,Ey", f2: "cvtsi2sd Vx,Ey" };
+TWO_BYTE[0x2a] = {
+  np: "cvtpi2ps Vx,Qq",
+  66: "cvtpi2pd Vx,Qq",
+  f3: "cvtsi2ss Vx,Ey",
+  f2: "cvtsi2sd Vx,Ey",
+};
 TWO_BYTE[0x2b] = { np: "movntps Mx,Vx", 66: "movntpd Mx,Vx" };
-TWO_BYTE[0x2c] = { np: "cvttps2pi Pq,Wq", 66: "cvttpd2pi Pq,Wx", f3: "cvttss2si Gy,Wss", f2: "cvttsd2si Gy,Wsd" };
-TWO_BYTE[0x2d] = { np: "cvtps2pi Pq,Wq", 66: "cvtpd2pi Pq,Wx", f3: "cvtss2si Gy,Wss", f2: "cvtsd2si Gy,Wsd" };
+TWO_BYTE[0x2c] = {
+  np: "cvttps2pi Pq,Wq",
+  66: "cvttpd2pi Pq,Wx",
+  f3: "cvttss2si Gy,Wss",
+  f2: "cvttsd2si Gy,Wsd",
+};
+TWO_BYTE[0x2d] = {
+  np: "cvtps2pi Pq,Wq",
+  66: "cvtpd2pi Pq,Wx",
+  f3: "cvtss2si Gy,Wss",
+  f2: "cvtsd2si Gy,Wsd",
+};
 TWO_BYTE[0x2e] = { np: "ucomiss Vx,Wss", 66: "ucomisd Vx,Wsd" };
 TWO_BYTE[0x2f] = { np: "comiss Vx,Wss", 66: "comisd Vx,Wsd" };
 TWO_BYTE[0x30] = "wrmsr";
@@ -257,37 +441,125 @@ for (let i = 0; i < 16; i++) {
   TWO_BYTE[0x40 + i] = `cmov${COND_NAMES[i]} Gv,Ev`;
 }
 TWO_BYTE[0x50] = { np: "movmskps Gd,Ux", 66: "movmskpd Gd,Ux" };
-TWO_BYTE[0x51] = { np: "sqrtps Vx,Wx", 66: "sqrtpd Vx,Wx", f3: "sqrtss Vx,Wss", f2: "sqrtsd Vx,Wsd" };
+TWO_BYTE[0x51] = {
+  np: "sqrtps Vx,Wx",
+  66: "sqrtpd Vx,Wx",
+  f3: "sqrtss Vx,Wss",
+  f2: "sqrtsd Vx,Wsd",
+};
 TWO_BYTE[0x52] = { np: "rsqrtps Vx,Wx", f3: "rsqrtss Vx,Wss" };
 TWO_BYTE[0x53] = { np: "rcpps Vx,Wx", f3: "rcpss Vx,Wss" };
 TWO_BYTE[0x54] = { np: "andps Vx,Wx", 66: "andpd Vx,Wx" };
 TWO_BYTE[0x55] = { np: "andnps Vx,Wx", 66: "andnpd Vx,Wx" };
 TWO_BYTE[0x56] = { np: "orps Vx,Wx", 66: "orpd Vx,Wx" };
 TWO_BYTE[0x57] = { np: "xorps Vx,Wx", 66: "xorpd Vx,Wx" };
-TWO_BYTE[0x58] = { np: "addps Vx,Wx", 66: "addpd Vx,Wx", f3: "addss Vx,Wss", f2: "addsd Vx,Wsd" };
-TWO_BYTE[0x59] = { np: "mulps Vx,Wx", 66: "mulpd Vx,Wx", f3: "mulss Vx,Wss", f2: "mulsd Vx,Wsd" };
-TWO_BYTE[0x5a] = { np: "cvtps2pd Vx,Wq", 66: "cvtpd2ps Vx,Wx", f3: "cvtss2sd Vx,Wss", f2: "cvtsd2ss Vx,Wsd" };
-TWO_BYTE[0x5b] = { np: "cvtdq2ps Vx,Wx", 66: "cvtps2dq Vx,Wx", f3: "cvttps2dq Vx,Wx" };
-TWO_BYTE[0x5c] = { np: "subps Vx,Wx", 66: "subpd Vx,Wx", f3: "subss Vx,Wss", f2: "subsd Vx,Wsd" };
-TWO_BYTE[0x5d] = { np: "minps Vx,Wx", 66: "minpd Vx,Wx", f3: "minss Vx,Wss", f2: "minsd Vx,Wsd" };
-TWO_BYTE[0x5e] = { np: "divps Vx,Wx", 66: "divpd Vx,Wx", f3: "divss Vx,Wss", f2: "divsd Vx,Wsd" };
-TWO_BYTE[0x5f] = { np: "maxps Vx,Wx", 66: "maxpd Vx,Wx", f3: "maxss Vx,Wss", f2: "maxsd Vx,Wsd" };
+TWO_BYTE[0x58] = {
+  np: "addps Vx,Wx",
+  66: "addpd Vx,Wx",
+  f3: "addss Vx,Wss",
+  f2: "addsd Vx,Wsd",
+};
+TWO_BYTE[0x59] = {
+  np: "mulps Vx,Wx",
+  66: "mulpd Vx,Wx",
+  f3: "mulss Vx,Wss",
+  f2: "mulsd Vx,Wsd",
+};
+TWO_BYTE[0x5a] = {
+  np: "cvtps2pd Vx,Wq",
+  66: "cvtpd2ps Vx,Wx",
+  f3: "cvtss2sd Vx,Wss",
+  f2: "cvtsd2ss Vx,Wsd",
+};
+TWO_BYTE[0x5b] = {
+  np: "cvtdq2ps Vx,Wx",
+  66: "cvtps2dq Vx,Wx",
+  f3: "cvttps2dq Vx,Wx",
+};
+TWO_BYTE[0x5c] = {
+  np: "subps Vx,Wx",
+  66: "subpd Vx,Wx",
+  f3: "subss Vx,Wss",
+  f2: "subsd Vx,Wsd",
+};
+TWO_BYTE[0x5d] = {
+  np: "minps Vx,Wx",
+  66: "minpd Vx,Wx",
+  f3: "minss Vx,Wss",
+  f2: "minsd Vx,Wsd",
+};
+TWO_BYTE[0x5e] = {
+  np: "divps Vx,Wx",
+  66: "divpd Vx,Wx",
+  f3: "divss Vx,Wss",
+  f2: "divsd Vx,Wsd",
+};
+TWO_BYTE[0x5f] = {
+  np: "maxps Vx,Wx",
+  66: "maxpd Vx,Wx",
+  f3: "maxss Vx,Wss",
+  f2: "maxsd Vx,Wsd",
+};
 
 // The MMX/SSE2 integer block: the same mnemonic on mm registers with
 // no prefix and on xmm registers with 66.
 const MMX_SSE = {
-  0x60: "punpcklbw", 0x61: "punpcklwd", 0x62: "punpckldq", 0x63: "packsswb",
-  0x64: "pcmpgtb", 0x65: "pcmpgtw", 0x66: "pcmpgtd", 0x67: "packuswb",
-  0x68: "punpckhbw", 0x69: "punpckhwd", 0x6a: "punpckhdq", 0x6b: "packssdw",
-  0x74: "pcmpeqb", 0x75: "pcmpeqw", 0x76: "pcmpeqd",
-  0xd1: "psrlw", 0xd2: "psrld", 0xd3: "psrlq", 0xd4: "paddq", 0xd5: "pmullw",
-  0xd7: "pmovmskb", 0xd8: "psubusb", 0xd9: "psubusw", 0xda: "pminub", 0xdb: "pand",
-  0xdc: "paddusb", 0xdd: "paddusw", 0xde: "pmaxub", 0xdf: "pandn",
-  0xe0: "pavgb", 0xe1: "psraw", 0xe2: "psrad", 0xe3: "pavgw", 0xe4: "pmulhuw", 0xe5: "pmulhw",
-  0xe8: "psubsb", 0xe9: "psubsw", 0xea: "pminsw", 0xeb: "por", 0xec: "paddsb", 0xed: "paddsw",
-  0xee: "pmaxsw", 0xef: "pxor",
-  0xf1: "psllw", 0xf2: "pslld", 0xf3: "psllq", 0xf4: "pmuludq", 0xf5: "pmaddwd", 0xf6: "psadbw",
-  0xf8: "psubb", 0xf9: "psubw", 0xfa: "psubd", 0xfb: "psubq", 0xfc: "paddb", 0xfd: "paddw", 0xfe: "paddd",
+  0x60: "punpcklbw",
+  0x61: "punpcklwd",
+  0x62: "punpckldq",
+  0x63: "packsswb",
+  0x64: "pcmpgtb",
+  0x65: "pcmpgtw",
+  0x66: "pcmpgtd",
+  0x67: "packuswb",
+  0x68: "punpckhbw",
+  0x69: "punpckhwd",
+  0x6a: "punpckhdq",
+  0x6b: "packssdw",
+  0x74: "pcmpeqb",
+  0x75: "pcmpeqw",
+  0x76: "pcmpeqd",
+  0xd1: "psrlw",
+  0xd2: "psrld",
+  0xd3: "psrlq",
+  0xd4: "paddq",
+  0xd5: "pmullw",
+  0xd7: "pmovmskb",
+  0xd8: "psubusb",
+  0xd9: "psubusw",
+  0xda: "pminub",
+  0xdb: "pand",
+  0xdc: "paddusb",
+  0xdd: "paddusw",
+  0xde: "pmaxub",
+  0xdf: "pandn",
+  0xe0: "pavgb",
+  0xe1: "psraw",
+  0xe2: "psrad",
+  0xe3: "pavgw",
+  0xe4: "pmulhuw",
+  0xe5: "pmulhw",
+  0xe8: "psubsb",
+  0xe9: "psubsw",
+  0xea: "pminsw",
+  0xeb: "por",
+  0xec: "paddsb",
+  0xed: "paddsw",
+  0xee: "pmaxsw",
+  0xef: "pxor",
+  0xf1: "psllw",
+  0xf2: "pslld",
+  0xf3: "psllq",
+  0xf4: "pmuludq",
+  0xf5: "pmaddwd",
+  0xf6: "psadbw",
+  0xf8: "psubb",
+  0xf9: "psubw",
+  0xfa: "psubd",
+  0xfb: "psubq",
+  0xfc: "paddb",
+  0xfd: "paddw",
+  0xfe: "paddd",
 };
 for (const [op, m] of Object.entries(MMX_SSE)) {
   const b = Number(op);
@@ -301,10 +573,48 @@ TWO_BYTE[0x6c] = { 66: "punpcklqdq Vx,Wx" };
 TWO_BYTE[0x6d] = { 66: "punpckhqdq Vx,Wx" };
 TWO_BYTE[0x6e] = { np: "movd Pq,Ey", 66: "movd Vx,Ey" };
 TWO_BYTE[0x6f] = { np: "movq Pq,Qq", 66: "movdqa Vx,Wx", f3: "movdqu Vx,Wx" };
-TWO_BYTE[0x70] = { np: "pshufw Pq,Qq,Ub", 66: "pshufd Vx,Wx,Ub", f3: "pshufhw Vx,Wx,Ub", f2: "pshuflw Vx,Wx,Ub" };
-TWO_BYTE[0x71] = { group: [null, null, { np: "psrlw Nq,Ub", 66: "psrlw Ux,Ub" }, null, { np: "psraw Nq,Ub", 66: "psraw Ux,Ub" }, null, { np: "psllw Nq,Ub", 66: "psllw Ux,Ub" }, null] };
-TWO_BYTE[0x72] = { group: [null, null, { np: "psrld Nq,Ub", 66: "psrld Ux,Ub" }, null, { np: "psrad Nq,Ub", 66: "psrad Ux,Ub" }, null, { np: "pslld Nq,Ub", 66: "pslld Ux,Ub" }, null] };
-TWO_BYTE[0x73] = { group: [null, null, { np: "psrlq Nq,Ub", 66: "psrlq Ux,Ub" }, { 66: "psrldq Ux,Ub" }, null, null, { np: "psllq Nq,Ub", 66: "psllq Ux,Ub" }, { 66: "pslldq Ux,Ub" }] };
+TWO_BYTE[0x70] = {
+  np: "pshufw Pq,Qq,Ub",
+  66: "pshufd Vx,Wx,Ub",
+  f3: "pshufhw Vx,Wx,Ub",
+  f2: "pshuflw Vx,Wx,Ub",
+};
+TWO_BYTE[0x71] = {
+  group: [
+    null,
+    null,
+    { np: "psrlw Nq,Ub", 66: "psrlw Ux,Ub" },
+    null,
+    { np: "psraw Nq,Ub", 66: "psraw Ux,Ub" },
+    null,
+    { np: "psllw Nq,Ub", 66: "psllw Ux,Ub" },
+    null,
+  ],
+};
+TWO_BYTE[0x72] = {
+  group: [
+    null,
+    null,
+    { np: "psrld Nq,Ub", 66: "psrld Ux,Ub" },
+    null,
+    { np: "psrad Nq,Ub", 66: "psrad Ux,Ub" },
+    null,
+    { np: "pslld Nq,Ub", 66: "pslld Ux,Ub" },
+    null,
+  ],
+};
+TWO_BYTE[0x73] = {
+  group: [
+    null,
+    null,
+    { np: "psrlq Nq,Ub", 66: "psrlq Ux,Ub" },
+    { 66: "psrldq Ux,Ub" },
+    null,
+    null,
+    { np: "psllq Nq,Ub", 66: "psllq Ux,Ub" },
+    { 66: "pslldq Ux,Ub" },
+  ],
+};
 TWO_BYTE[0x77] = "emms";
 TWO_BYTE[0x7c] = { 66: "haddpd Vx,Wx", f2: "haddps Vx,Wx" };
 TWO_BYTE[0x7d] = { 66: "hsubpd Vx,Wx", f2: "hsubps Vx,Wx" };
@@ -343,7 +653,10 @@ TWO_BYTE[0xae] = {
     group: [
       { mem: "fxsave64 M", reg: null },
       { mem: "fxrstor64 M", reg: null },
-      null, null, null, null,
+      null,
+      null,
+      null,
+      null,
       { mem: "clwb Mb", reg: null },
       { mem: "clflushopt Mb", reg: null },
     ],
@@ -360,7 +673,18 @@ TWO_BYTE[0xae] = {
       { mem: null, reg: null },
     ],
   },
-  f2: { group: [null, null, null, null, null, null, { mem: null, reg: "umwait Ry" }, null] },
+  f2: {
+    group: [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { mem: null, reg: "umwait Ry" },
+      null,
+    ],
+  },
 };
 TWO_BYTE[0xaf] = "imul Gv,Ev";
 TWO_BYTE[0xb0] = "cmpxchg Eb,Gb";
@@ -373,7 +697,18 @@ TWO_BYTE[0xb6] = "movzx Gv,Eb";
 TWO_BYTE[0xb7] = "movzx Gv,Ew";
 TWO_BYTE[0xb8] = { f3: "popcnt Gv,Ev" };
 TWO_BYTE[0xb9] = "ud1 Gv,Ev";
-TWO_BYTE[0xba] = { group: [null, null, null, null, "bt Ev,Ub", "bts Ev,Ub", "btr Ev,Ub", "btc Ev,Ub"] };
+TWO_BYTE[0xba] = {
+  group: [
+    null,
+    null,
+    null,
+    null,
+    "bt Ev,Ub",
+    "bts Ev,Ub",
+    "btr Ev,Ub",
+    "btc Ev,Ub",
+  ],
+};
 TWO_BYTE[0xbb] = "btc Ev,Gv";
 TWO_BYTE[0xbc] = { np: "bsf Gv,Ev", 66: "bsf Gv,Ev", f3: "tzcnt Gv,Ev" };
 TWO_BYTE[0xbd] = { np: "bsr Gv,Ev", 66: "bsr Gv,Ev", f3: "lzcnt Gv,Ev" };
@@ -381,7 +716,12 @@ TWO_BYTE[0xbe] = "movsx Gv,Eb";
 TWO_BYTE[0xbf] = "movsx Gv,Ew";
 TWO_BYTE[0xc0] = "xadd Eb,Gb";
 TWO_BYTE[0xc1] = "xadd Ev,Gv";
-TWO_BYTE[0xc2] = { np: "cmpps Vx,Wx,Ub", 66: "cmppd Vx,Wx,Ub", f3: "cmpss Vx,Wss,Ub", f2: "cmpsd Vx,Wsd,Ub" };
+TWO_BYTE[0xc2] = {
+  np: "cmpps Vx,Wx,Ub",
+  66: "cmppd Vx,Wx,Ub",
+  f3: "cmpss Vx,Wss,Ub",
+  f2: "cmpsd Vx,Wsd,Ub",
+};
 TWO_BYTE[0xc3] = "movnti My,Gy";
 TWO_BYTE[0xc4] = { np: "pinsrw Pq,Ew,Ub", 66: "pinsrw Vx,Ew,Ub" };
 TWO_BYTE[0xc5] = { np: "pextrw Gd,Nq,Ub", 66: "pextrw Gd,Ux,Ub" };
@@ -403,7 +743,11 @@ for (let i = 0; i < 8; i++) {
 }
 TWO_BYTE[0xd0] = { 66: "addsubpd Vx,Wx", f2: "addsubps Vx,Wx" };
 TWO_BYTE[0xd6] = { 66: "movq Wq,Vx", f3: "movq2dq Vx,Nq", f2: "movdq2q Pq,Ux" };
-TWO_BYTE[0xe6] = { 66: "cvttpd2dq Vx,Wx", f3: "cvtdq2pd Vx,Wq", f2: "cvtpd2dq Vx,Wx" };
+TWO_BYTE[0xe6] = {
+  66: "cvttpd2dq Vx,Wx",
+  f3: "cvtdq2pd Vx,Wq",
+  f2: "cvtpd2dq Vx,Wx",
+};
 TWO_BYTE[0xe7] = { np: "movntq Mq,Pq", 66: "movntdq Mx,Vx" };
 TWO_BYTE[0xf0] = { f2: "lddqu Vx,Mx" };
 TWO_BYTE[0xf7] = { np: "maskmovq Pq,Nq", 66: "maskmovdqu Vx,Ux" };
@@ -413,24 +757,62 @@ TWO_BYTE[0xff] = "ud0 Gv,Ev";
 // keyed otherwise.
 const THREE_BYTE_38 = new Array(256).fill(null);
 const SSSE3 = {
-  0x00: "pshufb", 0x01: "phaddw", 0x02: "phaddd", 0x03: "phaddsw", 0x04: "pmaddubsw",
-  0x05: "phsubw", 0x06: "phsubd", 0x07: "phsubsw", 0x08: "psignb", 0x09: "psignw",
-  0x0a: "psignd", 0x0b: "pmulhrsw", 0x1c: "pabsb", 0x1d: "pabsw", 0x1e: "pabsd",
+  0x00: "pshufb",
+  0x01: "phaddw",
+  0x02: "phaddd",
+  0x03: "phaddsw",
+  0x04: "pmaddubsw",
+  0x05: "phsubw",
+  0x06: "phsubd",
+  0x07: "phsubsw",
+  0x08: "psignb",
+  0x09: "psignw",
+  0x0a: "psignd",
+  0x0b: "pmulhrsw",
+  0x1c: "pabsb",
+  0x1d: "pabsw",
+  0x1e: "pabsd",
 };
 for (const [op, m] of Object.entries(SSSE3)) {
   THREE_BYTE_38[Number(op)] = { np: `${m} Pq,Qq`, 66: `${m} Vx,Wx` };
 }
 const SSE4_38 = {
-  0x10: "pblendvb Vx,Wx", 0x14: "blendvps Vx,Wx", 0x15: "blendvpd Vx,Wx", 0x17: "ptest Vx,Wx",
-  0x20: "pmovsxbw Vx,Wq", 0x21: "pmovsxbd Vx,Wd", 0x22: "pmovsxbq Vx,Ww", 0x23: "pmovsxwd Vx,Wq",
-  0x24: "pmovsxwq Vx,Wd", 0x25: "pmovsxdq Vx,Wq", 0x28: "pmuldq Vx,Wx", 0x29: "pcmpeqq Vx,Wx",
-  0x2a: "movntdqa Vx,Mx", 0x2b: "packusdw Vx,Wx",
-  0x30: "pmovzxbw Vx,Wq", 0x31: "pmovzxbd Vx,Wd", 0x32: "pmovzxbq Vx,Ww", 0x33: "pmovzxwd Vx,Wq",
-  0x34: "pmovzxwq Vx,Wd", 0x35: "pmovzxdq Vx,Wq", 0x37: "pcmpgtq Vx,Wx",
-  0x38: "pminsb Vx,Wx", 0x39: "pminsd Vx,Wx", 0x3a: "pminuw Vx,Wx", 0x3b: "pminud Vx,Wx",
-  0x3c: "pmaxsb Vx,Wx", 0x3d: "pmaxsd Vx,Wx", 0x3e: "pmaxuw Vx,Wx", 0x3f: "pmaxud Vx,Wx",
-  0x40: "pmulld Vx,Wx", 0x41: "phminposuw Vx,Wx",
-  0xdb: "aesimc Vx,Wx", 0xdc: "aesenc Vx,Wx", 0xdd: "aesenclast Vx,Wx", 0xde: "aesdec Vx,Wx", 0xdf: "aesdeclast Vx,Wx",
+  0x10: "pblendvb Vx,Wx",
+  0x14: "blendvps Vx,Wx",
+  0x15: "blendvpd Vx,Wx",
+  0x17: "ptest Vx,Wx",
+  0x20: "pmovsxbw Vx,Wq",
+  0x21: "pmovsxbd Vx,Wd",
+  0x22: "pmovsxbq Vx,Ww",
+  0x23: "pmovsxwd Vx,Wq",
+  0x24: "pmovsxwq Vx,Wd",
+  0x25: "pmovsxdq Vx,Wq",
+  0x28: "pmuldq Vx,Wx",
+  0x29: "pcmpeqq Vx,Wx",
+  0x2a: "movntdqa Vx,Mx",
+  0x2b: "packusdw Vx,Wx",
+  0x30: "pmovzxbw Vx,Wq",
+  0x31: "pmovzxbd Vx,Wd",
+  0x32: "pmovzxbq Vx,Ww",
+  0x33: "pmovzxwd Vx,Wq",
+  0x34: "pmovzxwq Vx,Wd",
+  0x35: "pmovzxdq Vx,Wq",
+  0x37: "pcmpgtq Vx,Wx",
+  0x38: "pminsb Vx,Wx",
+  0x39: "pminsd Vx,Wx",
+  0x3a: "pminuw Vx,Wx",
+  0x3b: "pminud Vx,Wx",
+  0x3c: "pmaxsb Vx,Wx",
+  0x3d: "pmaxsd Vx,Wx",
+  0x3e: "pmaxuw Vx,Wx",
+  0x3f: "pmaxud Vx,Wx",
+  0x40: "pmulld Vx,Wx",
+  0x41: "phminposuw Vx,Wx",
+  0xdb: "aesimc Vx,Wx",
+  0xdc: "aesenc Vx,Wx",
+  0xdd: "aesenclast Vx,Wx",
+  0xde: "aesdec Vx,Wx",
+  0xdf: "aesdeclast Vx,Wx",
 };
 for (const [op, spec] of Object.entries(SSE4_38)) {
   THREE_BYTE_38[Number(op)] = { 66: spec };
@@ -441,26 +823,73 @@ THREE_BYTE_38[0xca] = { np: "sha1msg2 Vx,Wx" };
 THREE_BYTE_38[0xcb] = { np: "sha256rnds2 Vx,Wx" };
 THREE_BYTE_38[0xcc] = { np: "sha256msg1 Vx,Wx" };
 THREE_BYTE_38[0xcd] = { np: "sha256msg2 Vx,Wx" };
-THREE_BYTE_38[0xf0] = { np: "movbe Gy,My", 66: "movbe Gw,Mw", f2: "crc32 Gd,Eb" };
-THREE_BYTE_38[0xf1] = { np: "movbe My,Gy", 66: "movbe Mw,Gw", f2: "crc32 Gd,Ey" };
+THREE_BYTE_38[0xf0] = {
+  np: "movbe Gy,My",
+  66: "movbe Gw,Mw",
+  f2: "crc32 Gd,Eb",
+};
+THREE_BYTE_38[0xf1] = {
+  np: "movbe My,Gy",
+  66: "movbe Mw,Gw",
+  f2: "crc32 Gd,Ey",
+};
 THREE_BYTE_38[0xf6] = { 66: "adcx Gy,Ey", f3: "adox Gy,Ey" };
 // VEX-only BMI entries on this map; the operand shape is all that
 // matters to a length decode, and the mnemonics are exact.
 THREE_BYTE_38[0xf2] = { vexOnly: 1, np: "andn Gy,By,Ey" };
-THREE_BYTE_38[0xf3] = { vexOnly: 1, group: [null, "blsr By,Ey", "blsmsk By,Ey", "blsi By,Ey", null, null, null, null] };
-THREE_BYTE_38[0xf5] = { vexOnly: 1, np: "bzhi Gy,Ey,By", f3: "pext Gy,By,Ey", f2: "pdep Gy,By,Ey" };
-THREE_BYTE_38[0xf7] = { vexOnly: 1, np: "bextr Gy,Ey,By", 66: "shlx Gy,Ey,By", f3: "sarx Gy,Ey,By", f2: "shrx Gy,Ey,By" };
+THREE_BYTE_38[0xf3] = {
+  vexOnly: 1,
+  group: [
+    null,
+    "blsr By,Ey",
+    "blsmsk By,Ey",
+    "blsi By,Ey",
+    null,
+    null,
+    null,
+    null,
+  ],
+};
+THREE_BYTE_38[0xf5] = {
+  vexOnly: 1,
+  np: "bzhi Gy,Ey,By",
+  f3: "pext Gy,By,Ey",
+  f2: "pdep Gy,By,Ey",
+};
+THREE_BYTE_38[0xf7] = {
+  vexOnly: 1,
+  np: "bextr Gy,Ey,By",
+  66: "shlx Gy,Ey,By",
+  f3: "sarx Gy,Ey,By",
+  f2: "shrx Gy,Ey,By",
+};
 THREE_BYTE_38[0xf6] = { ...THREE_BYTE_38[0xf6], f2vex: "mulx Gy,By,Ey" };
 
 // The 0F 3A map: SSE4 forms with an immediate.
 const THREE_BYTE_3A = new Array(256).fill(null);
 const SSE4_3A = {
-  0x08: "roundps Vx,Wx,Ub", 0x09: "roundpd Vx,Wx,Ub", 0x0a: "roundss Vx,Wss,Ub", 0x0b: "roundsd Vx,Wsd,Ub",
-  0x0c: "blendps Vx,Wx,Ub", 0x0d: "blendpd Vx,Wx,Ub", 0x0e: "pblendw Vx,Wx,Ub",
-  0x14: "pextrb Ed,Vx,Ub", 0x15: "pextrw Ed,Vx,Ub", 0x16: "pextrd Ey,Vx,Ub", 0x17: "extractps Ed,Vx,Ub",
-  0x20: "pinsrb Vx,Ed,Ub", 0x21: "insertps Vx,Wss,Ub", 0x22: "pinsrd Vx,Ey,Ub",
-  0x40: "dpps Vx,Wx,Ub", 0x41: "dppd Vx,Wx,Ub", 0x42: "mpsadbw Vx,Wx,Ub", 0x44: "pclmulqdq Vx,Wx,Ub",
-  0x60: "pcmpestrm Vx,Wx,Ub", 0x61: "pcmpestri Vx,Wx,Ub", 0x62: "pcmpistrm Vx,Wx,Ub", 0x63: "pcmpistri Vx,Wx,Ub",
+  0x08: "roundps Vx,Wx,Ub",
+  0x09: "roundpd Vx,Wx,Ub",
+  0x0a: "roundss Vx,Wss,Ub",
+  0x0b: "roundsd Vx,Wsd,Ub",
+  0x0c: "blendps Vx,Wx,Ub",
+  0x0d: "blendpd Vx,Wx,Ub",
+  0x0e: "pblendw Vx,Wx,Ub",
+  0x14: "pextrb Ed,Vx,Ub",
+  0x15: "pextrw Ed,Vx,Ub",
+  0x16: "pextrd Ey,Vx,Ub",
+  0x17: "extractps Ed,Vx,Ub",
+  0x20: "pinsrb Vx,Ed,Ub",
+  0x21: "insertps Vx,Wss,Ub",
+  0x22: "pinsrd Vx,Ey,Ub",
+  0x40: "dpps Vx,Wx,Ub",
+  0x41: "dppd Vx,Wx,Ub",
+  0x42: "mpsadbw Vx,Wx,Ub",
+  0x44: "pclmulqdq Vx,Wx,Ub",
+  0x60: "pcmpestrm Vx,Wx,Ub",
+  0x61: "pcmpestri Vx,Wx,Ub",
+  0x62: "pcmpistrm Vx,Wx,Ub",
+  0x63: "pcmpistri Vx,Wx,Ub",
   0xdf: "aeskeygenassist Vx,Wx,Ub",
 };
 for (const [op, spec] of Object.entries(SSE4_3A)) {
@@ -477,10 +906,19 @@ const VEX_ONLY = {
   "0f": {
     0x77: "vzeroupper",
     // Mask-register moves and tests (AVX-512), ModRM only.
-    0x90: "kmov Kq,Kq", 0x91: "kmov Mq,Kq", 0x92: "kmov Kq,Ey", 0x93: "kmov Gy,Kq",
-    0x98: "kortest Kq,Kq", 0x99: "ktest Kq,Kq",
-    0x41: "kand Kq,Kq", 0x42: "kandn Kq,Kq", 0x45: "kor Kq,Kq", 0x46: "kxnor Kq,Kq",
-    0x47: "kxor Kq,Kq", 0x4a: "kadd Kq,Kq", 0x4b: "kunpck Kq,Kq",
+    0x90: "kmov Kq,Kq",
+    0x91: "kmov Mq,Kq",
+    0x92: "kmov Kq,Ey",
+    0x93: "kmov Gy,Kq",
+    0x98: "kortest Kq,Kq",
+    0x99: "ktest Kq,Kq",
+    0x41: "kand Kq,Kq",
+    0x42: "kandn Kq,Kq",
+    0x45: "kor Kq,Kq",
+    0x46: "kxnor Kq,Kq",
+    0x47: "kxor Kq,Kq",
+    0x4a: "kadd Kq,Kq",
+    0x4b: "kunpck Kq,Kq",
   },
   "0f38": {
     0x18: { 66: "vbroadcastss Vx,Wd" },
@@ -534,8 +972,16 @@ const VEX_ONLY = {
 // The FMA block's ten forms, low nibble 6 through f: name and whether
 // the form is scalar.
 const FMA_KINDS = [
-  ["vfmaddsub", false], ["vfmsubadd", false], ["vfmadd", false], ["vfmadd", true], ["vfmsub", false],
-  ["vfmsub", true], ["vfnmadd", false], ["vfnmadd", true], ["vfnmsub", false], ["vfnmsub", true],
+  ["vfmaddsub", false],
+  ["vfmsubadd", false],
+  ["vfmadd", false],
+  ["vfmadd", true],
+  ["vfmsub", false],
+  ["vfmsub", true],
+  ["vfnmadd", false],
+  ["vfnmadd", true],
+  ["vfnmsub", false],
+  ["vfnmsub", true],
 ];
 
 // The x87 maps. For each escape byte: memory forms by ModRM.reg, and
@@ -543,46 +989,204 @@ const FMA_KINDS = [
 // operand when `regs` is set).
 const X87 = {
   0xd8: {
-    mem: ["fadd Md", "fmul Md", "fcom Md", "fcomp Md", "fsub Md", "fsubr Md", "fdiv Md", "fdivr Md"],
-    regs: ["fadd ST0,STi", "fmul ST0,STi", "fcom STi", "fcomp STi", "fsub ST0,STi", "fsubr ST0,STi", "fdiv ST0,STi", "fdivr ST0,STi"],
+    mem: [
+      "fadd Md",
+      "fmul Md",
+      "fcom Md",
+      "fcomp Md",
+      "fsub Md",
+      "fsubr Md",
+      "fdiv Md",
+      "fdivr Md",
+    ],
+    regs: [
+      "fadd ST0,STi",
+      "fmul ST0,STi",
+      "fcom STi",
+      "fcomp STi",
+      "fsub ST0,STi",
+      "fsubr ST0,STi",
+      "fdiv ST0,STi",
+      "fdivr ST0,STi",
+    ],
   },
   0xd9: {
-    mem: ["fld Md", null, "fst Md", "fstp Md", "fldenv M", "fldcw Mw", "fnstenv M", "fnstcw Mw"],
+    mem: [
+      "fld Md",
+      null,
+      "fst Md",
+      "fstp Md",
+      "fldenv M",
+      "fldcw Mw",
+      "fnstenv M",
+      "fnstcw Mw",
+    ],
     regs: ["fld STi", "fxch STi", null, null, null, null, null, null],
     reg: {
-      0xd0: "fnop", 0xe0: "fchs", 0xe1: "fabs", 0xe4: "ftst", 0xe5: "fxam", 0xe8: "fld1", 0xe9: "fldl2t",
-      0xea: "fldl2e", 0xeb: "fldpi", 0xec: "fldlg2", 0xed: "fldln2", 0xee: "fldz", 0xf0: "f2xm1", 0xf1: "fyl2x",
-      0xf2: "fptan", 0xf3: "fpatan", 0xf4: "fxtract", 0xf5: "fprem1", 0xf6: "fdecstp", 0xf7: "fincstp",
-      0xf8: "fprem", 0xf9: "fyl2xp1", 0xfa: "fsqrt", 0xfb: "fsincos", 0xfc: "frndint", 0xfd: "fscale",
-      0xfe: "fsin", 0xff: "fcos",
+      0xd0: "fnop",
+      0xe0: "fchs",
+      0xe1: "fabs",
+      0xe4: "ftst",
+      0xe5: "fxam",
+      0xe8: "fld1",
+      0xe9: "fldl2t",
+      0xea: "fldl2e",
+      0xeb: "fldpi",
+      0xec: "fldlg2",
+      0xed: "fldln2",
+      0xee: "fldz",
+      0xf0: "f2xm1",
+      0xf1: "fyl2x",
+      0xf2: "fptan",
+      0xf3: "fpatan",
+      0xf4: "fxtract",
+      0xf5: "fprem1",
+      0xf6: "fdecstp",
+      0xf7: "fincstp",
+      0xf8: "fprem",
+      0xf9: "fyl2xp1",
+      0xfa: "fsqrt",
+      0xfb: "fsincos",
+      0xfc: "frndint",
+      0xfd: "fscale",
+      0xfe: "fsin",
+      0xff: "fcos",
     },
   },
   0xda: {
-    mem: ["fiadd Md", "fimul Md", "ficom Md", "ficomp Md", "fisub Md", "fisubr Md", "fidiv Md", "fidivr Md"],
-    regs: ["fcmovb ST0,STi", "fcmove ST0,STi", "fcmovbe ST0,STi", "fcmovu ST0,STi", null, null, null, null],
+    mem: [
+      "fiadd Md",
+      "fimul Md",
+      "ficom Md",
+      "ficomp Md",
+      "fisub Md",
+      "fisubr Md",
+      "fidiv Md",
+      "fidivr Md",
+    ],
+    regs: [
+      "fcmovb ST0,STi",
+      "fcmove ST0,STi",
+      "fcmovbe ST0,STi",
+      "fcmovu ST0,STi",
+      null,
+      null,
+      null,
+      null,
+    ],
     reg: { 0xe9: "fucompp" },
   },
   0xdb: {
-    mem: ["fild Md", "fisttp Md", "fist Md", "fistp Md", null, "fld Mt", null, "fstp Mt"],
-    regs: ["fcmovnb ST0,STi", "fcmovne ST0,STi", "fcmovnbe ST0,STi", "fcmovnu ST0,STi", null, "fucomi ST0,STi", "fcomi ST0,STi", null],
+    mem: [
+      "fild Md",
+      "fisttp Md",
+      "fist Md",
+      "fistp Md",
+      null,
+      "fld Mt",
+      null,
+      "fstp Mt",
+    ],
+    regs: [
+      "fcmovnb ST0,STi",
+      "fcmovne ST0,STi",
+      "fcmovnbe ST0,STi",
+      "fcmovnu ST0,STi",
+      null,
+      "fucomi ST0,STi",
+      "fcomi ST0,STi",
+      null,
+    ],
     reg: { 0xe2: "fnclex", 0xe3: "fninit" },
   },
   0xdc: {
-    mem: ["fadd Mq", "fmul Mq", "fcom Mq", "fcomp Mq", "fsub Mq", "fsubr Mq", "fdiv Mq", "fdivr Mq"],
-    regs: ["fadd STi,ST0", "fmul STi,ST0", null, null, "fsubr STi,ST0", "fsub STi,ST0", "fdivr STi,ST0", "fdiv STi,ST0"],
+    mem: [
+      "fadd Mq",
+      "fmul Mq",
+      "fcom Mq",
+      "fcomp Mq",
+      "fsub Mq",
+      "fsubr Mq",
+      "fdiv Mq",
+      "fdivr Mq",
+    ],
+    regs: [
+      "fadd STi,ST0",
+      "fmul STi,ST0",
+      null,
+      null,
+      "fsubr STi,ST0",
+      "fsub STi,ST0",
+      "fdivr STi,ST0",
+      "fdiv STi,ST0",
+    ],
   },
   0xdd: {
-    mem: ["fld Mq", "fisttp Mq", "fst Mq", "fstp Mq", "frstor M", null, "fnsave M", "fnstsw Mw"],
-    regs: ["ffree STi", null, "fst STi", "fstp STi", "fucom STi", "fucomp STi", null, null],
+    mem: [
+      "fld Mq",
+      "fisttp Mq",
+      "fst Mq",
+      "fstp Mq",
+      "frstor M",
+      null,
+      "fnsave M",
+      "fnstsw Mw",
+    ],
+    regs: [
+      "ffree STi",
+      null,
+      "fst STi",
+      "fstp STi",
+      "fucom STi",
+      "fucomp STi",
+      null,
+      null,
+    ],
   },
   0xde: {
-    mem: ["fiadd Mw", "fimul Mw", "ficom Mw", "ficomp Mw", "fisub Mw", "fisubr Mw", "fidiv Mw", "fidivr Mw"],
-    regs: ["faddp STi,ST0", "fmulp STi,ST0", null, null, "fsubrp STi,ST0", "fsubp STi,ST0", "fdivrp STi,ST0", "fdivp STi,ST0"],
+    mem: [
+      "fiadd Mw",
+      "fimul Mw",
+      "ficom Mw",
+      "ficomp Mw",
+      "fisub Mw",
+      "fisubr Mw",
+      "fidiv Mw",
+      "fidivr Mw",
+    ],
+    regs: [
+      "faddp STi,ST0",
+      "fmulp STi,ST0",
+      null,
+      null,
+      "fsubrp STi,ST0",
+      "fsubp STi,ST0",
+      "fdivrp STi,ST0",
+      "fdivp STi,ST0",
+    ],
     reg: { 0xd9: "fcompp" },
   },
   0xdf: {
-    mem: ["fild Mw", "fisttp Mw", "fist Mw", "fistp Mw", "fbld Mt", "fild Mq", "fbstp Mt", "fistp Mq"],
-    regs: ["ffreep STi", null, null, null, null, "fucomip ST0,STi", "fcomip ST0,STi", null],
+    mem: [
+      "fild Mw",
+      "fisttp Mw",
+      "fist Mw",
+      "fistp Mw",
+      "fbld Mt",
+      "fild Mq",
+      "fbstp Mt",
+      "fistp Mq",
+    ],
+    regs: [
+      "ffreep STi",
+      null,
+      null,
+      null,
+      null,
+      "fucomip ST0,STi",
+      "fcomip ST0,STi",
+      null,
+    ],
     reg: { 0xe0: "fnstsw AX" },
   },
 };
@@ -697,7 +1301,12 @@ class Cursor {
       return this.modrm;
     }
     const b = this.u8();
-    this.modrm = { mod: b >> 6, reg: ((b >> 3) & 7) | (this.rexR << 3), rm: b & 7, byte: b };
+    this.modrm = {
+      mod: b >> 6,
+      reg: ((b >> 3) & 7) | (this.rexR << 3),
+      rm: b & 7,
+      byte: b,
+    };
     if (this.modrm.mod !== 3) {
       this.memOperand = this.readMemory(this.modrm);
     }
@@ -736,7 +1345,16 @@ class Cursor {
     } else if (modrm.mod === 2) {
       disp = BigInt(this.s32());
     }
-    return { kind: "mem", size: 0, base, index, scale, disp, seg: this.seg, ripRel };
+    return {
+      kind: "mem",
+      size: 0,
+      base,
+      index,
+      scale,
+      disp,
+      seg: this.seg,
+      ripRel,
+    };
   }
 
   // Finalises a memory operand: rip-relative displacements become the
@@ -808,18 +1426,47 @@ function operand(spec, c, ops) {
       return { kind: "rel", rel };
     }
     case "Z": {
-      const reg = ((c.opcode & 7) | (c.rexB << 3));
+      const reg = (c.opcode & 7) | (c.rexB << 3);
       return gpr(reg, size, c);
     }
     case "O": {
       // A 64-bit absolute address (mov al, [moffs64]).
       const disp = c.u64();
-      return { kind: "mem", size, base: null, index: null, scale: 1, disp, seg: c.seg, ripRel: false };
+      return {
+        kind: "mem",
+        size,
+        base: null,
+        index: null,
+        scale: 1,
+        disp,
+        seg: c.seg,
+        ripRel: false,
+      };
     }
     case "X":
-      return { kind: "mem", size, base: REG.rsi, index: null, scale: 1, disp: 0n, seg: c.seg, ripRel: false, string: true };
+      return {
+        kind: "mem",
+        size,
+        base: REG.rsi,
+        index: null,
+        scale: 1,
+        disp: 0n,
+        seg: c.seg,
+        ripRel: false,
+        string: true,
+      };
     case "Y":
-      return { kind: "mem", size, base: REG.rdi, index: null, scale: 1, disp: 0n, seg: "es", ripRel: false, string: true };
+      return {
+        kind: "mem",
+        size,
+        base: REG.rdi,
+        index: null,
+        scale: 1,
+        disp: 0n,
+        seg: "es",
+        ripRel: false,
+        string: true,
+      };
     case "V": {
       const m = c.readModrm();
       return { kind: "xmm", reg: m.reg, size };
@@ -882,19 +1529,32 @@ function operand(spec, c, ops) {
 
 function sizeOf(letters, c) {
   switch (letters) {
-    case "b": return SIZE.byte;
-    case "w": return SIZE.word;
-    case "d": return SIZE.dword;
-    case "q": return SIZE.qword;
-    case "v": return c.opsize;
-    case "y": return c.ysize;
-    case "z": return Math.min(c.opsize, SIZE.dword);
-    case "x": return c.vex && c.vex.L ? 32 : SIZE.xmm;
-    case "ss": return SIZE.dword;
-    case "sd": return SIZE.qword;
-    case "p": return c.opsize + 2;
-    case "t": return 10;
-    case "": return 0;
+    case "b":
+      return SIZE.byte;
+    case "w":
+      return SIZE.word;
+    case "d":
+      return SIZE.dword;
+    case "q":
+      return SIZE.qword;
+    case "v":
+      return c.opsize;
+    case "y":
+      return c.ysize;
+    case "z":
+      return Math.min(c.opsize, SIZE.dword);
+    case "x":
+      return c.vex && c.vex.L ? 32 : SIZE.xmm;
+    case "ss":
+      return SIZE.dword;
+    case "sd":
+      return SIZE.qword;
+    case "p":
+      return c.opsize + 2;
+    case "t":
+      return 10;
+    case "":
+      return 0;
     default:
       throw new DecodeError(`unknown size letter ${letters}`);
   }
@@ -1001,7 +1661,12 @@ function resolve(entry, c) {
       continue;
     }
     let next = entry[key];
-    if (next === undefined && key !== "np" && entry.np !== undefined && !entry.vexOnly) {
+    if (
+      next === undefined &&
+      key !== "np" &&
+      entry.np !== undefined &&
+      !entry.vexOnly
+    ) {
       // A 66/F2/F3 that is not a mandatory prefix here: it was an
       // operand-size or rep prefix on the unprefixed form.
       next = entry.np;
@@ -1117,13 +1782,20 @@ export function decode(bytes, offset, addr) {
         entry = THREE_BYTE_3A[b];
       }
       if (entry && entry.vexOnly) {
-        throw new DecodeError(`VEX-only opcode without VEX at ${c.addr.toString(16)}`);
+        throw new DecodeError(
+          `VEX-only opcode without VEX at ${c.addr.toString(16)}`,
+        );
       }
     } else if (entry && entry.x87) {
       spec = decodeX87(c);
       entry = null;
-    } else if (entry && (entry.prefix || entry.rex || entry.vex || entry.evex)) {
-      throw new DecodeError(`stray prefix byte ${b.toString(16)} at ${c.addr.toString(16)}`);
+    } else if (
+      entry &&
+      (entry.prefix || entry.rex || entry.vex || entry.evex)
+    ) {
+      throw new DecodeError(
+        `stray prefix byte ${b.toString(16)} at ${c.addr.toString(16)}`,
+      );
     }
     if (spec === undefined) {
       spec = resolve(entry, c);
@@ -1140,7 +1812,8 @@ export function decode(bytes, offset, addr) {
   const flags = words.filter((w) => w.startsWith("!"));
   c.entry64 = flags.includes("!64");
   c.imm64 = flags.includes("!imm64");
-  const opSpecs = words.length > 1 && !words[1].startsWith("!") ? words[1].split(",") : [];
+  const opSpecs =
+    words.length > 1 && !words[1].startsWith("!") ? words[1].split(",") : [];
 
   c.operands = [];
   for (const s of opSpecs) {
@@ -1150,17 +1823,47 @@ export function decode(bytes, offset, addr) {
   // Post-fixes for opcodes whose name depends on size or prefix.
   if (map === "1") {
     mnemonic = fixupOneByte(mnemonic, c);
-  } else if (map === "0f" && c.opcode === 0x7e && c.mandatory === "66" && c.rexW) {
+  } else if (
+    map === "0f" &&
+    c.opcode === 0x7e &&
+    c.mandatory === "66" &&
+    c.rexW
+  ) {
     mnemonic = "movq";
-  } else if (map === "0f" && c.opcode === 0x6e && c.mandatory === "66" && c.rexW) {
+  } else if (
+    map === "0f" &&
+    c.opcode === 0x6e &&
+    c.mandatory === "66" &&
+    c.rexW
+  ) {
     mnemonic = "movq";
-  } else if (map === "0f" && c.opcode === 0x6e && c.mandatory === "np" && c.rexW) {
+  } else if (
+    map === "0f" &&
+    c.opcode === 0x6e &&
+    c.mandatory === "np" &&
+    c.rexW
+  ) {
     mnemonic = "movq";
-  } else if (map === "0f" && c.opcode === 0x7e && c.mandatory === "np" && c.rexW) {
+  } else if (
+    map === "0f" &&
+    c.opcode === 0x7e &&
+    c.mandatory === "np" &&
+    c.rexW
+  ) {
     mnemonic = "movq";
-  } else if (map === "0f3a" && (c.opcode === 0x16 || c.opcode === 0x22) && c.rexW) {
+  } else if (
+    map === "0f3a" &&
+    (c.opcode === 0x16 || c.opcode === 0x22) &&
+    c.rexW
+  ) {
     mnemonic = c.opcode === 0x16 ? "pextrq" : "pinsrq";
-  } else if (map === "0f" && c.opcode === 0xc7 && c.modrm && (c.modrm.reg & 7) === 1 && c.rexW) {
+  } else if (
+    map === "0f" &&
+    c.opcode === 0xc7 &&
+    c.modrm &&
+    (c.modrm.reg & 7) === 1 &&
+    c.rexW
+  ) {
     mnemonic = "cmpxchg16b";
   }
 
@@ -1267,7 +1970,7 @@ function decodeVex(c, first) {
   let pp;
   if (first === 0xc5) {
     const b1 = c.u8();
-    c.rexR = ((~b1) >> 7) & 1;
+    c.rexR = (~b1 >> 7) & 1;
     mapSel = 1;
     vvvv = (~b1 >> 3) & 15;
     L = (b1 >> 2) & 1;
@@ -1275,9 +1978,9 @@ function decodeVex(c, first) {
   } else if (first === 0xc4) {
     const b1 = c.u8();
     const b2 = c.u8();
-    c.rexR = ((~b1) >> 7) & 1;
-    c.rexX = ((~b1) >> 6) & 1;
-    c.rexB = ((~b1) >> 5) & 1;
+    c.rexR = (~b1 >> 7) & 1;
+    c.rexX = (~b1 >> 6) & 1;
+    c.rexB = (~b1 >> 5) & 1;
     mapSel = b1 & 31;
     W = b2 >> 7;
     vvvv = (~b2 >> 3) & 15;
@@ -1288,9 +1991,9 @@ function decodeVex(c, first) {
     const p0 = c.u8();
     const p1 = c.u8();
     const p2 = c.u8();
-    c.rexR = ((~p0) >> 7) & 1;
-    c.rexX = ((~p0) >> 6) & 1;
-    c.rexB = ((~p0) >> 5) & 1;
+    c.rexR = (~p0 >> 7) & 1;
+    c.rexX = (~p0 >> 6) & 1;
+    c.rexB = (~p0 >> 5) & 1;
     mapSel = p0 & 7;
     W = p1 >> 7;
     vvvv = (~p1 >> 3) & 15;
@@ -1353,7 +2056,12 @@ function decodeVex(c, first) {
     fromLegacy = false;
   }
   let spec = resolve(entry, c);
-  if (fromLegacy && !(entry && entry.vexOnly) && !c.vexNative && !spec.startsWith("v")) {
+  if (
+    fromLegacy &&
+    !(entry && entry.vexOnly) &&
+    !c.vexNative &&
+    !spec.startsWith("v")
+  ) {
     spec = vexShape("v" + spec);
   }
   if (c.evex) {
@@ -1365,20 +2073,97 @@ function decodeVex(c, first) {
 // Instructions whose VEX form does not use vvvv: the destination and
 // one source, as in the legacy form.
 const VEX_TWO_OPERAND = new Set([
-  "vmovdqu", "vmovdqa", "vmovups", "vmovaps", "vmovupd", "vmovapd", "vmovd", "vmovq", "vmovntdq",
-  "vmovntps", "vmovntpd", "vpmovmskb", "vmovmskps", "vmovmskpd", "vpshufd", "vpshufhw", "vpshuflw",
-  "vptest", "vcvtdq2ps", "vcvtps2dq", "vcvttps2dq", "vcvtdq2pd", "vcvtps2pd", "vcvtpd2ps", "vcvttpd2dq",
-  "vcvtpd2dq", "vsqrtps", "vsqrtpd", "vrcpps", "vrsqrtps", "vpabsb", "vpabsw", "vpabsd", "vpmovzxbw",
-  "vpmovzxbd", "vpmovzxbq", "vpmovzxwd", "vpmovzxwq", "vpmovzxdq", "vpmovsxbw", "vpmovsxbd", "vpmovsxbq",
-  "vpmovsxwd", "vpmovsxwq", "vpmovsxdq", "vlddqu", "vmovddup", "vmovshdup", "vmovsldup", "vroundps",
-  "vroundpd", "vcomiss", "vcomisd", "vucomiss", "vucomisd", "vpextrb", "vpextrw", "vpextrd", "vpextrq",
-  "vcvtss2si", "vcvtsd2si", "vcvttss2si", "vcvttsd2si", "vstmxcsr", "vldmxcsr", "vextractps",
-  "vpcmpestri", "vpcmpistri", "vpcmpestrm", "vpcmpistrm", "vphminposuw", "vaesimc", "vmovlps", "vmovhps",
-  "vmovlpd", "vmovhpd",
+  "vmovdqu",
+  "vmovdqa",
+  "vmovups",
+  "vmovaps",
+  "vmovupd",
+  "vmovapd",
+  "vmovd",
+  "vmovq",
+  "vmovntdq",
+  "vmovntps",
+  "vmovntpd",
+  "vpmovmskb",
+  "vmovmskps",
+  "vmovmskpd",
+  "vpshufd",
+  "vpshufhw",
+  "vpshuflw",
+  "vptest",
+  "vcvtdq2ps",
+  "vcvtps2dq",
+  "vcvttps2dq",
+  "vcvtdq2pd",
+  "vcvtps2pd",
+  "vcvtpd2ps",
+  "vcvttpd2dq",
+  "vcvtpd2dq",
+  "vsqrtps",
+  "vsqrtpd",
+  "vrcpps",
+  "vrsqrtps",
+  "vpabsb",
+  "vpabsw",
+  "vpabsd",
+  "vpmovzxbw",
+  "vpmovzxbd",
+  "vpmovzxbq",
+  "vpmovzxwd",
+  "vpmovzxwq",
+  "vpmovzxdq",
+  "vpmovsxbw",
+  "vpmovsxbd",
+  "vpmovsxbq",
+  "vpmovsxwd",
+  "vpmovsxwq",
+  "vpmovsxdq",
+  "vlddqu",
+  "vmovddup",
+  "vmovshdup",
+  "vmovsldup",
+  "vroundps",
+  "vroundpd",
+  "vcomiss",
+  "vcomisd",
+  "vucomiss",
+  "vucomisd",
+  "vpextrb",
+  "vpextrw",
+  "vpextrd",
+  "vpextrq",
+  "vcvtss2si",
+  "vcvtsd2si",
+  "vcvttss2si",
+  "vcvttsd2si",
+  "vstmxcsr",
+  "vldmxcsr",
+  "vextractps",
+  "vpcmpestri",
+  "vpcmpistri",
+  "vpcmpestrm",
+  "vpcmpistrm",
+  "vphminposuw",
+  "vaesimc",
+  "vmovlps",
+  "vmovhps",
+  "vmovlpd",
+  "vmovhpd",
 ]);
 
 // The shift-by-immediate group writes vvvv and reads r/m.
-const VEX_SHIFT_IMM = new Set(["vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad", "vpsllw", "vpslld", "vpsllq", "vpsrldq", "vpslldq"]);
+const VEX_SHIFT_IMM = new Set([
+  "vpsrlw",
+  "vpsrld",
+  "vpsrlq",
+  "vpsraw",
+  "vpsrad",
+  "vpsllw",
+  "vpslld",
+  "vpsllq",
+  "vpsrldq",
+  "vpslldq",
+]);
 
 // Rewrites a legacy two-operand spec into the VEX three-operand one:
 // most take (Vx, Hx, Wx); the shift-immediate group (Hx, Ux, Ub).
@@ -1396,7 +2181,14 @@ function vexShape(spec) {
   if (VEX_SHIFT_IMM.has(name) && parts[0] === "Ux" && parts[1] === "Ub") {
     return `${name} Hx,Ux,Ub`;
   }
-  if (parts[0].startsWith("V") && parts.length >= 2 && (parts[1].startsWith("W") || parts[1].startsWith("U") || parts[1].startsWith("E") || parts[1].startsWith("M"))) {
+  if (
+    parts[0].startsWith("V") &&
+    parts.length >= 2 &&
+    (parts[1].startsWith("W") ||
+      parts[1].startsWith("U") ||
+      parts[1].startsWith("E") ||
+      parts[1].startsWith("M"))
+  ) {
     // Memory-destination forms (vmovlps m64, xmm) keep two operands.
     return `${name} ${parts[0]},Hx,${parts.slice(1).join(",")}`;
   }
@@ -1414,7 +2206,14 @@ function evexRename(spec, c) {
   const rest = words.slice(1).join(" ");
   const RENAMES = {
     vmovdqa: c.rexW ? "vmovdqa64" : "vmovdqa32",
-    vmovdqu: c.mandatory === "f2" ? (c.rexW ? "vmovdqu16" : "vmovdqu8") : c.rexW ? "vmovdqu64" : "vmovdqu32",
+    vmovdqu:
+      c.mandatory === "f2"
+        ? c.rexW
+          ? "vmovdqu16"
+          : "vmovdqu8"
+        : c.rexW
+          ? "vmovdqu64"
+          : "vmovdqu32",
     vpxor: c.rexW ? "vpxorq" : "vpxord",
     vpand: c.rexW ? "vpandq" : "vpandd",
     vpandn: c.rexW ? "vpandnq" : "vpandnd",

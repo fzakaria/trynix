@@ -40,7 +40,12 @@ class Node {
   }
 
   stat() {
-    const size = this.type === "file" ? this.data.length : this.type === "link" ? this.target.length : 4096;
+    const size =
+      this.type === "file"
+        ? this.data.length
+        : this.type === "link"
+          ? this.target.length
+          : 4096;
     return {
       mode: this.mode,
       size,
@@ -80,8 +85,15 @@ class MemoryFile {
     const node = this.node;
     const end = pos + buf.length;
     if (!node.owned || end > node.data.length) {
-      const grown = new Uint8Array(Math.max(end, node.owned ? node.data.length * 2 : end));
-      grown.set(node.data.subarray(0, Math.min(node.data.length, node.capacity ?? node.data.length)));
+      const grown = new Uint8Array(
+        Math.max(end, node.owned ? node.data.length * 2 : end),
+      );
+      grown.set(
+        node.data.subarray(
+          0,
+          Math.min(node.data.length, node.capacity ?? node.data.length),
+        ),
+      );
       // Keep the logical length separate from the buffer's.
       const length = node.owned ? node.length : node.data.length;
       node.data = grown.subarray(0, Math.max(length, end));
@@ -115,7 +127,14 @@ class MemoryFile {
 export class MemoryFs {
   constructor() {
     this.root = new Node("dir", S_IFDIR | 0o755);
-    for (const dir of ["/nix/store", "/tmp", "/home/user", "/dev", "/proc", "/etc"]) {
+    for (const dir of [
+      "/nix/store",
+      "/tmp",
+      "/home/user",
+      "/dev",
+      "/proc",
+      "/etc",
+    ]) {
       this.mkdirp(dir);
     }
   }
@@ -138,7 +157,10 @@ export class MemoryFs {
   addStorePath(storePath, entries) {
     const rootParts = storePath.split("/").filter(Boolean);
     for (const entry of entries) {
-      const parts = entry.path === "" ? rootParts : [...rootParts, ...entry.path.split("/")];
+      const parts =
+        entry.path === ""
+          ? rootParts
+          : [...rootParts, ...entry.path.split("/")];
       const name = parts[parts.length - 1];
       const parent = this.mkdirp(parts.slice(0, -1).join("/"));
       let node;
@@ -163,7 +185,8 @@ export class MemoryFs {
     const parts = path.split("/").filter(Boolean);
     const parent = this.mkdirp(parts.slice(0, -1).join("/"));
     const node = new Node("file", S_IFREG | 0o644);
-    node.data = typeof text === "string" ? new TextEncoder().encode(text) : text;
+    node.data =
+      typeof text === "string" ? new TextEncoder().encode(text) : text;
     node.owned = false;
     parent.children.set(parts[parts.length - 1], node);
   }
@@ -202,9 +225,15 @@ export class MemoryFs {
         return { node: null, parent, name };
       }
       if (child.type === "link" && (!last || followLast)) {
-        const target = child.target.startsWith("/") ? child.target : `/${[...walked, child.target].join("/")}`;
+        const target = child.target.startsWith("/")
+          ? child.target
+          : `/${[...walked, child.target].join("/")}`;
         const rest = parts.slice(i + 1).join("/");
-        return this.resolve(rest === "" ? target : `${target}/${rest}`, followLast, depth + 1);
+        return this.resolve(
+          rest === "" ? target : `${target}/${rest}`,
+          followLast,
+          depth + 1,
+        );
       }
       walked.push(part);
       node = child;
