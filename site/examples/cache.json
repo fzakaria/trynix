@@ -1,0 +1,8 @@
+{
+  "comment": "What site/examples/cache serves, written by tools/make-example-cache.sh. The key is the public half of the one those narinfos are signed with; the page is given it in the link, which is the only place a reader's browser looks for it.",
+  "publicKey": "trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY=",
+  "paths": {
+    "hello-trynix": "/nix/store/awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3",
+    "probe": "/nix/store/ywdyvqcf7pixj4hkby287vzlnxni6kkx-trynix-probe-static-x86_64-unknown-linux-musl-1"
+  }
+}

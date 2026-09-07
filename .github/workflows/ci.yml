@@ -6,10 +6,14 @@
 #   checks.site  — the deployable tree assembles: entry page and the
 #                  hashed module directory in place
 #
-# Then the one thing those cannot see: the site is opened in a real
-# browser and has to reach a shell. Every check above passed while the
+# Then the two things those cannot see. The site is opened in a real
+# browser and has to reach a shell: every check above passed while the
 # guest hung on resume and readers waited out a three minute timeout,
 # because being the right bytes and booting are different questions.
+# And then a probe runs inside the guest and has to agree with the
+# hardware, because booting and computing correctly are different
+# questions again -- the emulator's POPCNT was wrong for a year and
+# nothing here noticed.
 #
 # The guest image is built here too, and pushed to cachix: it is the one
 # expensive derivation in the tree (a Linux kernel), and the pages job
@@ -60,3 +64,12 @@ jobs:
       # needs the network, since the closure comes from cache.nixos.org.
       - name: Boots to a shell
         run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --runs 5
+
+      # And the thing booting cannot see: that the emulator computes what
+      # the hardware would. Its JIT answered POPCNT with a stale register
+      # for as long as the guest ran a CPU model too old to emit the
+      # instruction, and every check above passed the whole time. This
+      # one runs a probe in the guest and reads its verdict. No network:
+      # the probe is one static path out of the site's own cache.
+      - name: Computes what the hardware would
+        run: nix run .#cpu-test -- --site "$(nix build .#site --no-link --print-out-paths)"

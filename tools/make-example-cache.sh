@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publish examples/hello-trynix into the site as a binary cache.
+# Publish the site's own binary cache: the example package the README
+# boots, and the CPU probe tools/cpu-test.py runs inside the guest.
 #
 # The site is served by GitHub Pages, which sends
 # `access-control-allow-origin: *` on every file, so a directory of
@@ -27,6 +28,7 @@ set -euo pipefail
 UPSTREAM=https://cache.nixos.org
 SITE_URL=https://trynix.dev
 CACHE_PATH=site/examples/cache
+MANIFEST_PATH=site/examples/cache.json
 DIGEST_LENGTH=32
 
 secret_key=""
@@ -50,9 +52,18 @@ if [ -z "$secret_key" ]; then
   exit 2
 fi
 
-# Build the example, and take its closure in dependency order.
-out=$(nix build --no-link --print-out-paths "$root/examples/hello-trynix")
-closure=$(nix path-info --recursive "$out")
+# Build everything this cache serves, and take the closures together:
+# trimming and signing are the same work for both.
+#
+# Deliberately not a `path:` flake reference. That copies the working
+# tree into the store whatever .gitignore says, world-readable, and this
+# script is the one place in the tree that is pointed at a secret key.
+# The cost is that a probe edited but not yet committed is invisible to
+# nix, so commit before publishing.
+example=$(nix build --no-link --print-out-paths "$root/examples/hello-trynix")
+probe=$(nix build --no-link --print-out-paths "$root#probe")
+published=("$example" "$probe")
+closure=$(nix path-info --recursive "${published[@]}")
 
 # The whole closure first. `nix copy` will not write one path without
 # its references — a cache that names a path it cannot serve is not a
@@ -63,7 +74,7 @@ closure=$(nix path-info --recursive "$out")
 cache="$root/$CACHE_PATH"
 rm -rf "$cache"
 mkdir -p "$cache"
-nix copy --to "file://$cache?compression=xz&secret-key=$secret_key" "$out"
+nix copy --to "file://$cache?compression=xz&secret-key=$secret_key" "${published[@]}"
 
 # Whatever cache.nixos.org already serves is not ours to serve: ask it
 # for each path, and drop the narinfo and the NAR of every one it
@@ -82,10 +93,10 @@ for path in $closure; do
   rm -f "$narinfo" "$cache/$nar"
 done
 
-# `nix copy` makes a place for build logs and realisations; neither has
-# anything in it here, and an empty directory is not something git can
-# carry anyway.
-rmdir "$cache/log" "$cache/realisations" 2> /dev/null || true
+# `nix copy` makes a place for build logs, realisations and build
+# traces; none has anything in it here, and an empty directory is not
+# something git can carry anyway.
+rmdir "$cache/log" "$cache/realisations" "$cache/build-trace-v2" 2> /dev/null || true
 
 if [ ${#missing[@]} -eq 0 ]; then
   echo "every path is already on $UPSTREAM; nothing to publish" >&2
@@ -93,7 +104,23 @@ if [ ${#missing[@]} -eq 0 ]; then
 fi
 
 public_key=$(nix key convert-secret-to-public < "$secret_key")
-link="$SITE_URL/?path=$out&cache=$SITE_URL/examples/cache%20$public_key"
+
+# A manifest beside the cache naming what is in it. tools/cpu-test.py
+# reads it rather than carrying a store path and a key of its own, so a
+# cache that has drifted from the tree fails saying so instead of
+# fetching a narinfo that is not there.
+cat > "$root/$MANIFEST_PATH" <<EOF
+{
+  "comment": "What site/examples/cache serves, written by tools/make-example-cache.sh. The key is the public half of the one those narinfos are signed with; the page is given it in the link, which is the only place a reader's browser looks for it.",
+  "publicKey": "$public_key",
+  "paths": {
+    "hello-trynix": "$example",
+    "probe": "$probe"
+  }
+}
+EOF
+
+link="$SITE_URL/?path=$example&cache=$SITE_URL/examples/cache%20$public_key"
 
 echo
 echo "published ${#missing[@]} of $(echo "$closure" | wc -l) paths to $CACHE_PATH:"

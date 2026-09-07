@@ -98,6 +98,16 @@
               pkgs.chromium
             ];
 
+          # boot the CPU probe in a real browser and check that the
+          # emulator computes what the hardware would
+          cpu-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "cpu-test" "${python}/bin/python3 ${./tools/cpu-test.py}" [
+              pkgs.chromium
+            ];
+
           # publish the example package into the site as a binary cache
           make-example-cache = tool "make-example-cache" ./tools/make-example-cache.sh [
             pkgs.curl
