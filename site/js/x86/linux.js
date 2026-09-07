@@ -245,6 +245,11 @@ export class Process {
       this.fds.set(fd, d);
     }
 
+    // File mappings, for the translator: which file and offset an
+    // address came from, so its code can be cached by content.
+    this.mappings = [];
+    machine.locator = (addr) => this.locate(addr);
+
     // The mmap region: a sorted list of free [lo, hi) ranges.
     this.free = [[MMAP_BASE, BigInt(machine.kernelBase)]];
     if (machine.size > machine.kernelTop) {
@@ -339,6 +344,41 @@ export class Process {
     this.free = out;
   }
 
+  // Records that [lo, hi) holds `file` from `fileOffset` on; anything
+  // it overlaps is cut away first.
+  addMapping(lo, hi, file, fileOffset) {
+    this.dropMapping(lo, hi);
+    this.mappings.push({ lo, hi, file, base: lo - BigInt(fileOffset) });
+  }
+
+  dropMapping(lo, hi) {
+    const kept = [];
+    for (const m of this.mappings) {
+      if (m.hi <= lo || m.lo >= hi) {
+        kept.push(m);
+        continue;
+      }
+      if (m.lo < lo) {
+        kept.push({ ...m, hi: lo });
+      }
+      if (m.hi > hi) {
+        kept.push({ ...m, lo: hi });
+      }
+    }
+    this.mappings = kept;
+  }
+
+  // The mapping holding addr: { file, lo, hi, base } with file null
+  // for anonymous memory, or null when nothing is mapped there.
+  locate(addr) {
+    for (const m of this.mappings) {
+      if (addr >= m.lo && addr < m.hi) {
+        return m;
+      }
+    }
+    return null;
+  }
+
   // Zeroes a range for a fresh mapping. Memory the guest has never
   // touched is already zero, and ruby alone maps hundreds of megabytes
   // it then barely uses, so only the part below the high-water mark
@@ -376,7 +416,7 @@ export class Process {
   }
 
   // Maps an ELF image; returns { base, entry, phdr, ... }.
-  mapElf(bytes, elf, base) {
+  mapElf(bytes, elf, base, path) {
     const m = this.machine;
     let lo = null;
     let hi = 0n;
@@ -392,9 +432,15 @@ export class Process {
     }
     this.claimRange(lo, hi);
     this.zero(lo, Number(hi - lo));
+    this.addMapping(lo, hi, null, 0);
     for (const s of elf.segments) {
       const at = Number(base + s.vaddr);
       m.u8.set(bytes.subarray(s.offset, s.offset + s.filesz), at);
+      const segLo = (base + s.vaddr) & PAGE_MASK;
+      const segHi = (base + s.vaddr + BigInt(s.filesz) + 0xfffn) & PAGE_MASK;
+      if (segHi > segLo) {
+        this.addMapping(segLo, segHi, path, s.offset - Number(s.vaddr - (s.vaddr & PAGE_MASK)));
+      }
     }
     return { lo, hi };
   }
@@ -403,7 +449,7 @@ export class Process {
     const bytes = this.readFile(path);
     const elf = parseElf(bytes);
     const base = elf.pie ? EXE_BASE : 0n;
-    const { hi } = this.mapElf(bytes, elf, base);
+    const { hi } = this.mapElf(bytes, elf, base, path);
     this.exePath = path;
 
     // The heap starts on the page after the executable.
@@ -425,7 +471,7 @@ export class Process {
         }
       }
       interpBase = this.allocate(Number(span));
-      this.mapElf(ibytes, ielf, interpBase);
+      this.mapElf(ibytes, ielf, interpBase, elf.interp);
       entry = interpBase + ielf.entry;
     }
 
@@ -1308,11 +1354,14 @@ export class Process {
     const m = this.machine;
     m.ensure(at, size);
     this.zero(at, size);
-    if (!(fl & MAP.ANONYMOUS)) {
+    if (fl & MAP.ANONYMOUS) {
+      this.addMapping(at, at + BigInt(size), null, 0);
+    } else {
       const d = this.fd(fd);
       if (d.kind !== "file") {
         throw new Errno(E.ACCES);
       }
+      this.addMapping(at, at + BigInt(size), d.path, Number(offset));
       const buf = m.u8.subarray(Number(at), Number(at) + len);
       let got = 0;
       while (got < len) {
@@ -1331,6 +1380,7 @@ export class Process {
     const hi = (addr + length + 0xfffn) & PAGE_MASK;
     if (hi > lo) {
       this.release(lo, hi);
+      this.dropMapping(lo, hi);
     }
     return 0;
   }

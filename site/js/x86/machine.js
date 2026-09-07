@@ -62,6 +62,15 @@ export class Machine {
     this.fpu = fpuOp;
     this.imports = null;
     this.traceBlock = () => {};
+    // Set by the process layer: address -> { file, lo, hi, base } for
+    // the file mapping holding it, or null.
+    this.locator = () => null;
+    // A translation cache: { get(key) -> entry | undefined, put(key, entry) }.
+    this.cache = null;
+  }
+
+  locate(addr) {
+    return this.locator(addr);
   }
 
   refreshViews() {
@@ -70,23 +79,22 @@ export class Machine {
     this.view = new DataView(this.memory.buffer);
   }
 
-  // The imports every translated module takes.
-  importObject() {
+  // The imports every translated module takes, with the load base the
+  // instance's addresses are relative to.
+  importObject(base = 0n) {
     if (this.imports === null) {
       this.imports = {
-        env: {
-          memory: this.memory,
-          ...this.helpers,
-          syscall: () => this.syscall(this),
-          cpuid: () => this.cpuid(this),
-          rdtsc: () => this.rdtsc(this),
-          div128: (signed) => this.div128(this, signed !== 0),
-          fpu: (op, arg) => this.fpu(this, op, arg),
-          trace: (rip) => this.traceBlock(BigInt.asUintN(64, rip)),
-        },
+        memory: this.memory,
+        ...this.helpers,
+        syscall: () => this.syscall(this),
+        cpuid: () => this.cpuid(this),
+        rdtsc: () => this.rdtsc(this),
+        div128: (signed) => this.div128(this, signed !== 0),
+        fpu: (op, arg) => this.fpu(this, op, arg),
+        trace: (rip) => this.traceBlock(BigInt.asUintN(64, rip)),
       };
     }
-    return this.imports;
+    return { env: { ...this.imports, base: new WebAssembly.Global({ value: "i64", mutable: false }, BigInt.asIntN(64, base)) } };
   }
 
   bytes() {

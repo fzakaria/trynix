@@ -24,11 +24,14 @@ import { humanBytes } from "./format.js";
 import { DIGEST_LENGTH, DIGEST_PATTERN, NAR_CONCURRENCY } from "./config.js";
 import { log, onLog } from "./log.js";
 import { createInputRing, InputWriter } from "./x86/stdio-shared.js";
+import { loadTranslations, openTranslationCache, storeTranslation } from "./x86/cache.js";
 
 const STORE_PREFIX = "/nix/store/";
 const PARAM_EXEC = "exec";
 const PARAM_ARG = "arg";
 const PARAM_TRACE = "trace";
+// nocache=1 neither loads nor stores translations, for measuring.
+const PARAM_NOCACHE = "nocache";
 
 const status = document.getElementById("status");
 const bootSection = document.getElementById("boot");
@@ -74,6 +77,7 @@ async function main() {
   const exec = params.get(PARAM_EXEC);
   const args = params.getAll(PARAM_ARG);
   const trace = params.get(PARAM_TRACE) === "1";
+  const noCache = params.get(PARAM_NOCACHE) === "1";
   setExtraSubstituters(caches);
 
   if (pkgs.length === 0 && paths.length === 0) {
@@ -93,6 +97,7 @@ async function main() {
   const walkRow = panel.row("closure walk");
   const signatureRow = panel.row("signatures");
   const closureRow = panel.row("closure");
+  const cacheRow = panel.row("translations");
   const runRow = panel.row("process");
 
   try {
@@ -179,6 +184,17 @@ async function main() {
     }
     const binDirs = rootPaths.map((p) => `${p}/bin`);
 
+    // Translations of this closure's files from earlier runs.
+    const translationCache = noCache ? null : await openTranslationCache();
+    const t1 = performance.now();
+    const translations = await loadTranslations(translationCache, [...closure.values()].map((i) => i.storePath));
+    const cachedBytes = translations.reduce((sum, t) => sum + t.bytes.length, 0);
+    cacheRow.done(
+      translations.length === 0
+        ? "none cached yet"
+        : `${translations.length} regions, ${humanBytes(cachedBytes)}, loaded in ${((performance.now() - t1) / 1000).toFixed(1)} s`,
+    );
+
     // The terminal and its pty. The page keeps the line discipline;
     // the worker gets bytes through the ring and sends termios
     // changes back so raw mode reaches the discipline.
@@ -225,6 +241,9 @@ async function main() {
           case "termios":
             slave.ioctl("TCSETS", msg.termios);
             break;
+          case "translated":
+            storeTranslation(translationCache, msg).catch((e) => log(`cache put failed: ${e.message}`));
+            break;
           case "log":
             log(msg.text);
             break;
@@ -260,6 +279,7 @@ async function main() {
         storePaths,
         stdin: ring,
         trace,
+        translations,
         files: {
           "/etc/passwd": "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:100:user:/home/user:/bin/sh\n",
           "/etc/group": "root:x:0:\nusers:x:100:\n",
@@ -278,8 +298,9 @@ async function main() {
     if (exit.stats !== null) {
       const s = exit.stats;
       statsElement.textContent =
-        `exit ${exit.code} in ${wall.toFixed(2)} s: ${s.blocks} blocks in ${s.regions} regions, ` +
-        `${humanBytes(s.wasmBytes)} of wasm, ${(s.translateMs / 1000).toFixed(2)} s translating, ${s.syscalls} syscalls`;
+        `exit ${exit.code} in ${wall.toFixed(2)} s: ${s.regions} regions translated (${s.blocks} blocks), ` +
+        `${s.cachedRegions} from the cache (${s.cachedBlocks} blocks), ${humanBytes(s.wasmBytes)} of new wasm, ` +
+        `${(s.translateMs / 1000).toFixed(2)} s translating or instantiating, ${s.syscalls} syscalls`;
     } else {
       statsElement.textContent = `exit ${exit.code}: see the debug log`;
     }

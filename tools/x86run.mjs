@@ -16,7 +16,7 @@ import { Process } from "../site/js/x86/linux.js";
 import { NodeFs } from "../site/js/x86/fs-node.js";
 
 function usage() {
-  console.error("usage: x86run [--trace] [--stats] [--blocks] [--regions] [--tty] <binary> [args...]");
+  console.error("usage: x86run [--trace] [--stats] [--blocks] [--regions] [--tty] [--cache <dir>] <binary> [args...]");
   process.exit(2);
 }
 
@@ -26,6 +26,7 @@ let stats = false;
 let traceBlocks = false;
 let traceRegions = false;
 let forceTty = false;
+let cacheDir = null;
 while (args.length > 0 && args[0].startsWith("--")) {
   const flag = args.shift();
   if (flag === "--trace") {
@@ -38,6 +39,8 @@ while (args.length > 0 && args[0].startsWith("--")) {
     traceRegions = true;
   } else if (flag === "--tty") {
     forceTty = true;
+  } else if (flag === "--cache") {
+    cacheDir = args.shift();
   } else {
     usage();
   }
@@ -82,8 +85,48 @@ function hostStream(fd, canRead, canWrite) {
   };
 }
 
+// A translation cache in a directory: one file per region, its bytes
+// after a JSON header line with the block offsets.
+class DirectoryCache {
+  constructor(dir) {
+    this.dir = dir;
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fileFor(key) {
+    return `${this.dir}/${key.replace(/[^A-Za-z0-9._@#-]/g, "_")}`;
+  }
+
+  get(key) {
+    let data;
+    try {
+      data = fs.readFileSync(this.fileFor(key));
+    } catch {
+      return undefined;
+    }
+    const nl = data.indexOf(10);
+    const header = JSON.parse(data.subarray(0, nl).toString());
+    return {
+      bytes: new Uint8Array(data.buffer, data.byteOffset + nl + 1, data.length - nl - 1),
+      offsets: header.offsets.map((o) => BigInt(o)),
+      unsupported: header.unsupported.map(([o, why]) => [BigInt(o), why]),
+    };
+  }
+
+  put(key, entry) {
+    const header = JSON.stringify({
+      offsets: entry.offsets.map((o) => o.toString()),
+      unsupported: entry.unsupported.map(([o, why]) => [o.toString(), why]),
+    });
+    fs.writeFileSync(this.fileFor(key), Buffer.concat([Buffer.from(`${header}\n`), Buffer.from(entry.bytes)]));
+  }
+}
+
 const t0 = performance.now();
 const machine = new Machine({ pages: 16384 });
+if (cacheDir !== null) {
+  machine.cache = new DirectoryCache(cacheDir);
+}
 if (traceRegions) {
   machine.translator.onRegion = (entry, blocks, ms, bytes) =>
     fs.writeSync(2, `[region] 0x${entry.toString(16)} ${blocks} blocks ${bytes} bytes ${ms.toFixed(1)} ms (total ${machine.translator.blocks} blocks, heap ${(process.memoryUsage().heapUsed / 1048576).toFixed(0)} MB, external ${(process.memoryUsage().external / 1048576).toFixed(0)} MB, arraybuffers ${(process.memoryUsage().arrayBuffers / 1048576).toFixed(0)} MB)\n`);
@@ -122,8 +165,8 @@ try {
     const tr = machine.translator;
     console.error(
       `[stats] load ${(t1 - t0).toFixed(1)} ms, run ${(t2 - t1).toFixed(1)} ms, ` +
-        `${tr.regions} regions, ${machine.slots - 1} blocks, ${(tr.bytesEmitted / 1048576).toFixed(1)} MB of wasm, ` +
-        `${tr.translateMs.toFixed(0)} ms translating, ${proc.syscalls} syscalls`,
+        `${tr.regions} regions translated (${tr.blocks} blocks), ${tr.cachedRegions} from cache (${tr.cachedBlocks} blocks), ` +
+        `${(tr.bytesEmitted / 1048576).toFixed(1)} MB of wasm, ${tr.translateMs.toFixed(0)} ms translating, ${proc.syscalls} syscalls`,
     );
   }
 } catch (e) {

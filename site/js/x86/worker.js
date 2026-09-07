@@ -57,6 +57,29 @@ self.onmessage = (event) => {
   stderr.setTermios = setTermios;
 
   const machine = new Machine({ pages: MEMORY_PAGES });
+  // Translations the page loaded from its cache, plus what this run
+  // adds; each new one goes back to the page to be stored. Offsets
+  // travel as strings, since BigInt does not survive JSON.
+  const cache = new Map();
+  for (const entry of msg.translations ?? []) {
+    cache.set(entry.key, {
+      bytes: entry.bytes,
+      offsets: entry.offsets.map((o) => BigInt(o)),
+      unsupported: entry.unsupported.map(([o, why]) => [BigInt(o), why]),
+    });
+  }
+  machine.cache = {
+    get: (key) => cache.get(key),
+    put: (key, entry) => {
+      cache.set(key, entry);
+      post("translated", {
+        key,
+        bytes: entry.bytes,
+        offsets: entry.offsets.map((o) => o.toString()),
+        unsupported: entry.unsupported.map(([o, why]) => [o.toString(), why]),
+      });
+    },
+  };
   const proc = new Process({
     machine,
     fs,
@@ -87,6 +110,8 @@ self.onmessage = (event) => {
         runMs: finished - loaded,
         regions: tr.regions,
         blocks: tr.blocks,
+        cachedRegions: tr.cachedRegions,
+        cachedBlocks: tr.cachedBlocks,
         wasmBytes: tr.bytesEmitted,
         translateMs: tr.translateMs,
         syscalls: proc.syscalls,

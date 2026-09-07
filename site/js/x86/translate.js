@@ -31,6 +31,10 @@ import { emitX87 } from "./x87.js";
 const MAX_BLOCKS_PER_REGION = 512;
 const MAX_INSNS_PER_BLOCK = 256;
 
+// Bumped whenever generated code changes shape, so a cached module from
+// an older translator is never instantiated against a newer runtime.
+export const TRANSLATION_VERSION = 1;
+
 // Imported functions, in the order the translated module imports them.
 // The JavaScript side of these lives on the Machine.
 const JS_IMPORTS = [
@@ -80,6 +84,8 @@ export class Translator {
     this.unsupported = new Map();
     this.regions = 0;
     this.blocks = 0;
+    this.cachedRegions = 0;
+    this.cachedBlocks = 0;
     this.bytesEmitted = 0;
     this.translateMs = 0;
     // When set, every block reports its address to the trace import.
@@ -90,15 +96,37 @@ export class Translator {
 
   // Translates the region reachable from entry and returns the table
   // slot of entry's block.
+  //
+  // Every address a block needs is emitted as an offset from the load
+  // base of the file mapping the entry lies in, read from an immutable
+  // global each instance is given, so the module is the same bytes
+  // wherever the file is mapped and can be cached by (file, offset).
+  // A region never crosses out of its mapping for the same reason.
   translateRegion(entry) {
     const t0 = performance.now();
     const machine = this.machine;
+    const mapping = machine.locate(entry);
+    const base = mapping !== null ? mapping.base : 0n;
+    const key = mapping !== null && mapping.file !== null
+      ? `${mapping.file}@${(entry - base).toString(16)}#${TRANSLATION_VERSION}`
+      : null;
+
+    const cached = key !== null && machine.cache !== null ? machine.cache.get(key) : undefined;
+    if (cached !== undefined) {
+      const slot = this.instantiate(cached, base, key);
+      this.cachedRegions++;
+      this.cachedBlocks += cached.offsets.length;
+      this.translateMs += performance.now() - t0;
+      return slot;
+    }
+
     const blocks = new Map();
     const order = [];
     const worklist = [entry];
+    const inMapping = (addr) => mapping === null || (addr >= mapping.lo && addr < mapping.hi);
     while (worklist.length > 0 && order.length < MAX_BLOCKS_PER_REGION) {
       const addr = worklist.pop();
-      if (blocks.has(addr) || machine.lookup(addr) !== 0) {
+      if (blocks.has(addr) || machine.lookup(addr) !== 0 || !inMapping(addr)) {
         continue;
       }
       const block = this.decodeBlock(addr);
@@ -109,17 +137,17 @@ export class Translator {
       }
     }
 
-    const base = machine.reserveSlots(order.length);
-    order.forEach((b, i) => {
-      b.index = base + i;
-    });
-
-    const bytes = this.emitModule(order, blocks, base);
-    const module = new WebAssembly.Module(bytes);
-    const instance = new WebAssembly.Instance(module, machine.importObject());
-    order.forEach((b, i) => {
-      machine.register(b.addr, b.index, instance.exports[i]);
-    });
+    const unsupported = new Map();
+    const bytes = this.emitModule(order, blocks, base, unsupported);
+    const entryBlock = {
+      bytes,
+      offsets: order.map((b) => b.addr - base),
+      unsupported: [...unsupported].map(([addr, why]) => [addr - base, why]),
+    };
+    const slot = this.instantiate(entryBlock, base, key);
+    if (key !== null && machine.cache !== null) {
+      machine.cache.put(key, entryBlock);
+    }
     this.regions++;
     this.blocks += order.length;
     this.bytesEmitted += bytes.length;
@@ -128,7 +156,28 @@ export class Translator {
     if (this.onRegion) {
       this.onRegion(entry, order.length, ms, bytes.length);
     }
-    return blocks.get(entry).index;
+    return slot;
+  }
+
+  // Instantiates a region's module at a load base and registers its
+  // blocks. Returns the slot of the first block, which is the entry.
+  instantiate({ bytes, offsets, unsupported }, base, key) {
+    const machine = this.machine;
+    const first = machine.reserveSlots(offsets.length);
+    let module;
+    try {
+      module = new WebAssembly.Module(bytes);
+    } catch (e) {
+      throw new Error(`${key ?? "region"}: ${e.message}`);
+    }
+    const instance = new WebAssembly.Instance(module, machine.importObject(base));
+    offsets.forEach((off, i) => {
+      machine.register(base + off, first + i, instance.exports[i]);
+    });
+    for (const [off, why] of unsupported) {
+      this.unsupported.set(base + off, why);
+    }
+    return first;
   }
 
   decodeBlock(addr) {
@@ -172,10 +221,11 @@ export class Translator {
     return block;
   }
 
-  // Emits one module holding every block of the region.
-  emitModule(order, blocks, base) {
+  // Emits one module holding every block of the region, with every
+  // address relative to `base`.
+  emitModule(order, blocks, base, unsupported) {
     const m = new ModuleBuilder();
-    const ctx = { m, blocks, order, imports: {}, globals: {}, helpers: {} };
+    const ctx = { m, blocks, order, imports: {}, globals: {}, helpers: {}, base, unsupported };
 
     // Imports, in a fixed order the Machine's import object matches.
     // The block table is not among them: indirect jumps go through the
@@ -203,6 +253,8 @@ export class Translator {
     for (const [name, type] of GLOBALS) {
       ctx.globals[name] = m.importGlobal("env", name, VALTYPE[type], true);
     }
+    // The load base of the file this region came from.
+    ctx.baseGlobal = m.importGlobal("env", "base", T.i64, false);
     ctx.blockType = m.addType([], []);
 
     // Function indices are assigned in order after the imports: every
@@ -310,7 +362,8 @@ class Emitter {
   emitBlock() {
     const b = this.block;
     if (this.translator.traceBlocks) {
-      this.c.i64_const(b.addr).call(this.ctx.imports.trace);
+      this.addrConst(b.addr);
+      this.c.call(this.ctx.imports.trace);
     }
     for (let i = 0; i < b.insns.length; i++) {
       const insn = b.insns[i];
@@ -328,7 +381,7 @@ class Emitter {
         this.emitInsn(insn, i);
       } catch (e) {
         if (e instanceof Unsupported) {
-          this.translator.unsupported.set(insn.addr, `${insn.mnemonic}: ${e.message}`);
+          this.ctx.unsupported.set(insn.addr, `${insn.mnemonic}: ${e.message}`);
           this.exit(EXIT.UNSUPPORTED, insn.addr);
           this.c.end();
           return;
@@ -337,7 +390,7 @@ class Emitter {
       }
     }
     if (b.decodeError !== null) {
-      this.translator.unsupported.set(b.end, `undecodable: ${b.decodeError}`);
+      this.ctx.unsupported.set(b.end, `undecodable: ${b.decodeError}`);
       this.exit(EXIT.UNSUPPORTED, b.end);
     } else {
       const last = b.insns[b.insns.length - 1];
@@ -347,6 +400,15 @@ class Emitter {
       }
     }
     this.c.end();
+  }
+
+  // ---- addresses ----------------------------------------------------
+
+  // Pushes a guest address as base + offset, so the code does not
+  // depend on where the file was mapped.
+  addrConst(addr) {
+    const c = this.c;
+    c.global_get(this.ctx.baseGlobal).i64_const(BigInt.asIntN(64, addr - this.ctx.base)).i64_add();
   }
 
   // ---- state access -------------------------------------------------
@@ -389,7 +451,12 @@ class Emitter {
   address(op) {
     const c = this.c;
     let pushed = false;
-    if (op.disp !== 0n || (op.base === null && op.index === null)) {
+    if (op.ripRel) {
+      // The decoder made the displacement absolute; it is relative to
+      // the file again here.
+      this.addrConst(op.disp);
+      pushed = true;
+    } else if (op.disp !== 0n || (op.base === null && op.index === null)) {
       c.i64_const(op.disp);
       pushed = true;
     }
@@ -557,12 +624,16 @@ class Emitter {
 
   exit(reason, rip) {
     const c = this.c;
-    c.i64_const(rip).global_set(this.g.rip);
+    this.addrConst(rip);
+    c.global_set(this.g.rip);
     c.i32_const(reason).global_set(this.g.exit_reason);
     c.return_();
   }
 
-  // Tail-calls the block at a constant address.
+  // Tail-calls the block at a constant address: directly when it is in
+  // this region, else through the lookup at run time, so the module
+  // holds no table slot and once the target is translated the edge
+  // costs two loads rather than a trip through the run loop.
   jumpTo(target) {
     const c = this.c;
     const local = this.ctx.blocks.get(target);
@@ -570,14 +641,7 @@ class Emitter {
       c.return_call(local.func);
       return;
     }
-    const idx = this.translator.machine.lookup(target);
-    if (idx !== 0) {
-      c.i32_const(idx).return_call(this.ctx.helpers.jump);
-      return;
-    }
-    // Not translated yet: look it up at run time, so once it is, this
-    // edge costs two loads rather than a trip through the run loop.
-    c.i64_const(target);
+    this.addrConst(target);
     this.jumpIndirect();
   }
 
@@ -905,14 +969,14 @@ class Emitter {
         return;
       case "call":
         if (ops[0].kind === "rel") {
-          c.i64_const(this.next);
+          this.addrConst(this.next);
           this.push64();
           this.jumpTo(ops[0].target);
         } else {
           const t = this.t64();
           this.load(ops[0], 8);
           c.local_set(t);
-          c.i64_const(this.next);
+          this.addrConst(this.next);
           this.push64();
           c.local_get(t);
           this.jumpIndirect();
@@ -929,7 +993,8 @@ class Emitter {
         this.jumpIndirect();
         return;
       case "syscall":
-        c.i64_const(this.next).global_set(this.g.rip);
+        this.addrConst(this.next);
+        c.global_set(this.g.rip);
         c.call(this.ctx.imports.syscall);
         c.global_get(this.g.rip);
         this.jumpIndirect();
