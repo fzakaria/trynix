@@ -16,7 +16,7 @@ import { Process } from "../site/js/x86/linux.js";
 import { NodeFs } from "../site/js/x86/fs-node.js";
 
 function usage() {
-  console.error("usage: x86run [--trace] [--stats] [--blocks] [--regions] <binary> [args...]");
+  console.error("usage: x86run [--trace] [--stats] [--blocks] [--regions] [--tty] <binary> [args...]");
   process.exit(2);
 }
 
@@ -25,6 +25,7 @@ let trace = null;
 let stats = false;
 let traceBlocks = false;
 let traceRegions = false;
+let forceTty = false;
 while (args.length > 0 && args[0].startsWith("--")) {
   const flag = args.shift();
   if (flag === "--trace") {
@@ -35,6 +36,8 @@ while (args.length > 0 && args[0].startsWith("--")) {
     traceBlocks = true;
   } else if (flag === "--regions") {
     traceRegions = true;
+  } else if (flag === "--tty") {
+    forceTty = true;
   } else {
     usage();
   }
@@ -53,19 +56,24 @@ function hostStream(fd, canRead, canWrite) {
     }
   })();
   return {
-    isatty,
+    isatty: isatty || forceTty,
     read: canRead
       ? (buf) => {
-          try {
-            return fs.readSync(fd, buf, 0, buf.length, null);
-          } catch (e) {
-            if (e.code === "EOF") {
-              return 0;
+          // A pipe with nothing queued yet says EAGAIN; the guest asked
+          // to block, so wait and ask again.
+          for (;;) {
+            try {
+              return fs.readSync(fd, buf, 0, buf.length, null);
+            } catch (e) {
+              if (e.code === "EOF") {
+                return 0;
+              }
+              if (e.code === "EAGAIN") {
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+                continue;
+              }
+              throw e;
             }
-            if (e.code === "EAGAIN") {
-              return 0;
-            }
-            throw e;
           }
         }
       : null,

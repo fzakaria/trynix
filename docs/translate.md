@@ -196,6 +196,15 @@ What runs, as of 2026-09-07:
 | `ruby -e 1`                                        | exits 0          | 4.8 s      |
 | ruby with map/select, `Math.sqrt`, Unicode upcase  | correct          | 5.0 s      |
 
+In headless Chromium, on the site's own page (`run.html`, below), with
+the closure already fetched:
+
+| program                                        | wall  | translating |
+| ---------------------------------------------- | ----- | ----------- |
+| hello 2.12.3                                   | 0.8 s | 0.6 s       |
+| ruby 3.4.9, a map and sum                      | 5.9 s | 3.4 s       |
+| python 3.14.7, json and a sum over a million   | 5.2 s | 3.3 s       |
+
 For `ruby -e 1` the browser guest takes 13.7 to 16.6 s on a warm
 cache, so a first run is about 3x faster before any caching of
 translations, which is the part that makes a second run fast. Of the
@@ -239,8 +248,16 @@ The pieces:
 - `tools/x86run.mjs`: the runner, with `--trace` for an strace-like
   log, `--stats`, `--regions` and `--blocks`.
 
+The page: `run.html?pkg=python3&exec=python3` fetches the closure the
+way the VM's boot does, keeps it as an in-memory filesystem, and runs
+the program in a Worker with the terminal attached (`site/js/run.js`,
+`site/js/x86/worker.js`, `fs-memory.js`, `stdio-shared.js`). Reads of
+standard input block on a ring in a SharedArrayBuffer the page fills
+from the pty; the line discipline stays on the page and hears the
+guest's termios changes, so python's REPL gets its raw mode.
+
 Not yet built: AVX (the CPU presented has none, and `-march=haswell`
 binaries such as the CPU probe die on their first `vmovdqa`), threads,
-fork and exec, signal delivery, the NAR-backed filesystem and the
-Worker for the page, the exec stub in the QEMU guest, and caching of
-translated modules across runs.
+fork and exec, signal delivery, the exec stub in the QEMU guest so the VM's shell can
+hand a command to this lane, and caching of translated modules across
+runs.

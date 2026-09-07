@@ -66,6 +66,19 @@ const TCGETS = 0x5401;
 const TCSETS = 0x5402;
 const TCSETSW = 0x5403;
 const TCSETSF = 0x5404;
+// The termios2 forms glibc 2.42 tries first: the same 36 bytes plus
+// input and output speeds.
+const TCGETS2 = 0x802c542a;
+const TCSETS2 = 0x402c542b;
+const TCSETSW2 = 0x402c542c;
+const TCSETSF2 = 0x402c542d;
+const TERMIOS_CC_LEN = 19;
+const TERMIOS_CC_OFFSET = 17;
+const TERMIOS_SIZE = 36;
+const TERMIOS2_SIZE = 44;
+const DEFAULT_TERMIOS = { iflag: 0x6500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b, cc: null };
+const DEFAULT_CC = [3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0];
+const BAUD_38400 = 38400;
 const TIOCGWINSZ = 0x5413;
 const TIOCSWINSZ = 0x5414;
 const TIOCGPGRP = 0x540f;
@@ -724,8 +737,16 @@ export class Process {
     const d = new Description("file");
     d.path = real;
     d.flags = fl;
-    const st = this.fs.stat(real, !(fl & O.NOFOLLOW));
-    if ((st.mode & S_IFMT) === S_IFDIR) {
+    // A path that does not exist yet is fine when it is being created.
+    let st = null;
+    try {
+      st = this.fs.stat(real, !(fl & O.NOFOLLOW));
+    } catch (e) {
+      if (!(e instanceof Errno && e.errno === E.NOENT && fl & O.CREAT)) {
+        throw e;
+      }
+    }
+    if (st !== null && (st.mode & S_IFMT) === S_IFDIR) {
       if ((fl & O.ACCMODE) !== O.RDONLY) {
         throw new Errno(E.ISDIR);
       }
@@ -1191,36 +1212,40 @@ export class Process {
     const m = this.machine;
     const isatty = d.kind === "stream" && d.stream.isatty;
     switch (r) {
-      case TCGETS: {
+      case TCGETS:
+      case TCGETS2: {
         if (!isatty) {
           throw new Errno(E.NOTTY);
         }
-        // The kernel's struct termios: four 32-bit flag words, c_line
-        // and 19 control characters, 36 bytes. glibc's tcgetattr passes
-        // exactly that on its stack, so writing its own 60-byte layout
-        // here smashes the caller's frame.
         const a = Number(arg);
-        m.u8.fill(0, a, a + 36);
+        const size = r === TCGETS2 ? TERMIOS2_SIZE : TERMIOS_SIZE;
+        m.u8.fill(0, a, a + size);
         // The defaults are xterm-pty's: ICRNL IXON IUTF8, OPOST ONLCR,
         // CS8 CREAD, and the usual echoing canonical line discipline.
-        const t = d.stream.termios || { iflag: 0x6500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b, cc: null };
+        const t = d.stream.termios || DEFAULT_TERMIOS;
         m.write32(a, t.iflag);
         m.write32(a + 4, t.oflag);
         m.write32(a + 8, t.cflag);
         m.write32(a + 12, t.lflag);
-        // c_cc: VINTR=3 VQUIT=28 VERASE=127 VKILL=21 VEOF=4 VTIME=0 VMIN=1 ...
-        const cc = t.cc ? t.cc.slice(0, 19) : [3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0];
-        m.u8.set(cc, a + 17);
+        const cc = t.cc ? t.cc.slice(0, TERMIOS_CC_LEN) : DEFAULT_CC;
+        m.u8.set(cc, a + TERMIOS_CC_OFFSET);
+        if (r === TCGETS2) {
+          m.write32(a + 36, BAUD_38400);
+          m.write32(a + 40, BAUD_38400);
+        }
         return 0;
       }
       case TCSETS:
       case TCSETSW:
-      case TCSETSF: {
+      case TCSETSF:
+      case TCSETS2:
+      case TCSETSW2:
+      case TCSETSF2: {
         if (!isatty) {
           throw new Errno(E.NOTTY);
         }
         const a = Number(arg);
-        const cc = Array.from(m.u8.subarray(a + 17, a + 17 + 19));
+        const cc = Array.from(m.u8.subarray(a + TERMIOS_CC_OFFSET, a + TERMIOS_CC_OFFSET + TERMIOS_CC_LEN));
         while (cc.length < 32) {
           cc.push(0);
         }
@@ -1499,6 +1524,74 @@ export class Process {
     return this.sys_poll(fds, nfds, 0n);
   }
 
+  // Whether a descriptor has input now. A terminal stream answers
+  // from its ring; files and pipes with data are ready; the rest are.
+  readable(d) {
+    if (d.kind === "stream") {
+      return d.stream.available === undefined || d.stream.available() > 0;
+    }
+    if (d.kind === "pipe") {
+      return d.pipe.length > 0 || d.pipe.writers === 0;
+    }
+    return true;
+  }
+
+  // select: readable sets are answered from `readable`; write and
+  // except sets as always ready and never. With nothing ready and a
+  // timeout, the terminal stream is waited on for that long.
+  sys_select(nfds, readAddr, writeAddr, exceptAddr, timeoutAddr, isPselect = false) {
+    const m = this.machine;
+    const n = Number(nfds);
+    const words = Math.ceil(Math.max(n, 1) / 64);
+    const bitSet = (addr, fd) => addr !== 0n && (m.read64(Number(addr) + 8 * Math.floor(fd / 64)) >> BigInt(fd % 64)) & 1n;
+    let timeoutMs = -1;
+    if (timeoutAddr !== 0n) {
+      const sec = Number(m.read64(timeoutAddr));
+      const sub = Number(m.read64(timeoutAddr + 8n));
+      timeoutMs = sec * 1000 + (isPselect ? sub / 1e6 : sub / 1e3);
+    }
+    const deadline = timeoutMs < 0 ? Infinity : performance.now() + timeoutMs;
+    for (;;) {
+      const readyRead = [];
+      const readyWrite = [];
+      for (let fd = 0; fd < n; fd++) {
+        const d = this.fds.get(fd);
+        if (bitSet(readAddr, fd) && d !== undefined && this.readable(d)) {
+          readyRead.push(fd);
+        }
+        if (bitSet(writeAddr, fd) && d !== undefined) {
+          readyWrite.push(fd);
+        }
+      }
+      if (readyRead.length + readyWrite.length > 0 || performance.now() >= deadline) {
+        for (const addr of [readAddr, writeAddr, exceptAddr]) {
+          if (addr !== 0n) {
+            m.u8.fill(0, Number(addr), Number(addr) + words * 8);
+          }
+        }
+        for (const fd of readyRead) {
+          m.u8[Number(readAddr) + Math.floor(fd / 8)] |= 1 << (fd % 8);
+        }
+        for (const fd of readyWrite) {
+          m.u8[Number(writeAddr) + Math.floor(fd / 8)] |= 1 << (fd % 8);
+        }
+        return readyRead.length + readyWrite.length;
+      }
+      // Wait for the terminal's ring, or for the deadline.
+      const stdin = this.fds.get(STDIN);
+      const wait = Math.min(deadline - performance.now(), 50);
+      if (stdin !== undefined && stdin.kind === "stream" && stdin.stream.wait) {
+        stdin.stream.wait(wait);
+      } else {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+      }
+    }
+  }
+
+  sys_pselect6(nfds, readAddr, writeAddr, exceptAddr, timeoutAddr) {
+    return this.sys_select(nfds, readAddr, writeAddr, exceptAddr, timeoutAddr, true);
+  }
+
   sys_nanosleep(req) {
     const sec = Number(this.machine.read64(req));
     const nsec = Number(this.machine.read64(req + 8n));
@@ -1695,6 +1788,8 @@ Process.prototype.handlers = {
   [NR.dup2]: Process.prototype.sys_dup2,
   [NR.nanosleep]: Process.prototype.sys_nanosleep,
   [NR.poll]: Process.prototype.sys_poll,
+  [NR.select]: Process.prototype.sys_select,
+  [NR.pselect6]: Process.prototype.sys_pselect6,
   [NR.ppoll]: Process.prototype.sys_ppoll,
   [NR.getpid]: Process.prototype.sys_getpid,
   [NR.exit]: Process.prototype.sys_exit,

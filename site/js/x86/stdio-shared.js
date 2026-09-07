@@ -30,7 +30,7 @@ export class InputWriter {
   constructor(sab) {
     this.header = new Int32Array(sab, 0, HEADER_WORDS);
     this.data = new Uint8Array(sab, HEADER_WORDS * 4);
-    this.size = this.data.length;
+    this.capacity = this.data.length;
   }
 
   // Appends bytes; drops what does not fit, which at 64 KiB of typed
@@ -38,10 +38,10 @@ export class InputWriter {
   push(bytes) {
     const head = Atomics.load(this.header, HEAD);
     let tail = Atomics.load(this.header, TAIL);
-    const free = this.size - (tail - head);
+    const free = this.capacity - (tail - head);
     const n = Math.min(bytes.length, free);
     for (let i = 0; i < n; i++) {
-      this.data[(tail + i) % this.size] = bytes[i];
+      this.data[(tail + i) % this.capacity] = bytes[i];
     }
     tail += n;
     Atomics.store(this.header, TAIL, tail);
@@ -70,7 +70,7 @@ export class InputReader {
   constructor(sab) {
     this.header = new Int32Array(sab, 0, HEADER_WORDS);
     this.data = new Uint8Array(sab, HEADER_WORDS * 4);
-    this.size = this.data.length;
+    this.capacity = this.data.length;
     this.isatty = true;
     this.termios = null;
   }
@@ -87,7 +87,7 @@ export class InputReader {
       if (tail !== head) {
         const n = Math.min(out.length, tail - head);
         for (let i = 0; i < n; i++) {
-          out[i] = this.data[(head + i) % this.size];
+          out[i] = this.data[(head + i) % this.capacity];
         }
         Atomics.store(this.header, HEAD, head + n);
         return n;
@@ -97,6 +97,15 @@ export class InputReader {
       }
       Atomics.wait(this.header, TAIL, tail);
     }
+  }
+
+  // Waits up to ms for input to arrive.
+  wait(ms) {
+    const tail = Atomics.load(this.header, TAIL);
+    if (tail !== Atomics.load(this.header, HEAD)) {
+      return;
+    }
+    Atomics.wait(this.header, TAIL, tail, ms);
   }
 
   size() {
