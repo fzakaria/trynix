@@ -115,10 +115,10 @@ export class Translator {
 
     const bytes = this.emitModule(order, blocks, base);
     const module = new WebAssembly.Module(bytes);
-    new WebAssembly.Instance(module, machine.importObject());
-    for (const b of order) {
-      machine.register(b.addr, b.index);
-    }
+    const instance = new WebAssembly.Instance(module, machine.importObject());
+    order.forEach((b, i) => {
+      machine.register(b.addr, b.index, instance.exports[i]);
+    });
     this.regions++;
     this.blocks += order.length;
     this.bytesEmitted += bytes.length;
@@ -177,8 +177,9 @@ export class Translator {
     const ctx = { m, blocks, order, imports: {}, globals: {}, helpers: {} };
 
     // Imports, in a fixed order the Machine's import object matches.
+    // The block table is not among them: indirect jumps go through the
+    // helpers' `jump`, which is the one place the table is imported.
     m.importMemory("env", "memory", { min: 1, max: 65536 });
-    m.importTable("env", "table", { min: 1 });
     for (const [name, params, results] of JS_IMPORTS) {
       ctx.imports[name] = m.importFunc("env", name, m.addType(params, results));
     }
@@ -188,6 +189,7 @@ export class Translator {
       cc_cond: [[T.i32], [T.i32]],
       mulhu: [[T.i64, T.i64], [T.i64]],
       mulhs: [[T.i64, T.i64], [T.i64]],
+      jump: [[T.i32], []],
     };
     for (const name of HELPER_FUNCS) {
       const [p, r] = HELPER_TYPES[name];
@@ -216,17 +218,18 @@ export class Translator {
       e.emitBlock();
       bodies.push(c);
     }
-    const funcs = [];
-    for (const c of bodies) {
-      funcs.push(m.addFunc(ctx.blockType, c.locals, c));
-    }
+    // Blocks are exported by position; the Machine puts them in the
+    // table by hand, since a module without the table cannot have an
+    // element segment for it.
+    bodies.forEach((c, i) => {
+      m.addFunc(ctx.blockType, c.locals, c, { export: String(i) });
+    });
     for (const [, t] of ctx.trampolines) {
       const index = m.addFunc(ctx.blockType, t.code.locals, t.code);
       if (index !== t.index) {
         throw new Error("trampoline index mismatch");
       }
     }
-    m.addElem(0, base, funcs);
     return m.toBytes();
   }
 }
@@ -564,7 +567,7 @@ class Emitter {
     }
     const idx = this.translator.machine.lookup(target);
     if (idx !== 0) {
-      c.i32_const(idx).return_call_indirect(this.ctx.blockType, 0);
+      c.i32_const(idx).return_call(this.ctx.helpers.jump);
       return;
     }
     // Not translated yet: look it up at run time, so once it is, this
@@ -584,7 +587,7 @@ class Emitter {
     c.i32_const(EXIT.MISS).global_set(this.g.exit_reason);
     c.return_();
     c.end();
-    c.local_get(idx).return_call_indirect(this.ctx.blockType, 0);
+    c.local_get(idx).return_call(this.ctx.helpers.jump);
   }
 
   // Pushes the i64 on the stack as `width` bytes (8, or 2 with an

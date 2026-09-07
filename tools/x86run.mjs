@@ -78,7 +78,7 @@ const t0 = performance.now();
 const machine = new Machine({ pages: 16384 });
 if (traceRegions) {
   machine.translator.onRegion = (entry, blocks, ms, bytes) =>
-    fs.writeSync(2, `[region] 0x${entry.toString(16)} ${blocks} blocks ${bytes} bytes ${ms.toFixed(1)} ms (total ${machine.translator.blocks} blocks, heap ${(process.memoryUsage().heapUsed / 1048576).toFixed(0)} MB)\n`);
+    fs.writeSync(2, `[region] 0x${entry.toString(16)} ${blocks} blocks ${bytes} bytes ${ms.toFixed(1)} ms (total ${machine.translator.blocks} blocks, heap ${(process.memoryUsage().heapUsed / 1048576).toFixed(0)} MB, external ${(process.memoryUsage().external / 1048576).toFixed(0)} MB, arraybuffers ${(process.memoryUsage().arrayBuffers / 1048576).toFixed(0)} MB)\n`);
 }
 if (traceBlocks) {
   machine.translator.traceBlocks = true;

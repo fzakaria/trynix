@@ -22,6 +22,11 @@ export const LOOKUP_L2_SIZE = 1 << 14;
 export function buildHelpersModule({ l1Base }) {
   const m = new ModuleBuilder();
   m.importMemory("env", "memory", { min: 1, max: 65536 });
+  // The block table is imported here and nowhere else. V8 keeps a
+  // dispatch table per instance that imports a table, sized to the
+  // table, so with one instance per translated region that cost was
+  // quadratic; every indirect jump instead tail-calls `jump` below.
+  m.importTable("env", "table", { min: 1 });
 
   // Globals, in state.js order, all exported.
   for (const [name, type] of GLOBALS) {
@@ -240,6 +245,14 @@ export function buildHelpersModule({ l1Base }) {
     m.addFunc(m.addType([T.i64, T.i64], [T.i64]), c.locals, c, { export: "mulhs" });
   }
 
+  // jump(slot: i32): tail-calls the block in that table slot. Block
+  // functions all have type () -> ().
+  {
+    const c = new Code(1);
+    c.local_get(0).return_call_indirect(m.addType([], []), 0).end();
+    m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "jump" });
+  }
+
   // save_xmm(addr: i32) / load_xmm(addr: i32): the sixteen xmm
   // registers through memory, 16 bytes each, for JavaScript callers.
   {
@@ -262,4 +275,4 @@ export function buildHelpersModule({ l1Base }) {
   return m.toBytes();
 }
 
-export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs"];
+export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs", "jump"];

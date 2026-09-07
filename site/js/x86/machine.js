@@ -42,7 +42,7 @@ export class Machine {
     this.kernelBrk = this.l1Base + LOOKUP_L1_SIZE;
 
     const helpers = new WebAssembly.Instance(new WebAssembly.Module(buildHelpersModule({ l1Base: this.l1Base })), {
-      env: { memory: this.memory },
+      env: { memory: this.memory, table: this.table },
     });
     this.helpers = helpers.exports;
     this.translator = new Translator(this);
@@ -77,7 +77,6 @@ export class Machine {
       this.imports = {
         env: {
           memory: this.memory,
-          table: this.table,
           ...this.helpers,
           syscall: () => this.syscall(this),
           cpuid: () => this.cpuid(this),
@@ -176,7 +175,9 @@ export class Machine {
     return this.u32[(l1 >>> 2) + (a & 0xfff)];
   }
 
-  register(addr, slot) {
+  // Puts a block function in a table slot and in the lookup for addr.
+  register(addr, slot, func) {
+    this.table.set(slot, func);
     const a = Number(BigInt.asUintN(32, addr));
     const l1i = (this.l1Base >>> 2) + (a >>> 12);
     let l1 = this.u32[l1i];
