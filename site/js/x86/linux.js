@@ -110,10 +110,83 @@ export const NR = Object.freeze({
   fchmodat: 268, faccessat: 269, pselect6: 270, ppoll: 271, set_robust_list: 273,
   get_robust_list: 274, utimensat: 280, eventfd2: 290, dup3: 292, pipe2: 293, prlimit64: 302,
   getrandom: 318, memfd_create: 319, statx: 332, rseq: 334, clone3: 435, close_range: 436,
-  faccessat2: 439,
+  faccessat2: 439, epoll_create: 213, epoll_ctl: 233, epoll_wait: 232, epoll_pwait: 281,
+  epoll_create1: 291, socketpair: 53,
 });
 
 const NR_NAMES = Object.fromEntries(Object.entries(NR).map(([k, v]) => [v, k]));
+
+// A pipe inside one process: a byte queue. A read on an empty pipe
+// with a writer still open cannot block here, since nothing else would
+// ever fill it, so it fails with EAGAIN; once every writer is closed it
+// reports end of file.
+class Pipe {
+  constructor() {
+    this.chunks = [];
+    this.length = 0;
+    this.writers = 1;
+    this.readers = 1;
+  }
+
+  read(out) {
+    if (this.length === 0) {
+      if (this.writers === 0) {
+        return 0;
+      }
+      throw new Errno(E.AGAIN, "pipe empty");
+    }
+    let n = 0;
+    while (n < out.length && this.chunks.length > 0) {
+      const head = this.chunks[0];
+      const take = Math.min(head.length, out.length - n);
+      out.set(head.subarray(0, take), n);
+      n += take;
+      if (take === head.length) {
+        this.chunks.shift();
+      } else {
+        this.chunks[0] = head.subarray(take);
+      }
+    }
+    this.length -= n;
+    return n;
+  }
+
+  write(data) {
+    if (this.readers === 0) {
+      throw new Errno(E.PIPE);
+    }
+    this.chunks.push(data.slice());
+    this.length += data.length;
+    return data.length;
+  }
+}
+
+// An eventfd: a 64-bit counter read as eight bytes.
+class EventFd {
+  constructor(initial) {
+    this.count = initial;
+  }
+
+  read(out) {
+    if (out.length < 8) {
+      throw new Errno(E.INVAL);
+    }
+    if (this.count === 0n) {
+      throw new Errno(E.AGAIN);
+    }
+    new DataView(out.buffer, out.byteOffset).setBigUint64(0, this.count, true);
+    this.count = 0n;
+    return 8;
+  }
+
+  write(data) {
+    if (data.length < 8) {
+      throw new Errno(E.INVAL);
+    }
+    this.count += new DataView(data.buffer, data.byteOffset).getBigUint64(0, true);
+    return 8;
+  }
+}
 
 // A file description: what an fd refers to.
 class Description {
@@ -148,6 +221,7 @@ export class Process {
     this.brkEnd = 0n;
     this.brkLimit = 0n;
     this.exePath = argv[0];
+    this.highWater = 0;
     this.startTime = performance.now();
     this.syscalls = 0;
 
@@ -252,6 +326,21 @@ export class Process {
     this.free = out;
   }
 
+  // Zeroes a range for a fresh mapping. Memory the guest has never
+  // touched is already zero, and ruby alone maps hundreds of megabytes
+  // it then barely uses, so only the part below the high-water mark
+  // of addresses ever mapped is filled.
+  zero(at, size) {
+    const lo = Number(at);
+    const hi = lo + size;
+    if (lo < this.highWater) {
+      this.machine.u8.fill(0, lo, Math.min(hi, this.highWater));
+    }
+    if (hi > this.highWater) {
+      this.highWater = hi;
+    }
+  }
+
   // ---- loading ------------------------------------------------------
 
   readFile(path) {
@@ -289,7 +378,7 @@ export class Process {
       }
     }
     this.claimRange(lo, hi);
-    m.u8.fill(0, Number(lo), Number(hi));
+    this.zero(lo, Number(hi - lo));
     for (const s of elf.segments) {
       const at = Number(base + s.vaddr);
       m.u8.set(bytes.subarray(s.offset, s.offset + s.filesz), at);
@@ -341,7 +430,7 @@ export class Process {
     const m = this.machine;
     const stackLo = this.allocate(STACK_SIZE);
     const stackHi = stackLo + BigInt(STACK_SIZE);
-    m.u8.fill(0, Number(stackLo), Number(stackHi));
+    this.zero(stackLo, STACK_SIZE);
     let sp = stackHi - 16n;
 
     const enc = new TextEncoder();
@@ -660,10 +749,155 @@ export class Process {
     const d = this.fd(fd);
     this.fds.delete(Number(fd));
     this.cloexec.delete(Number(fd));
-    if (--d.refs === 0 && d.file) {
-      d.file.close();
+    if (--d.refs === 0) {
+      if (d.file) {
+        d.file.close();
+      }
+      if (d.kind === "pipe") {
+        if (d.end === "read") {
+          d.pipe.readers--;
+        } else {
+          d.pipe.writers--;
+        }
+      }
     }
     return 0;
+  }
+
+  sys_pipe2(fdsAddr, flags) {
+    const pipe = new Pipe();
+    const r = new Description("pipe");
+    r.pipe = pipe;
+    r.end = "read";
+    r.path = "pipe:[r]";
+    const w = new Description("pipe");
+    w.pipe = pipe;
+    w.end = "write";
+    w.path = "pipe:[w]";
+    const rfd = this.installFd(r);
+    const wfd = this.installFd(w);
+    if (Number(flags) & O.CLOEXEC) {
+      this.cloexec.add(rfd);
+      this.cloexec.add(wfd);
+    }
+    this.machine.write32(fdsAddr, rfd);
+    this.machine.write32(fdsAddr + 4n, wfd);
+    return 0;
+  }
+
+  sys_pipe(fdsAddr) {
+    return this.sys_pipe2(fdsAddr, 0n);
+  }
+
+  // epoll: an interest list per instance. With one thread there is
+  // never anything to wait for that a later syscall will not find, so
+  // epoll_wait reports the descriptors that are readable or writable
+  // now, or sleeps out its timeout and reports none.
+  sys_epoll_create1(flags) {
+    const d = new Description("epoll");
+    d.interest = new Map();
+    d.path = "anon_inode:[eventpoll]";
+    const fd = this.installFd(d);
+    if (Number(flags) & O.CLOEXEC) {
+      this.cloexec.add(fd);
+    }
+    return fd;
+  }
+
+  sys_epoll_ctl(epfd, op, fd, event) {
+    const ep = this.fd(epfd);
+    if (ep.kind !== "epoll") {
+      throw new Errno(E.INVAL);
+    }
+    const n = Number(fd);
+    this.fd(fd);
+    const EPOLL_CTL_ADD = 1;
+    const EPOLL_CTL_DEL = 2;
+    const EPOLL_CTL_MOD = 3;
+    switch (Number(op)) {
+      case EPOLL_CTL_ADD:
+        if (ep.interest.has(n)) {
+          throw new Errno(E.EXIST);
+        }
+      // fall through
+      case EPOLL_CTL_MOD:
+        ep.interest.set(n, { events: this.machine.read32(event), data: this.machine.read64(event + 4n) });
+        return 0;
+      case EPOLL_CTL_DEL:
+        if (!ep.interest.delete(n)) {
+          throw new Errno(E.NOENT);
+        }
+        return 0;
+      default:
+        throw new Errno(E.INVAL);
+    }
+  }
+
+  sys_epoll_wait(epfd, events, maxevents, timeout) {
+    const ep = this.fd(epfd);
+    if (ep.kind !== "epoll") {
+      throw new Errno(E.INVAL);
+    }
+    const EPOLLIN = 1;
+    const EPOLLOUT = 4;
+    const m = this.machine;
+    let n = 0;
+    for (const [fd, { events: want, data }] of ep.interest) {
+      if (n >= Number(maxevents)) {
+        break;
+      }
+      const d = this.fds.get(fd);
+      if (d === undefined) {
+        continue;
+      }
+      let ready = 0;
+      if (d.kind === "pipe") {
+        if (d.end === "read" && d.pipe.length > 0) {
+          ready |= EPOLLIN;
+        }
+        if (d.end === "write") {
+          ready |= EPOLLOUT;
+        }
+      } else if (d.kind === "stream" && d.stream instanceof EventFd) {
+        if (d.stream.count > 0n) {
+          ready |= EPOLLIN;
+        }
+        ready |= EPOLLOUT;
+      } else {
+        ready = EPOLLIN | EPOLLOUT;
+      }
+      ready &= want;
+      if (ready === 0) {
+        continue;
+      }
+      const at = Number(events) + n * 12;
+      m.write32(at, ready);
+      m.write64(at + 4, data);
+      n++;
+    }
+    const ms = Number(BigInt.asIntN(32, timeout));
+    if (n === 0 && ms !== 0) {
+      if (ms < 0) {
+        throw new GuestFault("epoll_wait would block forever");
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    }
+    return n;
+  }
+
+  sys_epoll_pwait(epfd, events, maxevents, timeout) {
+    return this.sys_epoll_wait(epfd, events, maxevents, timeout);
+  }
+
+  sys_eventfd2(initial, flags) {
+    const d = new Description("stream");
+    d.stream = new EventFd(BigInt.asUintN(32, initial));
+    d.path = "anon_inode:[eventfd]";
+    const fd = this.installFd(d);
+    if (Number(flags) & O.CLOEXEC) {
+      this.cloexec.add(fd);
+    }
+    return fd;
   }
 
   sys_lseek(fd, offset, whence) {
@@ -961,8 +1195,12 @@ export class Process {
         if (!isatty) {
           throw new Errno(E.NOTTY);
         }
+        // The kernel's struct termios: four 32-bit flag words, c_line
+        // and 19 control characters, 36 bytes. glibc's tcgetattr passes
+        // exactly that on its stack, so writing its own 60-byte layout
+        // here smashes the caller's frame.
         const a = Number(arg);
-        m.u8.fill(0, a, a + 60);
+        m.u8.fill(0, a, a + 36);
         const t = d.stream.termios || { iflag: 0x500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b };
         m.write32(a, t.iflag);
         m.write32(a + 4, t.oflag);
@@ -1038,7 +1276,7 @@ export class Process {
     }
     const m = this.machine;
     m.ensure(at, size);
-    m.u8.fill(0, Number(at), Number(at) + size);
+    this.zero(at, size);
     if (!(fl & MAP.ANONYMOUS)) {
       const d = this.fd(fd);
       if (d.kind !== "file") {
@@ -1095,7 +1333,7 @@ export class Process {
     const m = this.machine;
     m.ensure(addr, 0);
     if (addr > this.brkEnd) {
-      m.u8.fill(0, Number(this.brkEnd), Number(addr));
+      this.zero(this.brkEnd, Number(addr - this.brkEnd));
     }
     this.brkEnd = addr;
     return addr;
@@ -1221,6 +1459,38 @@ export class Process {
       this.machine.write64(tv + 8n, (ms % 1000n) * 1000n);
     }
     return 0;
+  }
+
+  // poll: no descriptor here ever blocks, so every requested fd is
+  // ready at once, and a closed one reports POLLNVAL.
+  sys_poll(fds, nfds, timeout) {
+    const m = this.machine;
+    const POLLIN = 1;
+    const POLLOUT = 4;
+    const POLLNVAL = 32;
+    let ready = 0;
+    for (let i = 0; i < Number(nfds); i++) {
+      const at = Number(fds) + i * 8;
+      const fd = m.view.getInt32(at, true);
+      const events = m.view.getInt16(at + 4, true);
+      let revents = 0;
+      if (fd >= 0) {
+        if (!this.fds.has(fd)) {
+          revents = POLLNVAL;
+        } else {
+          revents = events & (POLLIN | POLLOUT);
+        }
+      }
+      m.view.setInt16(at + 6, revents, true);
+      if (revents !== 0) {
+        ready++;
+      }
+    }
+    return ready;
+  }
+
+  sys_ppoll(fds, nfds) {
+    return this.sys_poll(fds, nfds, 0n);
   }
 
   sys_nanosleep(req) {
@@ -1407,9 +1677,19 @@ Process.prototype.handlers = {
   [NR.mremap]: Process.prototype.sys_mremap,
   [NR.msync]: Process.prototype.sys_ok,
   [NR.madvise]: Process.prototype.sys_ok,
+  [NR.pipe]: Process.prototype.sys_pipe,
+  [NR.pipe2]: Process.prototype.sys_pipe2,
+  [NR.eventfd2]: Process.prototype.sys_eventfd2,
+  [NR.epoll_create1]: Process.prototype.sys_epoll_create1,
+  [NR.epoll_create]: Process.prototype.sys_epoll_create1,
+  [NR.epoll_ctl]: Process.prototype.sys_epoll_ctl,
+  [NR.epoll_wait]: Process.prototype.sys_epoll_wait,
+  [NR.epoll_pwait]: Process.prototype.sys_epoll_pwait,
   [NR.dup]: Process.prototype.sys_dup,
   [NR.dup2]: Process.prototype.sys_dup2,
   [NR.nanosleep]: Process.prototype.sys_nanosleep,
+  [NR.poll]: Process.prototype.sys_poll,
+  [NR.ppoll]: Process.prototype.sys_ppoll,
   [NR.getpid]: Process.prototype.sys_getpid,
   [NR.exit]: Process.prototype.sys_exit,
   [NR.kill]: Process.prototype.sys_kill,

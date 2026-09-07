@@ -253,6 +253,56 @@ export function buildHelpersModule({ l1Base }) {
     m.addFunc(m.addType([T.i32], []), c.locals, c, { export: "jump" });
   }
 
+  // The x87 stack: fpu_get(i) -> f64 and fpu_set(i, v) address st(i)
+  // through the top-of-stack index; fpu_push(v) and fpu_pop() -> f64
+  // move it. Each is a br_table over the physical register.
+  const physical = (c, iLocal) => {
+    c.global_get(G.fpu_top).local_get(iLocal).i32_add().i32_const(7).i32_and();
+  };
+  {
+    const c = new Code(1);
+    for (let i = 0; i < 9; i++) {
+      c.block(T.empty);
+    }
+    physical(c, 0);
+    c.br_table([0, 1, 2, 3, 4, 5, 6, 7], 8);
+    for (let i = 0; i < 8; i++) {
+      c.end().global_get(G[`st${i}`]).return_();
+    }
+    c.end().f64_const(0);
+    c.end();
+    m.addFunc(m.addType([T.i32], [T.f64]), c.locals, c, { export: "fpu_get" });
+  }
+  {
+    const c = new Code(2);
+    for (let i = 0; i < 9; i++) {
+      c.block(T.empty);
+    }
+    physical(c, 0);
+    c.br_table([0, 1, 2, 3, 4, 5, 6, 7], 8);
+    for (let i = 0; i < 8; i++) {
+      c.end().local_get(1).global_set(G[`st${i}`]).return_();
+    }
+    c.end();
+    c.end();
+    const fpuSet = m.addFunc(m.addType([T.i32, T.f64], []), c.locals, c, { export: "fpu_set" });
+    // fpu_push(v): top = (top - 1) & 7; st(0) = v
+    const cp = new Code(1);
+    cp.global_get(G.fpu_top).i32_const(1).i32_sub().i32_const(7).i32_and().global_set(G.fpu_top);
+    cp.i32_const(0).local_get(0).call(fpuSet).end();
+    m.addFunc(m.addType([T.f64], []), cp.locals, cp, { export: "fpu_push" });
+  }
+  {
+    // fpu_pop(): v = st(0); top = (top + 1) & 7; v
+    const c = new Code(0);
+    c.i32_const(0).call(m.funcs.length - 3 + 0);
+    // The call index above is fpu_get; computed as the index of the
+    // function three definitions back (fpu_get, fpu_set, fpu_push).
+    c.global_get(G.fpu_top).i32_const(1).i32_add().i32_const(7).i32_and().global_set(G.fpu_top);
+    c.end();
+    m.addFunc(m.addType([], [T.f64]), c.locals, c, { export: "fpu_pop" });
+  }
+
   // save_xmm(addr: i32) / load_xmm(addr: i32): the sixteen xmm
   // registers through memory, 16 bytes each, for JavaScript callers.
   {
@@ -275,4 +325,4 @@ export function buildHelpersModule({ l1Base }) {
   return m.toBytes();
 }
 
-export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs", "jump"];
+export const HELPER_FUNCS = ["lookup", "cc_eflags", "cc_cond", "mulhu", "mulhs", "jump", "fpu_get", "fpu_set", "fpu_push", "fpu_pop"];

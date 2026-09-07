@@ -325,6 +325,66 @@ for size in [32, 64]:
     form(f"mulx {a},{b},{c}", f"mulx {a},{b},{c}")
     form(f"andn {a},{b},[m]", f"andn {a},{b},{mem(size)}", mem=True, mask=ALL_FLAGS & ~(AF | PF))
 
+# ---- x87 forms -----------------------------------------------------
+# The x87 stack is not in the harness's output, so every form ends by
+# storing what it computed to scratch memory (or to eflags, or to ax).
+# Results are compared as doubles: the translator's registers hold
+# f64, so forms whose 64-bit mantissa would show are kept out (long
+# double arithmetic on values that need it).
+
+def x87(name, asm, mask=ALL_FLAGS):
+    form(name, "finit; " + asm, mask=mask, mem=True, floats=True)
+
+
+for width, ptr in [("QWORD", "q"), ("DWORD", "d")]:
+    x87(f"fld/fstp {width}", f"fld {width} PTR [rbx+0x40]; fstp {width} PTR [rbx+0x60]")
+    x87(f"fld {width}/fst", f"fld {width} PTR [rbx+0x40]; fst {width} PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+    for op in ["fadd", "fsub", "fsubr", "fmul", "fdiv", "fdivr"]:
+        x87(f"{op} {width} mem", f"fld QWORD PTR [rbx+0x40]; {op} {width} PTR [rbx+0x48]; fstp QWORD PTR [rbx+0x60]")
+for op in ["fadd", "fsub", "fsubr", "fmul", "fdiv", "fdivr"]:
+    x87(f"{op} st,st(1)", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op} st,st(1); fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+    x87(f"{op} st(1),st", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op} st(1),st; fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+    x87(f"{op}p", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op}p st(1),st; fstp QWORD PTR [rbx+0x60]")
+for op in ["fiadd", "fisub", "fisubr", "fimul", "fidiv", "fidivr"]:
+    x87(f"{op} dword", f"fld QWORD PTR [rbx+0x40]; {op} DWORD PTR [rbx+0x48]; fstp QWORD PTR [rbx+0x60]")
+    x87(f"{op} word", f"fld QWORD PTR [rbx+0x40]; {op} WORD PTR [rbx+0x48]; fstp QWORD PTR [rbx+0x60]")
+for width in ["WORD", "DWORD", "QWORD"]:
+    x87(f"fild {width}", f"fild {width} PTR [rbx+0x40]; fstp QWORD PTR [rbx+0x60]")
+    x87(f"fistp {width}", f"fld QWORD PTR [rbx+0x40]; fistp {width} PTR [rbx+0x60]")
+    x87(f"fisttp {width}", f"fld QWORD PTR [rbx+0x40]; fisttp {width} PTR [rbx+0x60]")
+x87("fist dword", "fld QWORD PTR [rbx+0x40]; fist DWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+for op in ["fchs", "fabs", "fsqrt", "frndint"]:
+    x87(op, f"fld QWORD PTR [rbx+0x40]; {op}; fstp QWORD PTR [rbx+0x60]")
+for rc in [0, 1, 2, 3]:
+    cw = 0x37F | (rc << 10)
+    x87(f"frndint rc={rc}", f"mov WORD PTR [rbx+0x70],{cw:#x}; fldcw WORD PTR [rbx+0x70]; fld QWORD PTR [rbx+0x40]; frndint; fstp QWORD PTR [rbx+0x60]")
+    x87(f"fistp rc={rc}", f"mov WORD PTR [rbx+0x70],{cw:#x}; fldcw WORD PTR [rbx+0x70]; fld QWORD PTR [rbx+0x40]; fistp QWORD PTR [rbx+0x60]")
+for const in ["fld1", "fldz", "fldpi", "fldl2e", "fldln2", "fldlg2", "fldl2t"]:
+    x87(const, f"{const}; fstp QWORD PTR [rbx+0x60]")
+x87("fxch", "fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; fxch st(1); fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+x87("fld st(0)", "fld QWORD PTR [rbx+0x40]; fld st(0); fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+x87("fstp st(1)", "fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; fstp st(1); fstp QWORD PTR [rbx+0x60]")
+x87("fnstcw", "fnstcw WORD PTR [rbx+0x60]")
+x87("fldcw/fnstcw", "mov WORD PTR [rbx+0x70],0x27f; fldcw WORD PTR [rbx+0x70]; fnstcw WORD PTR [rbx+0x60]")
+for op in ["fucomi", "fcomi"]:
+    x87(f"{op}", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op} st,st(1); fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]", mask=CF | ZF | PF)
+    x87(f"{op}p", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op}p st,st(1); fstp QWORD PTR [rbx+0x60]", mask=CF | ZF | PF)
+for op in ["fucom", "fcom"]:
+    x87(f"{op};fnstsw", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op} st(1); fnstsw ax; and eax,0x4500; fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+    x87(f"{op}pp;fnstsw", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; {op}pp; fnstsw ax; and eax,0x4500")
+x87("fcomp mem;fnstsw", "fld QWORD PTR [rbx+0x40]; fcomp QWORD PTR [rbx+0x48]; fnstsw ax; and eax,0x4500")
+x87("ftst;fnstsw", "fld QWORD PTR [rbx+0x40]; ftst; fnstsw ax; and eax,0x4500; fstp QWORD PTR [rbx+0x60]")
+x87("fxam;fnstsw", "fld QWORD PTR [rbx+0x40]; fxam; fnstsw ax; and eax,0x4700; fstp QWORD PTR [rbx+0x60]")
+x87("fnstsw top", "fld1; fld1; fld1; fnstsw ax; and eax,0x3800; fstp st(0); fstp st(0); fstp st(0)")
+for cc in ["b", "e", "be", "u", "nb", "ne", "nbe", "nu"]:
+    x87(f"fcmov{cc}", f"fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; fcmov{cc} st,st(1); fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+x87("fld tbyte", "fld QWORD PTR [rbx+0x40]; fstp TBYTE PTR [rbx+0x50]; fld TBYTE PTR [rbx+0x50]; fstp QWORD PTR [rbx+0x60]")
+x87("fstp tbyte of int", "fild DWORD PTR [rbx+0x40]; fstp TBYTE PTR [rbx+0x60]")
+x87("fscale", "fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; fscale; fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+x87("fprem;fnstsw", "fld QWORD PTR [rbx+0x40]; fld QWORD PTR [rbx+0x48]; fprem; fnstsw ax; and eax,0x400; fstp QWORD PTR [rbx+0x60]; fstp QWORD PTR [rbx+0x68]")
+x87("fnstenv/fldenv cw", "mov WORD PTR [rbx+0x70],0x27f; fldcw WORD PTR [rbx+0x70]; fnstenv [rbx+0x80]; finit; fldenv [rbx+0x80]; fnstcw WORD PTR [rbx+0x60]; mov QWORD PTR [rbx+0x80],0; mov QWORD PTR [rbx+0x88],0; mov QWORD PTR [rbx+0x90],0; mov DWORD PTR [rbx+0x98],0")
+
+
 # ---- SSE forms -----------------------------------------------------
 
 def sse(name, asm, mask=ALL_FLAGS, mem_=False, floats=False):
@@ -452,7 +512,10 @@ sse("ldmxcsr/stmxcsr", "ldmxcsr DWORD PTR [rip+1f]; stmxcsr DWORD PTR [rbx+0x40]
 sse("movnti", "movnti QWORD PTR [rbx+0x40],rax", mem_=True)
 sse("movntdq", "movntdq XMMWORD PTR [rbx+0x40],xmm2", mem_=True)
 sse("lddqu", "lddqu xmm2,XMMWORD PTR [rbx+0x40]", mem_=True)
-sse("fxsave/fxrstor", "fxsave [rbx]; pxor xmm2,xmm2; fxrstor [rbx]", mem_=False)
+# fxsave writes the physical x87 registers whatever their tags say, so
+# the area's register bytes hold whatever earlier cases left; the form
+# clears them before the comparison.
+sse("fxsave/fxrstor", "fxsave [rbx]; pxor xmm2,xmm2; fxrstor [rbx]; " + "; ".join(f"mov QWORD PTR [rbx+{o:#x}],0" for o in range(32, 160, 8)), mem_=False)
 
 
 # ---- assembling and running ----------------------------------------

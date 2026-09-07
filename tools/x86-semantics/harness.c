@@ -152,6 +152,9 @@ static void build(const uint8_t *snippet, int len)
     p = emit_store_gpr(p, 4, (uint32_t)(uintptr_t)OUT + OUT_HARNESS_RSP);
     /* Load xmm0-15 from input block + 256 */
     for (int i = 0; i < 16; i++) p = emit_load_xmm(p, i, in_addr + 256 + 16 * i);
+    /* fninit (DB E3): the x87 stack and control word of one case must
+     * not reach the next */
+    *p++ = 0xdb; *p++ = 0xe3;
     /* mxcsr: ldmxcsr [in+136] -> 0F AE 14 25 disp32, so the sticky
      * exception flags of earlier cases do not leak into this one */
     *p++ = 0x0f; *p++ = 0xae; *p++ = 0x14; *p++ = 0x25; memcpy(p, &(uint32_t){in_addr + 136}, 4); p += 4;

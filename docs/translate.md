@@ -175,16 +175,72 @@ The expectation from reading what is in nixpkgs:
 Once the audit script exists, this section becomes the count over the
 top few hundred packages and stops being a guess.
 
-## Built so far
+## Built so far, and measured
+
+All of it in node against binaries in this machine's store, through
+`nix run .#x86run -- <binary> [args]`. The browser side is not built,
+so no number here is a browser number; node's V8 is the same engine
+Chrome runs, and the guest's QEMU numbers for comparison are the
+browser ones from [performance.md](./performance.md).
+
+What runs, as of 2026-09-07:
+
+| program                                            | result           | wall, node |
+| -------------------------------------------------- | ---------------- | ---------- |
+| musl static `hello`                                | prints           | 0.5 s      |
+| glibc dynamic `hello` through ld.so                | prints           | 1.2 s      |
+| `jq --version`; `jq '.a \| add'` over stdin         | correct          | 0.5 s      |
+| `jj --version` (Rust)                              | prints           | 0.3 s      |
+| `python3 -c 'print(sum(range(100)))'`              | 4950             | 2.9 s      |
+| python with json, re, collections, math, `%` format | correct          | 3.5 s      |
+| `ruby -e 1`                                        | exits 0          | 4.8 s      |
+| ruby with map/select, `Math.sqrt`, Unicode upcase  | correct          | 5.0 s      |
+
+For `ruby -e 1` the browser guest takes 13.7 to 16.6 s on a warm
+cache, so a first run is about 3x faster before any caching of
+translations, which is the part that makes a second run fast. Of the
+4.8 s, 2.3 s is translating 104,563 blocks in 2,874 regions, about
+22 µs per block, on one thread; that work is per file, cacheable, and
+parallelisable. The remaining 2.5 s is V8 compiling the functions it
+runs plus the guest's own work and 2,536 syscalls.
+
+Two things went wrong on the way that are worth recording:
+
+- V8 keeps a dispatch table per instance that imports a function
+  table, sized to the whole table. One instance per region made that
+  quadratic and ran node out of heap on python. Only the helpers
+  module imports the table now; everything else tail-calls its
+  `jump(slot)`.
+- The first ruby and python runs tripped glibc's stack protector.
+  One cause was an instruction bug the differential test found; the
+  other was the `TCGETS` ioctl writing glibc's 60-byte termios where
+  the kernel struct is 36 and glibc's `tcgetattr` keeps exactly that
+  on its stack. A syscall layer can smash a stack as well as a JIT
+  can.
+
+The pieces:
 
 - `site/js/x86/wasm.js`: the encoder. MVP, tail calls, sign extension,
   bulk memory, SIMD, saturating truncation, atomics.
 - `site/js/x86/decode.js`: the decoder, table-driven from the Intel
   opcode maps, including x87, SSE through SSE4.2, BMI and the VEX and
-  EVEX shapes.
-- `tools/x86-oracle.py`: harvests the decoder's oracle from objdump.
-- `tests/x86/`: the encoder and decoder tests.
+  EVEX shapes. Checked against objdump over 12,635 encodings.
+- `site/js/x86/translate.js`, `simd.js`, `x87.js`: the translator.
+  Integer, SSE through SSE4.1 on wasm SIMD, x87 on f64 with the
+  transcendentals in JavaScript. Checked against this machine's CPU
+  over 1,755 instruction forms by `tools/x86-semantics`, which
+  assembles each form, runs it natively from random states and
+  records what the hardware left.
+- `site/js/x86/helpers.js`, `machine.js`: the register file and the
+  run loop.
+- `site/js/x86/elf.js`, `linux.js`, `fs-node.js`: the loader and the
+  syscall layer, about 90 syscalls, over a filesystem interface with a
+  node backend.
+- `tools/x86run.mjs`: the runner, with `--trace` for an strace-like
+  log, `--stats`, `--regions` and `--blocks`.
 
-Not yet built: the translator, the loader, the syscall layer, the run
-loop, the browser Worker, the exec stub in the QEMU guest, and every
-measurement this document is supposed to carry.
+Not yet built: AVX (the CPU presented has none, and `-march=haswell`
+binaries such as the CPU probe die on their first `vmovdqa`), threads,
+fork and exec, signal delivery, the NAR-backed filesystem and the
+Worker for the page, the exec stub in the QEMU guest, and caching of
+translated modules across runs.

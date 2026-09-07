@@ -117,6 +117,13 @@
             pkgs.binutils
           ];
 
+          # generate the translator's semantics fixture on this CPU:
+          # nix run .#x86-semantics -- tests/fixtures/x86/semantics.json
+          x86-semantics = tool "x86-semantics" "${pkgs.python3}/bin/python3 ${./tools/x86-semantics/generate.py}" [
+            pkgs.gcc
+            pkgs.binutils
+          ];
+
           # publish the example package into the site as a binary cache
           make-example-cache = tool "make-example-cache" ./tools/make-example-cache.sh [
             pkgs.curl
@@ -253,11 +260,17 @@
           # the node test suite, offline: the narinfo parser against a
           # fixture, and the x86 translator against objdump's oracle and
           # hand-assembled programs
-          tests = pkgs.runCommand "trynix-tests" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
-            cd ${self}
-            node --test tests/site/*.test.mjs tests/x86/*.test.mjs
-            touch $out
-          '';
+          tests =
+            pkgs.runCommand "trynix-tests"
+              {
+                nativeBuildInputs = [ pkgs.nodejs ];
+                X86_SEMANTICS = import ./nix/x86-semantics.nix { inherit pkgs; };
+              }
+              ''
+                cd ${self}
+                node --test tests/site/*.test.mjs tests/x86/*.test.mjs
+                touch $out
+              '';
         }
       );
 

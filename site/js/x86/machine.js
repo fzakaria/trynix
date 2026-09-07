@@ -5,6 +5,7 @@
 import { buildHelpersModule, LOOKUP_L1_SIZE, LOOKUP_L2_SIZE } from "./helpers.js";
 import { Translator } from "./translate.js";
 import { EXIT, G, REGISTER_NAMES } from "./state.js";
+import { fpuOp } from "./x87.js";
 
 const PAGE = 65536;
 
@@ -58,9 +59,7 @@ export class Machine {
     this.cpuid = defaultCpuid;
     this.rdtsc = defaultRdtsc;
     this.div128 = div128;
-    this.fpu = () => {
-      throw new GuestFault("x87 helper with no handler");
-    };
+    this.fpu = fpuOp;
     this.imports = null;
     this.traceBlock = () => {};
   }

@@ -23,6 +23,7 @@ import { decode, DecodeError, REG } from "./decode.js";
 import { CC, EXIT, G, GLOBALS, ccOp } from "./state.js";
 import { HELPER_FUNCS } from "./helpers.js";
 import { emitSimd } from "./simd.js";
+import { emitX87 } from "./x87.js";
 
 // Blocks per region and instructions per block. A region is one module,
 // validated eagerly by V8, so it is kept to a size that compiles in a
@@ -190,6 +191,10 @@ export class Translator {
       mulhu: [[T.i64, T.i64], [T.i64]],
       mulhs: [[T.i64, T.i64], [T.i64]],
       jump: [[T.i32], []],
+      fpu_get: [[T.i32], [T.f64]],
+      fpu_set: [[T.i32, T.f64], []],
+      fpu_push: [[T.f64], []],
+      fpu_pop: [[], [T.f64]],
     };
     for (const name of HELPER_FUNCS) {
       const [p, r] = HELPER_TYPES[name];
@@ -2081,7 +2086,7 @@ class Emitter {
   }
 
   emitX87(insn, ops) {
-    return this.translator.x87 ? this.translator.x87(this, insn, ops) : false;
+    return emitX87(this, insn, ops);
   }
 }
 
