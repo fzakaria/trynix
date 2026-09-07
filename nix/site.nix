@@ -52,6 +52,7 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     xargs sha256sum | sha256sum | cut -c1-12)
   mv $out/js "$out/js.$hash"
   substituteInPlace $out/index.html --replace-fail "js/app.js" "js.$hash/app.js"
+  substituteInPlace $out/run.html --replace-fail "js/run.js" "js.$hash/run.js"
 
   # The same trick for the files the page fetches by a fixed name and
   # keeps in the browser's Cache API, which keys on the URL: their

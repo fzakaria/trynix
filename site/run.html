@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
+    />
+    <title>trynix, translated</title>
+    <meta
+      name="description"
+      content="Run a nixpkgs binary in your browser without a CPU emulator: its machine code translated to WebAssembly on the fly."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>"
+    />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- The process runs in a Worker and blocks on a SharedArrayBuffer
+         for its input, so this page needs cross-origin isolation the
+         same way the VM does; index.html says why the shim is set up
+         like this. -->
+    <script>
+      window.coi = { coepCredentialless: () => false };
+    </script>
+    <script src="coi-serviceworker.js"></script>
+    <script src="vendor/xterm-pty.js"></script>
+    <script src="vendor/xzwasm.js"></script>
+    <script src="vendor/fzstd.js"></script>
+  </head>
+  <body>
+    <header class="site">
+      <h1><a href=".">trynix</a> <span class="muted">translated</span></h1>
+      <nav class="site">
+        <a href="." title="the same packages in the x86_64 virtual machine">VM</a>
+        <a href="https://github.com/fzakaria/trynix/blob/main/docs/translate.md">How it works</a>
+      </nav>
+    </header>
+
+    <section>
+      <p>
+        The same store path the VM boots, run with no CPU emulator at all: its x86-64 machine
+        code is translated to WebAssembly here in the tab, block by block, and its system calls
+        are answered by JavaScript. An experiment, on a curated subset of what the VM can run;
+        <a href="https://github.com/fzakaria/trynix/blob/main/docs/translate.md">translate.md</a>
+        has the design and the limits.
+      </p>
+      <p class="muted">
+        <code>?pkg=python3&amp;exec=python3</code>,
+        <code>?pkg=ruby&amp;exec=ruby&amp;arg=-e&amp;arg=puts+1</code>, or
+        <code>?path=/nix/store/…&amp;exec=jq&amp;arg=--version</code>
+      </p>
+      <p id="status"></p>
+    </section>
+
+    <section id="boot" hidden>
+      <div id="boot-progress"></div>
+      <div id="console">
+        <div id="console-bar">
+          <span id="console-title">translated</span>
+          <span title="libghostty-vt, compiled to wasm">ghostty</span>
+        </div>
+        <div id="console-body">
+          <div id="console-veil"><span class="spinner"></span><span id="console-note"></span></div>
+          <div id="terminal"></div>
+        </div>
+        <div id="keybar" aria-label="terminal keys"></div>
+      </div>
+      <p id="stats" class="muted"></p>
+    </section>
+
+    <details id="debug">
+      <summary class="muted">Debug log</summary>
+      <pre id="debug-log"></pre>
+    </details>
+
+    <footer class="muted">
+      Made with ❤️ by
+      <a href="https://fzakaria.com">Farid Zakaria</a>
+      ·
+      <a href="https://github.com/fzakaria/trynix/blob/main/LICENSE">MIT</a>
+    </footer>
+
+    <script type="module" src="js/run.js"></script>
+  </body>
+</html>

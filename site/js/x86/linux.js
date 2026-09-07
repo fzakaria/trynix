@@ -1201,13 +1201,15 @@ export class Process {
         // here smashes the caller's frame.
         const a = Number(arg);
         m.u8.fill(0, a, a + 36);
-        const t = d.stream.termios || { iflag: 0x500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b };
+        // The defaults are xterm-pty's: ICRNL IXON IUTF8, OPOST ONLCR,
+        // CS8 CREAD, and the usual echoing canonical line discipline.
+        const t = d.stream.termios || { iflag: 0x6500, oflag: 0x5, cflag: 0xbf, lflag: 0x8a3b, cc: null };
         m.write32(a, t.iflag);
         m.write32(a + 4, t.oflag);
         m.write32(a + 8, t.cflag);
         m.write32(a + 12, t.lflag);
         // c_cc: VINTR=3 VQUIT=28 VERASE=127 VKILL=21 VEOF=4 VTIME=0 VMIN=1 ...
-        const cc = [3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0];
+        const cc = t.cc ? t.cc.slice(0, 19) : [3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0];
         m.u8.set(cc, a + 17);
         return 0;
       }
@@ -1218,7 +1220,11 @@ export class Process {
           throw new Errno(E.NOTTY);
         }
         const a = Number(arg);
-        d.stream.termios = { iflag: m.read32(a), oflag: m.read32(a + 4), cflag: m.read32(a + 8), lflag: m.read32(a + 12) };
+        const cc = Array.from(m.u8.subarray(a + 17, a + 17 + 19));
+        while (cc.length < 32) {
+          cc.push(0);
+        }
+        d.stream.termios = { iflag: m.read32(a), oflag: m.read32(a + 4), cflag: m.read32(a + 8), lflag: m.read32(a + 12), cc };
         if (d.stream.setTermios) {
           d.stream.setTermios(d.stream.termios);
         }
