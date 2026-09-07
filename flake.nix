@@ -33,7 +33,7 @@
         rec {
           # the static site: everything the pages workflow deploys and
           # `nix run .#serve` tests locally
-          site = import ./nix/site.nix { inherit pkgs self; };
+          site = import ./nix/site.nix { inherit pkgs; };
           default = site;
 
           # the CPU probe tools/cpu-test.py boots inside the guest to

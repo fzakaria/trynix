@@ -11,10 +11,7 @@
 # The engine and snapshot are fetches rather than builds (nix/engine.nix
 # explains why), but they are pinned by hash, so this derivation is
 # still a complete and reproducible description of what gets served.
-{
-  pkgs,
-  self,
-}:
+{ pkgs }:
 let
   vendor = import ./vendor.nix { inherit pkgs; };
   engine = import ./engine.nix { inherit pkgs; };
@@ -23,7 +20,11 @@ let
 in
 pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mkdir -p $out
-  cp -r ${self}/site/. $out/
+  # The site directory alone, rather than a subpath of the whole flake
+  # source: reaching through `self` would make every file in the tree an
+  # input, so a change to a patch, a tool or a doc rebuilt the site and
+  # invalidated its cached copy for no reason.
+  cp -r ${../site}/. $out/
   chmod -R u+w $out
   cp -r ${vendor} $out/vendor
   cp -r ${outputs} $out/outs
