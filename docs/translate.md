@@ -223,41 +223,72 @@ top few hundred packages and stops being a guess.
 
 ## Built so far, and measured
 
-All of it in node against binaries in this machine's store, through
-`nix run .#x86run -- <binary> [args]`. The browser side is not built,
-so no number here is a browser number; node's V8 is the same engine
-Chrome runs, and the guest's QEMU numbers for comparison are the
-browser ones from [performance.md](./performance.md).
+Everything above the "not covered" line is built: the translator, the
+process model, the translation cache, AVX with FMA, self-modifying
+code, and the lane from the VM's shell. What is not: signal delivery
+between syscalls, sockets, and a shared cache of translations.
 
-What runs, as of 2026-09-07:
+### The benchmark
 
-| program                                             | result  | wall, node |
-| --------------------------------------------------- | ------- | ---------- |
-| musl static `hello`                                 | prints  | 0.5 s      |
-| glibc dynamic `hello` through ld.so                 | prints  | 1.2 s      |
-| `jq --version`; `jq '.a \| add'` over stdin         | correct | 0.5 s      |
-| `jj --version` (Rust)                               | prints  | 0.3 s      |
-| `python3 -c 'print(sum(range(100)))'`               | 4950    | 2.9 s      |
-| python with json, re, collections, math, `%` format | correct | 3.5 s      |
-| `ruby -e 1`                                         | exits 0 | 4.8 s      |
-| ruby with map/select, `Math.sqrt`, Unicode upcase   | correct | 5.0 s      |
+`nix run .#x86-bench` runs a fixed suite (`nix/x86-bench.nix`) through
+the node runner: one binary per thing the lane has to get right, each
+run once against an empty translation cache and then three times
+against the cache that run filled. The suite derivation runs every
+program natively when it is built and records the output, so the
+translated run is checked against the hardware, and CI fails on any
+difference. It also fails when a run translates more blocks than the
+baseline in `tests/fixtures/x86/bench-baseline.json` (coverage went
+down, or the cache stopped hitting). Wall times are reported in the
+job summary and not gated on: they are the machine's, and a runner is
+not a laptop.
 
-In headless Chromium, on the site's own page (`run.html`, below), with
-the closure already fetched:
+On this machine (node, 2026-09-07):
 
-| program                                      | wall  | translating |
-| -------------------------------------------- | ----- | ----------- |
-| hello 2.12.3                                 | 0.8 s | 0.6 s       |
-| ruby 3.4.9, a map and sum                    | 5.9 s | 3.4 s       |
-| python 3.14.7, json and a sum over a million | 5.2 s | 3.3 s       |
+| program | covers            | cold  | hot   | blocks  | wasm    |
+| ------- | ----------------- | ----- | ----- | ------- | ------- |
+| hello   | C                 | 1.2 s | 0.4 s | 18,538  | 2.8 MB  |
+| jq      | C, a filter       | 1.3 s | 0.5 s | 22,669  | 3.7 MB  |
+| jj      | Rust              | 6.8 s | 2.1 s | 48,410  | 15.3 MB |
+| age     | Go                | 2.9 s | 1.7 s | 42,357  | 5.9 MB  |
+| fzf     | Go, threads       | 2.4 s | 1.5 s | 33,988  | 4.3 MB  |
+| python  | interpreter       | 6.1 s | 2.3 s | 117,490 | 17.1 MB |
+| ruby    | interpreter       | 7.6 s | 3.5 s | 115,020 | 16.8 MB |
+| sh      | fork, exec, pipes | 2.6 s | 2.0 s | 23,289  | 3.3 MB  |
 
-For `ruby -e 1` the browser guest takes 13.7 to 16.6 s on a warm
-cache, so a first run is about 3x faster before any caching of
-translations, which is the part that makes a second run fast. Of the
-4.8 s, 2.3 s is translating 104,563 blocks in 2,874 regions, about
-22 µs per block, on one thread; that work is per file, cacheable, and
-parallelisable. The remaining 2.5 s is V8 compiling the functions it
-runs plus the guest's own work and 2,536 syscalls.
+"Cold" is a first run: fetch nothing (node reads the store), translate
+every block the program touches, compile, run. "Hot" is the same with
+every region already in the cache, so what remains is instantiating
+the cached modules and the program's own work. Where hot is still
+seconds (jj, ruby) most of it is V8 compiling 15 MB of wasm on
+instantiation; that is the next thing to cut, with fewer, larger
+modules or the browser's compiled-code cache.
+
+### Against the VM
+
+The same programs in headless Chromium: the translated lane on
+`run.html`, and the VM's shell with the same closure booted, timed by
+busybox `time`. The VM's cold column is the first run after boot,
+which pays the 9p reads and the emulator's own JIT; its warm column is
+the second. The lane's cold column includes fetching the closure's
+files into memory.
+
+| program               | VM cold | VM warm | lane cold | lane hot |
+| --------------------- | ------- | ------- | --------- | -------- |
+| hello                 | 1.2 s   | 0.9 s   | 1.0 s     | 0.35 s   |
+| jq --version          | 0.9 s   | 0.9 s   | 1.0 s     | 0.36 s   |
+| jj --version (Rust)   | 2.9 s   | 1.4 s   | 7.1 s     | 2.1 s    |
+| age (Go, 2020 build)  | 1.0 s   | 0.8 s   | 3.5 s     | 2.2 s    |
+| python3 -c 'print(1)' | 4.3 s   | 3.1 s   | 5.2 s     | 2.0 s    |
+| ruby -e 'puts 1'      | 12.4 s  | 9.9 s   | 7.4 s     | 3.7 s    |
+
+Read it plainly. The lane wins on the interpreters, 2 to 3x hot and
+already on a cold ruby, and on small C programs, where a hot run is
+under half a second. It loses on large native binaries: QEMU's TCG
+translates a block in microseconds and its cold jj and age beat the
+lane's, and even hot the lane pays V8 for instantiating 500 cached
+modules, which is the whole of age's 2.2 s. Cutting that, with fewer
+and larger modules or by handing V8 a compiled-code cache, is the next
+piece of work, and it moves the hot column only.
 
 Two things went wrong on the way that are worth recording:
 
@@ -281,28 +312,26 @@ The pieces:
   opcode maps, including x87, SSE through SSE4.2, BMI and the VEX and
   EVEX shapes. Checked against objdump over 12,635 encodings.
 - `site/js/x86/translate.js`, `simd.js`, `x87.js`: the translator.
-  Integer, SSE through SSE4.1 on wasm SIMD, x87 on f64 with the
-  transcendentals in JavaScript. Checked against this machine's CPU
-  over 1,755 instruction forms by `tools/x86-semantics`, which
-  assembles each form, runs it natively from random states and
+  Integer, SSE through SSE4.2, AVX2 and FMA on wasm SIMD, x87 on f64
+  with the transcendentals in JavaScript. Checked against this
+  machine's CPU over 2,557 instruction forms by `tools/x86-semantics`,
+  which assembles each form, runs it natively from random states and
   records what the hardware left.
 - `site/js/x86/helpers.js`, `machine.js`: the register file and the
   run loop.
-- `site/js/x86/elf.js`, `linux.js`, `fs-node.js`: the loader and the
-  syscall layer, about 90 syscalls, over a filesystem interface with a
-  node backend.
+- `site/js/x86/kernel.js`, `process.js`, `channel.js`: the kernel in
+  its own worker, the process in its worker, and the channel between
+  them; about 110 syscalls.
+- `site/js/x86/elf.js`, `fs-node.js`, `fs-memory.js`: the loader and
+  the filesystems, node's and the in-memory NAR tree the page uses.
+- `site/js/run.js`, `fastlane.js`, `cache.js`: the page, the lane the
+  VM's shell reaches, and the translation cache in the Cache API.
 - `tools/x86run.mjs`: the runner, with `--trace` for an strace-like
-  log, `--stats`, `--regions` and `--blocks`.
+  log, `--stats` and `--cache`; `tools/x86-bench.mjs`: the benchmark.
 
 The page: `run.html?pkg=python3&exec=python3` fetches the closure the
 way the VM's boot does, keeps it as an in-memory filesystem, and runs
-the program in a Worker with the terminal attached (`site/js/run.js`,
-`site/js/x86/worker.js`, `fs-memory.js`, `stdio-shared.js`). Reads of
-standard input block on a ring in a SharedArrayBuffer the page fills
-from the pty; the line discipline stays on the page and hears the
-guest's termios changes, so python's REPL gets its raw mode.
-
-Built since the table above: the process model, the translation
-cache, AVX with FMA, self-modifying code, and the lane from the VM's
-shell; each has a section. Not built: signal delivery between
-syscalls, sockets, and a shared cache of translations.
+the program with the terminal attached. Reads of standard input block
+on a ring in a SharedArrayBuffer the page fills from the pty; the line
+discipline stays on the page and hears the guest's termios changes, so
+python's REPL gets its raw mode.

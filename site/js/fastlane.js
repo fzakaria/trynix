@@ -17,7 +17,11 @@
 
 import { log } from "./log.js";
 import { createInputRing, InputWriter } from "./x86/stdio-shared.js";
-import { loadTranslations, openTranslationCache, storeTranslation } from "./x86/cache.js";
+import {
+  loadTranslations,
+  openTranslationCache,
+  storeTranslation,
+} from "./x86/cache.js";
 
 const EXEC_DIR = "/share/exec";
 const STUB_PATH = `${EXEC_DIR}/trynix-exec`;
@@ -38,7 +42,8 @@ function laneEnvironment(guestEnv, binDirs) {
   return env;
 }
 
-const decodeBase64 = (text) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
+const decodeBase64 = (text) =>
+  Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 const encodeBase64 = (bytes) => btoa(String.fromCharCode(...bytes));
 
 // Splits a console stream into what the terminal should see and the
@@ -52,7 +57,10 @@ class FrameScanner {
 
   // Returns the text to show.
   feed(data) {
-    const text = typeof data === "string" ? data : this.decoder.decode(data, { stream: true });
+    const text =
+      typeof data === "string"
+        ? data
+        : this.decoder.decode(data, { stream: true });
     let input = this.pending + text;
     this.pending = "";
     let out = "";
@@ -92,7 +100,9 @@ export class FastLane {
     this.writers = [];
     this.guest = null;
     this.active = null;
-    this.scanner = new FrameScanner((kind, payload) => this.onFrame(kind, payload));
+    this.scanner = new FrameScanner((kind, payload) =>
+      this.onFrame(kind, payload),
+    );
   }
 
   // The pty master the terminal is attached to instead of the guest's:
@@ -137,11 +147,14 @@ export class FastLane {
       return;
     }
     for (const cb of this.writers) {
-      cb([data, () => {
-        if (--remaining === 0) {
-          callback();
-        }
-      }]);
+      cb([
+        data,
+        () => {
+          if (--remaining === 0) {
+            callback();
+          }
+        },
+      ]);
     }
   }
 
@@ -151,8 +164,13 @@ export class FastLane {
     this.storePaths = storePaths;
     this.binDirs = binDirs;
     this.cache = await openTranslationCache();
-    this.translations = await loadTranslations(this.cache, storePaths.map((s) => s.path));
-    log(`fast lane: ${this.translations.length} cached regions for the closure`);
+    this.translations = await loadTranslations(
+      this.cache,
+      storePaths.map((s) => s.path),
+    );
+    log(
+      `fast lane: ${this.translations.length} cached regions for the closure`,
+    );
   }
 
   // Puts the stub on the share and points the farm's links for
@@ -183,7 +201,9 @@ export class FastLane {
   }
 
   sendToGuest(kind, payload) {
-    this.guest.ldisc.writeFromLower(`${FRAME_START}${kind};${payload}${FRAME_END}`);
+    this.guest.ldisc.writeFromLower(
+      `${FRAME_START}${kind};${payload}${FRAME_END}`,
+    );
   }
 
   onFrame(kind, payload) {
@@ -263,13 +283,18 @@ export class FastLane {
     }
 
     const started = performance.now();
-    const worker = new Worker(new URL("./x86/kernel-worker.js", import.meta.url), { type: "module" });
+    const worker = new Worker(
+      new URL("./x86/kernel-worker.js", import.meta.url),
+      { type: "module" },
+    );
     this.active = { master, worker };
     const finish = (code) => {
       this.active = null;
       worker.terminate();
       this.sendToGuest("exit", String(code));
-      log(`fast lane: ${program} exited ${code} after ${((performance.now() - started) / 1000).toFixed(1)} s`);
+      log(
+        `fast lane: ${program} exited ${code} after ${((performance.now() - started) / 1000).toFixed(1)} s`,
+      );
     };
     worker.onmessage = (event) => {
       const msg = event.data;
@@ -311,7 +336,8 @@ export class FastLane {
       trace: false,
       translations: this.translations,
       files: {
-        "/etc/passwd": "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:100:user:/home/user:/bin/sh\n",
+        "/etc/passwd":
+          "root:x:0:0:root:/root:/bin/sh\nuser:x:1000:100:user:/home/user:/bin/sh\n",
         "/etc/group": "root:x:0:\nusers:x:100:\n",
       },
     });
@@ -348,6 +374,13 @@ export function shareEntries(entries) {
       new Uint8Array(buffer).set(new Uint8Array(entry.data.buffer));
       shared.set(entry.data.buffer, buffer);
     }
-    return { ...entry, data: new Uint8Array(buffer, entry.data.byteOffset, entry.data.byteLength) };
+    return {
+      ...entry,
+      data: new Uint8Array(
+        buffer,
+        entry.data.byteOffset,
+        entry.data.byteLength,
+      ),
+    };
   });
 }

@@ -1,0 +1,310 @@
+{
+  "host": "AMD Ryzen 7 7840U w/ Radeon  780M Graphics, node v24.19.0",
+  "runs": 3,
+  "programs": [
+    {
+      "name": "hello",
+      "lang": "C, static-ish",
+      "cold": {
+        "wall": 1.1608520880000002,
+        "regions": 394,
+        "blocks": 18538,
+        "cachedRegions": 0,
+        "cachedBlocks": 0,
+        "wasmMB": 2.8,
+        "translateMs": 797,
+        "syscalls": 78,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 0.37090054799999983,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 394,
+        "cachedBlocks": 18538,
+        "wasmMB": 0,
+        "translateMs": 94,
+        "syscalls": 78,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 0.36733056399999986,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 394,
+        "cachedBlocks": 18538,
+        "wasmMB": 0,
+        "translateMs": 89,
+        "syscalls": 78,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "jq",
+      "lang": "C",
+      "cold": {
+        "wall": 1.2512919570000003,
+        "regions": 678,
+        "blocks": 22669,
+        "cachedRegions": 0,
+        "cachedBlocks": 0,
+        "wasmMB": 3.7,
+        "translateMs": 860,
+        "syscalls": 110,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 0.5228425850000004,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 678,
+        "cachedBlocks": 22669,
+        "wasmMB": 0,
+        "translateMs": 132,
+        "syscalls": 110,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 0.5134501369999999,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 678,
+        "cachedBlocks": 22669,
+        "wasmMB": 0,
+        "translateMs": 127,
+        "syscalls": 110,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "jj",
+      "lang": "Rust",
+      "cold": {
+        "wall": 6.801245840999999,
+        "regions": 7595,
+        "blocks": 48410,
+        "cachedRegions": 1,
+        "cachedBlocks": 1,
+        "wasmMB": 15.3,
+        "translateMs": 5352,
+        "syscalls": 532,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 2.2175322990000006,
+        "regions": 2,
+        "blocks": 5,
+        "cachedRegions": 7596,
+        "cachedBlocks": 48411,
+        "wasmMB": 0,
+        "translateMs": 918,
+        "syscalls": 527,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 2.1225082390000005,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 7596,
+        "cachedBlocks": 48382,
+        "wasmMB": 0,
+        "translateMs": 863,
+        "syscalls": 526,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "age",
+      "lang": "Go",
+      "cold": {
+        "wall": 2.920647337999999,
+        "regions": 920,
+        "blocks": 42357,
+        "cachedRegions": 7,
+        "cachedBlocks": 769,
+        "wasmMB": 5.9,
+        "translateMs": 1261,
+        "syscalls": 585,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 1.7180673530000021,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 921,
+        "cachedBlocks": 43115,
+        "wasmMB": 0,
+        "translateMs": 205,
+        "syscalls": 541,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 1.7180673530000021,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 921,
+        "cachedBlocks": 43115,
+        "wasmMB": 0,
+        "translateMs": 205,
+        "syscalls": 541,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "fzf",
+      "lang": "Go, threads",
+      "cold": {
+        "wall": 2.394402707000001,
+        "regions": 636,
+        "blocks": 33988,
+        "cachedRegions": 10,
+        "cachedBlocks": 879,
+        "wasmMB": 4.3,
+        "translateMs": 963,
+        "syscalls": 398,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 1.5045046380000022,
+        "regions": 2,
+        "blocks": 41,
+        "cachedRegions": 632,
+        "cachedBlocks": 34809,
+        "wasmMB": 0,
+        "translateMs": 159,
+        "syscalls": 353,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 1.5045046380000022,
+        "regions": 2,
+        "blocks": 41,
+        "cachedRegions": 632,
+        "cachedBlocks": 34809,
+        "wasmMB": 0,
+        "translateMs": 159,
+        "syscalls": 353,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "python",
+      "lang": "interpreter",
+      "cold": {
+        "wall": 6.121166926000005,
+        "regions": 3340,
+        "blocks": 117490,
+        "cachedRegions": 0,
+        "cachedBlocks": 0,
+        "wasmMB": 17.1,
+        "translateMs": 4164,
+        "syscalls": 909,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 2.391782732,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 3340,
+        "cachedBlocks": 117490,
+        "wasmMB": 0,
+        "translateMs": 689,
+        "syscalls": 903,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 2.2471880569999994,
+        "regions": 1,
+        "blocks": 6,
+        "cachedRegions": 3340,
+        "cachedBlocks": 117490,
+        "wasmMB": 0,
+        "translateMs": 654,
+        "syscalls": 903,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "ruby",
+      "lang": "interpreter",
+      "cold": {
+        "wall": 7.616650582000002,
+        "regions": 3038,
+        "blocks": 115020,
+        "cachedRegions": 0,
+        "cachedBlocks": 0,
+        "wasmMB": 16.8,
+        "translateMs": 3887,
+        "syscalls": 2097,
+        "processes": 1
+      },
+      "fill": {
+        "wall": 3.5802658470000024,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 3038,
+        "cachedBlocks": 115020,
+        "wasmMB": 0,
+        "translateMs": 640,
+        "syscalls": 2091,
+        "processes": 1
+      },
+      "hot": {
+        "wall": 3.526556893000001,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 3038,
+        "cachedBlocks": 115020,
+        "wasmMB": 0,
+        "translateMs": 639,
+        "syscalls": 2091,
+        "processes": 1
+      },
+      "problem": null
+    },
+    {
+      "name": "sh",
+      "lang": "fork, exec, pipes",
+      "cold": {
+        "wall": 2.582903369000007,
+        "regions": 391,
+        "blocks": 23289,
+        "cachedRegions": 555,
+        "cachedBlocks": 21939,
+        "wasmMB": 3.3000000000000003,
+        "translateMs": 909,
+        "syscalls": 206,
+        "processes": 4
+      },
+      "fill": {
+        "wall": 1.990393848000007,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 946,
+        "cachedBlocks": 45228,
+        "wasmMB": 0,
+        "translateMs": 168,
+        "syscalls": 206,
+        "processes": 4
+      },
+      "hot": {
+        "wall": 1.990393848000007,
+        "regions": 0,
+        "blocks": 0,
+        "cachedRegions": 946,
+        "cachedBlocks": 45228,
+        "wasmMB": 0,
+        "translateMs": 168,
+        "syscalls": 206,
+        "processes": 4
+      },
+      "problem": null
+    }
+  ]
+}

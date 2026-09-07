@@ -40,6 +40,10 @@
           # check the emulator's arithmetic (nix/probe.nix)
           probe = import ./nix/probe.nix { inherit pkgs; };
 
+          # the translator's benchmark suite: representative store
+          # binaries and the output each prints natively
+          x86-bench-suite = import ./nix/x86-bench.nix { inherit pkgs; };
+
           # the guest image the browser VM boots: kernel, initramfs and
           # the BIOS blobs (nix/guest.nix)
           inherit (import ./nix/guest.nix { inherit pkgs; })
@@ -110,7 +114,23 @@
 
           # run an x86-64 binary from the host's store through the
           # translator (docs/translate.md): the development loop
-          x86run = tool "x86run" "${pkgs.nodejs}/bin/node ${./tools/x86run.mjs}" [ ];
+          x86run = tool "x86run" "${pkgs.nodejs}/bin/node ${self}/tools/x86run.mjs" [ ];
+
+          # run the benchmark suite through the translator and compare
+          # with the counters and times a previous run recorded:
+          # nix run .#x86-bench -- --baseline tests/fixtures/x86/bench-baseline.json
+          x86-bench = {
+            type = "app";
+            program = "${
+              pkgs.writeShellApplication {
+                name = "x86-bench";
+                text = ''
+                  export X86_BENCH_SUITE="''${X86_BENCH_SUITE:-${self.packages.${system}.x86-bench-suite}}"
+                  exec ${pkgs.nodejs}/bin/node ${self}/tools/x86-bench.mjs "$@"
+                '';
+              }
+            }/bin/x86-bench";
+          };
 
           # harvest the decoder's oracle from objdump over real binaries
           x86-oracle = tool "x86-oracle" "${pkgs.python3}/bin/python3 ${./tools/x86-oracle.py}" [

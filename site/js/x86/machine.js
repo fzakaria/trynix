@@ -359,7 +359,10 @@ export class Machine {
         case EXIT.TRAP:
           // A hook may handle a jump to an address that holds no code
           // (the legacy vsyscall page) and resume.
-          if (this.onFault !== null && this.onFault(BigInt.asUintN(64, rip.value))) {
+          if (
+            this.onFault !== null &&
+            this.onFault(BigInt.asUintN(64, rip.value))
+          ) {
             continue;
           }
           break;

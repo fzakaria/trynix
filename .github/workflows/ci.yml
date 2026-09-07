@@ -73,3 +73,14 @@ jobs:
       # the probe is one static path out of the site's own cache.
       - name: Computes what the hardware would
         run: nix run .#cpu-test -- --site "$(nix build .#site --no-link --print-out-paths)"
+
+      # The translated lane (docs/translate.md) on representative
+      # binaries: each has to print what it prints natively, and may
+      # not translate more code, or miss the cache more, than the
+      # baseline recorded. The wall times land in the job summary for
+      # reading; a runner is not a laptop, so nothing gates on them.
+      - name: Translates what the hardware would
+        run: >-
+          nix run .#x86-bench --
+          --baseline tests/fixtures/x86/bench-baseline.json
+          --summary "$GITHUB_STEP_SUMMARY"
