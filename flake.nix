@@ -36,6 +36,10 @@
           site = import ./nix/site.nix { inherit pkgs self; };
           default = site;
 
+          # the CPU probe tools/cpu-test.py boots inside the guest to
+          # check the emulator's arithmetic (nix/probe.nix)
+          probe = import ./nix/probe.nix { inherit pkgs; };
+
           # the guest image the browser VM boots: kernel, initramfs and
           # the BIOS blobs (nix/guest.nix)
           inherit (import ./nix/guest.nix { inherit pkgs; })
