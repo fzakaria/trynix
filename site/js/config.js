@@ -17,6 +17,12 @@ export const MULTIVERSE_URL = "https://nixmultiverse.com";
 // data after it (site/js/outputs.js).
 export const SYSTEM = "x86_64-linux";
 
+// The system the multiverse's own pages show store paths for until a
+// reader picks another (its nix/site-system.nix). A link to a package
+// page names a system only when it is not this one, so every link
+// trynix writes is the canonical URL that site would write itself.
+export const MULTIVERSE_SITE_SYSTEM = "x86_64-linux";
+
 // How many attribute matches the search list shows at once, and how
 // many completions the range box's dropdown offers.
 export const SEARCH_LIMIT = 12;

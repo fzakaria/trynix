@@ -15,7 +15,7 @@
 //
 // [grail]: https://github.com/fzakaria/grail
 
-import { versionsOf, compareVersions } from "./multiverse.js";
+import { bootable, versionsOf, compareVersions } from "./multiverse.js";
 
 // attr, an optional operator, and a version pattern.
 const SPEC = /^([^@\s]+)(?:@(>=|<=|>|<|=)?(.+))?$/;
@@ -81,9 +81,7 @@ export async function resolveSpecs(specs) {
     }
 
     // versionsOf returns newest first, so the first match wins.
-    const hit = versions.find(
-      (v) => v.alive !== false && matches(spec, v.version),
-    );
+    const hit = versions.find((v) => bootable(v) && matches(spec, v.version));
     if (hit === undefined) {
       problems.push(
         `no live version of ${spec.attr} matches ${spec.pattern ?? "any"}`,

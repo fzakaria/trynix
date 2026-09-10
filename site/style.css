@@ -303,11 +303,50 @@ code {
     13px ui-monospace,
     monospace;
 }
+
+/* A row in the results: the button that picks the thing, and beside it
+   the link to what the index says about it. The link is a sibling
+   because a button may not contain one. */
+.pick {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+/* The ↗ that leads to nixmultiverse.com. Quiet enough not to compete
+   with the row it belongs to, and padded to stay a tap target. */
+.index-link {
+  padding: 0.3rem 0.35rem;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.index-link:hover {
+  color: var(--accent);
+}
+
+/* A version that cannot boot: no store path for this system, or one the
+   census found gone. Shown rather than dropped, so the list matches the
+   version count beside the attribute — and struck through, since the
+   reason is on the row and in the line under the list. */
+#search-results .version.dead .name {
+  text-decoration: line-through;
+}
+
+/* The reasons, said once under the list rather than on every row. */
+#search-results .note {
+  max-width: 42rem;
+  font-size: 13px;
+}
 #selection {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
   margin: 0.5rem 0;
+}
+#selection .chip-group {
+  display: inline-flex;
+  align-items: center;
 }
 #selection .chip {
   padding: 0.25rem 0.6rem;
@@ -319,6 +358,16 @@ code {
   border: none;
   border-radius: 999px;
   cursor: pointer;
+}
+
+/* A selected path no configured cache holds. The boot is still offered
+   — a cache pasted into the caches lane may hold what cache.nixos.org
+   has dropped — so this is a warning rather than a removal, and it
+   carries the accent's outline instead of its fill. */
+#selection .chip.missing {
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px dashed var(--muted);
 }
 #advanced {
   margin: 0.6rem 0;

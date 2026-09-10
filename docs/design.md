@@ -26,6 +26,24 @@ The pieces already exist in sibling projects; trynix is the glue:
    across outputs gets its `bin` sibling too, from the digest-keyed
    `outs/` shards the multiverse publishes beside the index
    ([site/js/outputs.js](../site/js/outputs.js)).
+
+   Not every version resolves. The multiverse's `versions/` shards list
+   every `(attribute, version)` nixpkgs ever shipped — 310,860 pairs —
+   while its per-system `meta-` shards hold a store path only for the
+   274,729 Hydra actually built for x86_64-linux; the difference is
+   unfree, broken, or out of the jobset, and there is nothing in the
+   cache to fetch for it. The picker joins the two rather than showing
+   only the second ([site/js/multiverse.js](../site/js/multiverse.js),
+   `mergeVersions`): a version with no build for this system, or one the
+   census later found gone, is shown struck through with the reason
+   rather than dropped, so the list matches the version count beside the
+   attribute and a reader is told where a version they came for went.
+   Each row links to that version's page on the index. A path the census
+   only ever recorded, or never probed, is confirmed against the cache
+   the moment it is picked ([site/js/substituters.js](../site/js/substituters.js),
+   `holdsPath`) — a live answer, since the census verdict is up to a week
+   old and the boot needs that narinfo regardless.
+
 2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the
    full runtime closure, and verify every signature against the
    configured keys. The cache serves `access-control-allow-origin: *`,
@@ -299,9 +317,13 @@ share described under Memory.
   (Cloudflare Pages takes a `_headers` file), for control over headers
   and caching. Not for speed: the shim costs about half a second on a
   first-ever visit and nothing after.
-- Autocompleting store paths in the store-path lane needs an index
-  keyed by digest, which the multiverse does not publish; its shards
-  are keyed by attribute.
+- Autocompleting store paths in the store-path lane needs a prefix
+  index over digests. The multiverse's `identify/` shards are keyed by
+  digest — the page already reads them to name a pasted path back to its
+  `(attribute, version)` ([site/js/multiverse.js](../site/js/multiverse.js),
+  `identify`) — but a shard covers a two-character prefix and holds no
+  ordering within it, so a typeahead over the tail is a scan rather than
+  a lookup.
 - Block chaining in the wasm TCG backend, and an aarch64 guest as the
   emulation experiment behind it ([performance.md](./performance.md)).
 
