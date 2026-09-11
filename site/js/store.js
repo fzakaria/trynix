@@ -129,6 +129,13 @@ export async function fetchNar(info, onBytes) {
       nar = await decompress(info, compressed);
       problem = await verifyUnpacked(info, nar);
     } catch (err) {
+      // A decoder that never loaded says nothing about these bytes, so
+      // they stay in the cache and the boot gives up here. Evicting and
+      // downloading the closure again would only reach the same missing
+      // decoder, and would report it as bad bytes on the way.
+      if (err instanceof DecoderUnavailable) {
+        throw new Error(`${info.storePath}: ${err.message}`);
+      }
       problem = err.message;
     }
     if (problem === null) {
@@ -157,6 +164,12 @@ function parse(info, nar) {
 // How many times a NAR that unpacks to the wrong size is fetched.
 const NAR_ATTEMPTS = 2;
 
+// Raised when a decoder cannot be brought in at all, as opposed to
+// bytes it refused. The difference decides what fetchNar does next: a
+// decoder that never loaded says nothing about the archive, so there is
+// nothing to evict and nothing a second download would fix.
+class DecoderUnavailable extends Error {}
+
 // The archive's bytes, whatever it was compressed with.
 async function decompress(info, compressed) {
   if (info.compression === "none") {
@@ -169,7 +182,7 @@ async function decompress(info, compressed) {
         return fzstd.decompress(compressed);
       }
       if (info.compression === "bzip2") {
-        return await unbzip2(compressed);
+        return await unbzip2(compressed, info.narSize);
       }
       const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
       return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -178,6 +191,9 @@ async function decompress(info, compressed) {
       log(
         `failed to decompress ${info.url} (${info.compression}): ${err.message}`,
       );
+      if (err instanceof DecoderUnavailable) {
+        throw err;
+      }
       throw new Error(`${info.compression} decode failed: ${err.message}`);
     }
   });
@@ -188,9 +204,13 @@ async function decompress(info, compressed) {
 // Nothing else waits on it, and a boot that never meets one never pays
 // for it.
 //
-// A failed load is not remembered: the fetch of the wasm is a network
-// fetch like any other, and the retry above it deserves a real second
-// attempt rather than the first one's rejection handed back.
+// Clearing the promise buys a real second attempt at the wasm: the
+// glue leaves its instance unset when that fetch fails, so calling
+// `default()` again re-fetches. It buys nothing for the module itself,
+// since a failed module fetch is recorded in the browser's module map
+// and every later `import()` of the same URL rejects from that record
+// without going back to the network. Which is another reason the two
+// are told apart below rather than retried blindly.
 let bzip2Promise;
 
 function bzip2() {
@@ -222,38 +242,79 @@ const BZIP2_CHUNK = 256 * 1024;
 // and so does the terminal of a VM that is already up.
 const yieldToPage = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function unbzip2(compressed) {
-  const { Bz2Decoder } = await bzip2();
-  const decoder = new Bz2Decoder();
+// `narSize` is the unpacked size the cache signed, so the archive is
+// written into one buffer allocated before the first block arrives.
+// Keeping the blocks and joining them afterwards would hold the whole
+// archive twice at the moment of the join, which for gcc's 143 MB NAR
+// is 286 MB of JS heap on top of everything already in MEMFS, and
+// running out of it is what the note on serialising decodes above is
+// about. A narinfo with no NarSize (nix calls that one corrupt) leaves
+// the size unknown, and only then are the blocks kept.
+async function unbzip2(compressed, narSize) {
+  let module;
   try {
-    const parts = [];
+    module = await bzip2();
+  } catch (err) {
+    throw new DecoderUnavailable(
+      `the bzip2 decoder could not be loaded: ${err.message}`,
+    );
+  }
+
+  const decoder = new module.Bz2Decoder();
+  const nar = narSize > 0 ? new Uint8Array(narSize) : null;
+  const parts = [];
+  let filled = 0;
+
+  // One block, either into its place in the buffer or onto the pile.
+  // An archive that unpacks past the size the narinfo signed is caught
+  // here rather than by writing past the end of the buffer.
+  const take = (part) => {
+    if (nar === null) {
+      parts.push(part);
+      filled += part.byteLength;
+      return;
+    }
+    if (filled + part.byteLength > nar.byteLength) {
+      throw new Error(`unpacks past the ${narSize} bytes narinfo says`);
+    }
+    nar.set(part, filled);
+    filled += part.byteLength;
+  };
+
+  try {
     for (let at = 0; at < compressed.byteLength; at += BZIP2_CHUNK) {
       const part = decoder.push(compressed.subarray(at, at + BZIP2_CHUNK));
       // Nearly every push is bytes going in and nothing coming out.
       // The ones that hand a block back are where the work happened,
       // and the only ones worth yielding after.
       if (part.byteLength > 0) {
-        parts.push(part);
+        take(part);
         await yieldToPage();
       }
     }
     // Also where a stream that ended early is reported, rather than
     // quietly unpacking to less than it should.
-    parts.push(decoder.finish());
-    return concat(parts);
+    take(decoder.finish());
   } finally {
     // The decoder holds its wasm buffers until it is dropped. The
     // finalizer gets there eventually; a decode that is about to be
     // followed by another one cannot wait for eventually.
     decoder.free();
   }
+
+  if (nar === null) {
+    return concat(parts, filled);
+  }
+  // A stream that stopped early leaves the tail of the buffer as
+  // zeroes, which would reach the hash check as a wrong archive rather
+  // than as a short one. Said plainly here instead.
+  if (filled !== nar.byteLength) {
+    throw new Error(`unpacked to ${filled} bytes, narinfo says ${narSize}`);
+  }
+  return nar;
 }
 
-function concat(parts) {
-  let total = 0;
-  for (const part of parts) {
-    total += part.byteLength;
-  }
+function concat(parts, total) {
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const part of parts) {

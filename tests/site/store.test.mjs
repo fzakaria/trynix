@@ -91,6 +91,7 @@ test("a package without a bin directory has no programs", () => {
 // uncompressed, because the claim is about what does and does not abort
 // a download rather than about either check in isolation.
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { fetchNar } from "../../site/js/store.js";
 
 // No Cache API in node: every call in cache.js degrades to no caching.
@@ -185,11 +186,44 @@ test("a NAR compressed with something nothing here reads is refused", async () =
 // would fail a boot.
 //
 // site/vendor is assembled by the nix build (nix/vendor.nix), so a bare
-// `node --test` in a checkout skips this one rather than failing.
-const crabz2 = await import("../../site/vendor/crabz2.js").then(
-  (module) => module,
-  () => null,
-);
+// `node --test` in a checkout skips these rather than failing. The skip
+// turns on the file being absent and nothing else: a decoder that is
+// there and will not import is the failure these tests exist to catch,
+// and catching it as a skip is how the whole bzip2 path ends up green
+// and unexercised.
+const vendored = new URL("../../site/vendor/crabz2.js", import.meta.url);
+const crabz2 = existsSync(vendored) ? await import(vendored.href) : null;
+
+// The unpacked fixture, and the sha256 the narinfo in these tests
+// signs over whatever number of copies of it an archive holds.
+async function bzip2Fixture(copies) {
+  const nar = new Uint8Array(await readFile(narFixture));
+  const stream = new Uint8Array(
+    await readFile(new URL("../fixtures/sample.nar.bz2", import.meta.url)),
+  );
+
+  const compressed = new Uint8Array(stream.byteLength * copies);
+  const unpacked = new Uint8Array(nar.byteLength * copies);
+  for (let i = 0; i < copies; i += 1) {
+    compressed.set(stream, i * stream.byteLength);
+    unpacked.set(nar, i * nar.byteLength);
+  }
+
+  // node's fetch cannot read the file: URL the wasm-bindgen glue
+  // builds from import.meta.url, so the decoder is initialised here
+  // from bytes; store.js finds it already initialised.
+  await crabz2.default({
+    module_or_path: await readFile(
+      new URL("../../site/vendor/crabz2_bg.wasm", import.meta.url),
+    ),
+  });
+  globalThis.fetch = async () => new Response(compressed);
+
+  return narinfo(unpacked, {
+    compression: "bzip2",
+    narHash: `sha256:${createHash("sha256").update(unpacked).digest("hex")}`,
+  });
+}
 
 test(
   "a bzip2 NAR unpacks to what the narinfo signed",
@@ -197,27 +231,31 @@ test(
     skip: crabz2 === null && "site/vendor is only assembled by the nix build",
   },
   async () => {
-    // node's fetch cannot read the file: URL the wasm-bindgen glue
-    // builds from import.meta.url, so the decoder is initialised here
-    // from bytes; store.js finds it already initialised.
-    await crabz2.default({
-      module_or_path: await readFile(
-        new URL("../../site/vendor/crabz2_bg.wasm", import.meta.url),
-      ),
-    });
+    const entries = await fetchNar(await bzip2Fixture(1), () => {});
+    assert.equal(entries.length > 0, true);
+  },
+);
 
-    const nar = new Uint8Array(await readFile(narFixture));
-    const compressed = new Uint8Array(
-      await readFile(new URL("../fixtures/sample.nar.bz2", import.meta.url)),
-    );
-    globalThis.fetch = async () => new Response(compressed);
-
-    const info = narinfo(nar, {
-      compression: "bzip2",
-      narHash: `sha256:${createHash("sha256").update(nar).digest("hex")}`,
-    });
-
-    const entries = await fetchNar(info, () => {});
+// Tests the decoder being fed in pieces, which is the part of the
+// bzip2 path with somewhere to go wrong. store.js hands the archive
+// over BZIP2_CHUNK bytes at a time to bound how much of it sits in
+// wasm memory at once, and the fixture above is 256 bytes: one piece,
+// one block back, so the advance through the archive and the
+// assembling of several blocks never run at all.
+//
+// An archive longer than a chunk is built by repeating the fixture
+// rather than by carrying a big binary in the tree, since bzip2
+// streams concatenate and the decoder reads them one after another.
+// 1,400 copies is 350 KB, which crosses one 256 KB boundary. What it
+// asserts through is NarHash over every copy, so a decode that loses
+// or repeats a block between pieces fails here.
+test(
+  "a bzip2 archive longer than one chunk unpacks whole",
+  {
+    skip: crabz2 === null && "site/vendor is only assembled by the nix build",
+  },
+  async () => {
+    const entries = await fetchNar(await bzip2Fixture(1400), () => {});
     assert.equal(entries.length > 0, true);
   },
 );
