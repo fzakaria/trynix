@@ -29,7 +29,12 @@ export function parseNarinfo(text) {
   return {
     storePath: fields.StorePath,
     url: fields.URL,
-    compression: fields.Compression,
+    // An absent Compression field, and an empty one, both mean bzip2:
+    // nix's own reader defaults them that way (nar-info.cc does it
+    // once for the empty value and again for the missing line), and
+    // the paths old enough to lean on that default are exactly the
+    // ones a bzip2 decoder is here for.
+    compression: fields.Compression || "bzip2",
     // FileSize is what the progress bars are priced in, and what
     // store.js reports drifting. FileHash is deliberately not carried:
     // nothing may act on it, since no signature covers it.

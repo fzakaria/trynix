@@ -65,6 +65,16 @@ jobs:
       - name: Boots to a shell
         run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --runs 5
 
+      # The bzip2 decoder is the one the page does not load: it is
+      # imported the first time a boot meets a path the cache still
+      # stores that way, and hello at its newest is xz like everything
+      # else recent, so the run above never reaches that import. hello
+      # 2.7 is bzip2, three paths and a 201 KB archive, so one run buys
+      # the module resolving out of the hashed js directory and its wasm
+      # fetching under COOP/COEP, neither of which node can stand in for.
+      - name: Boots a package the cache still keeps in bzip2
+        run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --package 'hello@2.7' --runs 1
+
       # And the thing booting cannot see: that the emulator computes what
       # the hardware would. Its JIT answered POPCNT with a stale register
       # for as long as the guest ran a CPU model too old to emit the

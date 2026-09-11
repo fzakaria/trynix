@@ -259,6 +259,7 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          vendor = import ./nix/vendor.nix { inherit pkgs; };
         in
         {
           # the site assembles: the entry page and the hashed module tree
@@ -301,6 +302,11 @@
 
           # the test suites, offline: node for the site's narinfo parser
           # against a fixture, python for the benchmark tools' parsers
+          #
+          # A writable copy of the tree rather than the source itself,
+          # so the vendored dependencies can be put where the site's
+          # modules import them from — which is what lets the bzip2 test
+          # drive the real decoder instead of a stand-in.
           tests =
             pkgs.runCommand "trynix-tests"
               {
@@ -310,7 +316,10 @@
                 ];
               }
               ''
-                cd ${self}
+                cp -r ${self} tree
+                chmod -R u+w tree
+                cd tree
+                ln -s ${vendor} site/vendor
                 node --test tests/site/*.test.mjs
                 python3 -m unittest discover -s tests/tools -t .
                 touch $out
