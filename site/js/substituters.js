@@ -144,20 +144,20 @@ export async function fetchNarinfo(digest, substituters) {
   throw new Error(`${digest}: no configured cache holds it`);
 }
 
-// Whether some configured cache holds this path: true, false when every
-// one of them answered that it does not, and null when not one of them
-// could be asked at all — offline, or a cache that sends no CORS
+// Whether some configured cache holds this path. True, false when every
+// cache answered that it does not, and null when not one of them could
+// be asked at all, which means offline or a cache that sends no CORS
 // headers. Three states, because "the cache does not have it" and "the
 // cache could not be reached" are different claims and only the first
 // one says a boot cannot work.
 //
 // This is what the page asks the moment a package is picked, rather
-// than trusting the index's census: a verdict there is the last fetch
-// anyone made against the path, which may be a week old, and a digest
-// nobody probed carries no verdict at all. The narinfo it fetches goes
-// into the Cache API on the way past, so the closure walk that follows
-// a boot finds it already there and the check costs one round trip in
-// total.
+// than trusting the index's census. A verdict there records the last
+// fetch anyone made against the path, which may be a week old, and a
+// digest nobody probed carries no verdict at all. The narinfo this
+// fetches lands in the Cache API on the way past, so the closure walk
+// that follows a boot finds it already there and the check costs one
+// round trip in total.
 export async function holdsPath(digest, substituters) {
   let asked = false;
 

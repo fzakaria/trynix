@@ -12,7 +12,12 @@ import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
 import { parseSpecs, resolveSpecs } from "./ranges.js";
-import { bootable, identify, multiverseUrl, versionsOf } from "./multiverse.js";
+import {
+  bootable,
+  identify,
+  multiverseUrl,
+  versionRowsOf,
+} from "./multiverse.js";
 import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
@@ -67,16 +72,16 @@ const addNote = document.getElementById("add-note");
 //
 // Two fields are filled in afterwards, from the network:
 //
-//   held   whether a configured cache actually holds the path — true,
+//   held   whether a configured cache actually holds the path: true,
 //          false, or null while nothing has answered yet
 //   named  the (attribute, version) a pasted store path turned out to
 //          be, when the index can name it
 //
 // `held` is the page checking rather than claiming. The index's census
-// says whether a path was in the cache the last time anyone looked,
-// which is a week old at best and absent for a path nobody has ever
-// probed, so the answer that matters is the one the cache gives now —
-// and the boot needs that narinfo anyway.
+// only says whether a path was in the cache the last time anyone
+// looked, which is a week old at best and missing entirely for a path
+// nobody has ever probed. The answer that matters is the one the cache
+// gives now, and the boot needs that narinfo anyway.
 const selection = new Map();
 
 const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
@@ -103,8 +108,9 @@ function select(entry) {
 
 // Ask the caches whether they hold this path, and redraw when they
 // answer. A path the index knows and the cache has dropped is the one
-// failure the page can see coming, and it is worth saying while there
-// is still a cache lane to paste into — not three seconds into a walk.
+// failure the page can see coming, so it is worth saying while there
+// is still a cache lane to paste into, rather than three seconds into
+// a walk.
 async function probe(entry) {
   const held = await holdsPath(entry.digest, readSubstituters());
   entry.held = held;
@@ -125,9 +131,9 @@ function reprobe() {
   }
 }
 
-// What a pasted store path is, when the index can say: the multiverse
+// What a pasted store path is, when the index can say. The multiverse
 // publishes a digest-keyed lookup, so 32 opaque characters become an
-// attribute and a version, and a link to the page describing them.
+// attribute, a version, and a link to the page describing them.
 async function name(entry) {
   const named = await identify(entry.digest);
   if (named === null) {
@@ -176,50 +182,53 @@ function setNotes(list) {
   render();
 }
 
-// One chip: the selection, click to remove, and beside it a link to
-// what the index says about the same thing. The link is a sibling of
-// the button rather than inside it, since a button may not contain one
-// and a click on the chip means "remove", not "leave the page".
+// One chip, carrying the same two targets a version pill in the picker
+// carries: the label links to what the index says about this package,
+// and the x removes it from the selection. A pasted store path the
+// index cannot name has nothing to link to, so its label is plain text.
 function chipFor(entry) {
   const target =
     entry.attr !== undefined
       ? { attr: entry.attr, version: entry.version }
       : (entry.named ?? null);
 
-  const chip = document.createElement("button");
-  chip.type = "button";
+  const chip = document.createElement("span");
   chip.className = entry.held === false ? "chip missing" : "chip";
-  chip.title =
-    `${entry.storePath ?? entry.digest}` +
-    (entry.held === false
-      ? " — no configured cache holds this path, so a boot will fail on it; add a cache that does in the Caches lane"
-      : "") +
-    " — click to remove";
-  // A pasted store path the index could name says what it is, with the
-  // path itself still in the tooltip.
-  const label =
+
+  // A pasted store path the index could name says what it is. The path
+  // itself stays in the tooltip either way.
+  const text =
     entry.named === undefined
       ? entry.label
       : `${entry.named.attr} ${entry.named.version}`;
-  chip.textContent = `${label}${entry.held === false ? " ⚠" : ""} ✕`;
-  chip.onclick = () => deselect(entry.digest);
+  const held =
+    entry.held === false
+      ? ". No configured cache holds this path, so a boot will fail on it; add a cache that does in the Caches lane"
+      : "";
 
-  if (target === null) {
-    return chip;
+  const label = document.createElement(target === null ? "span" : "a");
+  label.textContent = `${text}${entry.held === false ? " ⚠" : ""}`;
+  label.title = `${entry.storePath ?? entry.digest}${held}`;
+  if (target !== null) {
+    label.className = "out";
+    label.href = multiverseUrl(target);
+    label.title =
+      `${target.attr} ${target.version ?? ""} on nixmultiverse.com`.trim() +
+      `. ${entry.storePath ?? entry.digest}${held}`;
+    label.rel = "noopener";
+    label.target = "_blank";
   }
 
-  const link = document.createElement("a");
-  link.className = "index-link";
-  link.href = multiverseUrl(target);
-  link.title = `${target.attr} ${target.version ?? ""} in the index`.trim();
-  link.rel = "noopener";
-  link.target = "_blank";
-  link.textContent = "↗";
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "drop";
+  drop.textContent = "✕";
+  drop.title = `remove ${text}`;
+  drop.ariaLabel = `remove ${text} from the selection`;
+  drop.onclick = () => deselect(entry.digest);
 
-  const group = document.createElement("span");
-  group.className = "chip-group";
-  group.append(chip, link);
-  return group;
+  chip.append(label, drop);
+  return chip;
 }
 
 // The chips, the status line, and the address bar all describe the same
@@ -230,10 +239,10 @@ function render() {
   selectionElement.replaceChildren(...entries.map(chipFor));
 
   bootButton.disabled = entries.length === 0;
-  // A path no cache holds is the one thing worth saying here on every
-  // redraw: the boot is still offered, because a cache pasted into the
-  // caches lane may hold what cache.nixos.org has dropped, but it is
-  // said before the click rather than after it.
+  // A path no cache holds is the one thing worth repeating on every
+  // redraw. The boot is still offered, because a cache pasted into the
+  // caches lane may hold what cache.nixos.org has dropped, but the
+  // warning comes before the click rather than after it.
   const missing = entries.filter((e) => e.held === false);
   const lines = [...notes];
   if (entries.length === 0) {
@@ -243,7 +252,7 @@ function render() {
     lines.push(
       `no configured cache holds ${missing
         .map((e) => e.label)
-        .join(", ")} — the index has the store path and the cache no longer ` +
+        .join(", ")}: the index has the store path, the cache no longer ` +
         `serves its bytes, so a boot fails on it unless a cache in the ` +
         `Caches lane has it`,
     );
@@ -818,32 +827,38 @@ async function restore({ pkgs, paths }) {
     }
   }
 
+  // The whole version list, not only the versions with a build, so a
+  // link asking for a version that exists and cannot boot is answered
+  // with that fact instead of "not in the index".
   for (const { attr, version } of pkgs) {
-    const versions = await versionsOf(attr);
+    const versions = await versionRowsOf(attr);
     const hit =
       version === null
         ? versions.find(bootable)
         : versions.find((v) => v.version === version);
+
+    // Three different misses, and the difference matters to whoever
+    // sent the link.
     if (hit === undefined) {
-      // Two different misses, and the difference matters to whoever
-      // sent the link: an attribute the index has never heard of, or a
-      // version of it with no store path for this system.
+      if (versions.length === 0) {
+        said.push(`${attr} is not in the index`);
+      } else if (version === null) {
+        said.push(`no version of ${attr} can be booted here`);
+      } else {
+        said.push(`the index has no ${attr} ${version}`);
+      }
+      continue;
+    }
+
+    // A version nixpkgs shipped without a build for this system has no
+    // store path to select, so the link cannot be honoured at all.
+    if (!bootable(hit)) {
       said.push(
-        versions.length === 0
-          ? `${attr} has no ${SYSTEM} build in the index`
-          : `${attr}${version === null ? "" : ` ${version}`} is not in the index`,
+        `${attr} ${hit.version} shipped in nixpkgs with no ${SYSTEM} build, so there is nothing to fetch`,
       );
       continue;
     }
-    // A version the census found gone is still selected: the link may
-    // carry a cache that holds it, and the probe every selection runs
-    // will say either way in a moment. It is named here so a link that
-    // cannot work says so before the boot rather than during it.
-    if (!bootable(hit)) {
-      said.push(
-        `${attr} ${hit.version} was dropped from the cache after it was indexed`,
-      );
-    }
+
     select(entryOf(hit));
   }
 

@@ -18,9 +18,10 @@ export const MULTIVERSE_URL = "https://nixmultiverse.com";
 export const SYSTEM = "x86_64-linux";
 
 // The system the multiverse's own pages show store paths for until a
-// reader picks another (its nix/site-system.nix). A link to a package
-// page names a system only when it is not this one, so every link
-// trynix writes is the canonical URL that site would write itself.
+// reader picks another, declared in its nix/site-system.nix. A link to
+// a package page names a system only when it is not this one, so every
+// link trynix writes is the canonical URL that site would write for
+// itself.
 export const MULTIVERSE_SITE_SYSTEM = "x86_64-linux";
 
 // How many attribute matches the search list shows at once, and how
