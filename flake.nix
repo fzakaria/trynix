@@ -52,6 +52,11 @@
             march = "x86-64";
           };
 
+          # SCOTT and Chinook as SQLite databases, published to
+          # trynix.cachix.org so a link can boot them next to sqlite
+          # (nix/example-dbs.nix)
+          example-dbs = import ./nix/example-dbs.nix { inherit pkgs; };
+
           # the guest image the browser VM boots: kernel, initramfs and
           # the BIOS blobs (nix/guest.nix)
           inherit (import ./nix/guest.nix { inherit pkgs; })
