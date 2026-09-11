@@ -23,9 +23,9 @@ history they agreed.
 2. The runtime closure is walked from narinfos on cache.nixos.org, and
    every signature is checked against the configured keys.
 3. The engine, QEMU compiled to WebAssembly, is instantiated while the
-   NARs download. Each NAR is decompressed (xz or zstd) and written
-   into the in-memory filesystem the VM's 9p share reads from, the
-   moment it arrives.
+   NARs download. Each NAR is decompressed (bzip2, xz or zstd,
+   depending on how old the build is) and written into the in-memory
+   filesystem the VM's 9p share reads from, the moment it arrives.
 4. The VM does not boot. It resumes from a migration snapshot taken on
    a native build of the same QEMU: a guest already up and parked,
    waiting for the share. One newline finishes the handshake, the guest

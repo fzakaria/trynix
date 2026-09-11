@@ -4,9 +4,12 @@
 // compressed bytes, the number the narinfo priced) into the xzwasm
 // decompressor, then through the NAR parser into entry lists.
 //
-// The cache compresses NARs per path — xz for older builds, zstd for
-// newer ones — so both decoders are on hand. xzwasm and fzstd arrive as
-// vendored UMD scripts, so globals are used here rather than imports.
+// The cache compresses NARs per path — bzip2 for what it served in
+// nixpkgs's first years, xz for most of what came after, zstd for the
+// newest — so three decoders are on hand. xzwasm and fzstd arrive as
+// vendored UMD scripts the page loads, so globals are used for those
+// rather than imports; the bzip2 decoder is wasm and is imported the
+// first time a boot meets a bzip2 path, which for most boots is never.
 /* global xzwasm, fzstd */
 
 import { CACHE_URL } from "./config.js";
@@ -92,8 +95,14 @@ async function verifyUnpacked(info, nar) {
 // before the boot gives up with a message that names the path and
 // the reason.
 export async function fetchNar(info, onBytes) {
-  if (!["xz", "zstd", "none"].includes(info.compression)) {
-    throw new Error(`unsupported NAR compression "${info.compression}"`);
+  if (!["bzip2", "xz", "zstd", "none"].includes(info.compression)) {
+    // Named, like every other refusal here, because the message is
+    // the whole of what a reader can report: the one that brought
+    // bzip2 to light said only that some path in some closure was
+    // compressed with it.
+    throw new Error(
+      `${info.storePath}: unsupported NAR compression "${info.compression}"`,
+    );
   }
 
   // The NAR comes from whichever cache served the narinfo: a narinfo's
@@ -159,6 +168,9 @@ async function decompress(info, compressed) {
       if (info.compression === "zstd") {
         return fzstd.decompress(compressed);
       }
+      if (info.compression === "bzip2") {
+        return await unbzip2(compressed);
+      }
       const stream = new xzwasm.XzReadableStream(new Response(compressed).body);
       return new Uint8Array(await new Response(stream).arrayBuffer());
     } catch (err) {
@@ -169,6 +181,86 @@ async function decompress(info, compressed) {
       throw new Error(`${info.compression} decode failed: ${err.message}`);
     }
   });
+}
+
+// The bzip2 decoder — crabz2, a Rust one compiled to wasm — fetched
+// the first time a boot meets a path the cache still stores that way.
+// Nothing else waits on it, and a boot that never meets one never pays
+// for it.
+//
+// A failed load is not remembered: the fetch of the wasm is a network
+// fetch like any other, and the retry above it deserves a real second
+// attempt rather than the first one's rejection handed back.
+let bzip2Promise;
+
+function bzip2() {
+  bzip2Promise ??= import("../vendor/crabz2.js")
+    .then(async (module) => {
+      await module.default();
+      return module;
+    })
+    .catch((err) => {
+      bzip2Promise = undefined;
+      throw err;
+    });
+  return bzip2Promise;
+}
+
+// How much of a bzip2 archive is handed to the decoder at a time.
+//
+// Not a detail: the decoder returns the blocks that finished within a
+// push and drops what it has read, so the piece size is what bounds
+// how much of the unpacked archive exists inside wasm at once. gcc
+// 4.6.3 unpacks to 78 MB, and pushed in 256 KiB pieces it costs the
+// decoder 16 MB of wasm memory — pushed whole, 319 MB, which is the
+// kind of appetite that already broke the xz path (the note on
+// serialising decodes above).
+const BZIP2_CHUNK = 256 * 1024;
+
+// Back to the event loop. A decode measured in seconds that never
+// returns freezes everything around it: the progress rows stop moving,
+// and so does the terminal of a VM that is already up.
+const yieldToPage = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+async function unbzip2(compressed) {
+  const { Bz2Decoder } = await bzip2();
+  const decoder = new Bz2Decoder();
+  try {
+    const parts = [];
+    for (let at = 0; at < compressed.byteLength; at += BZIP2_CHUNK) {
+      const part = decoder.push(compressed.subarray(at, at + BZIP2_CHUNK));
+      // Nearly every push is bytes going in and nothing coming out.
+      // The ones that hand a block back are where the work happened,
+      // and the only ones worth yielding after.
+      if (part.byteLength > 0) {
+        parts.push(part);
+        await yieldToPage();
+      }
+    }
+    // Also where a stream that ended early is reported, rather than
+    // quietly unpacking to less than it should.
+    parts.push(decoder.finish());
+    return concat(parts);
+  } finally {
+    // The decoder holds its wasm buffers until it is dropped. The
+    // finalizer gets there eventually; a decode that is about to be
+    // followed by another one cannot wait for eventually.
+    decoder.free();
+  }
+}
+
+function concat(parts) {
+  let total = 0;
+  for (const part of parts) {
+    total += part.byteLength;
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  }
+  return bytes;
 }
 
 // mkdir -p against the emscripten FS: existing components are fine.

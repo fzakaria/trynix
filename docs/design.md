@@ -61,12 +61,14 @@ The pieces already exist in sibling projects; trynix is the glue:
    so plain `fetch` works from any origin. Narinfos are kept in the
    Cache API like everything else immutable, so a walk done once costs
    no network again.
-3. **Fetch and unpack, streaming.** A NAR arrives xz or zstd compressed
-   depending on when it was built; both decoders are vendored. Each is
-   parsed and written into emscripten's filesystem under the share the
-   moment it lands, while the rest are still downloading and the engine
-   is still compiling. Compressed NARs are kept in the Cache API — a
-   store path is immutable, so a cached NAR can never be stale.
+3. **Fetch and unpack, streaming.** A NAR arrives bzip2, xz or zstd
+   compressed depending on when it was built, and all three decoders
+   are vendored — the bzip2 one is wasm and is imported only once a
+   path old enough to need it turns up. Each is parsed and written into
+   emscripten's filesystem under the share the moment it lands, while
+   the rest are still downloading and the engine is still compiling.
+   Compressed NARs are kept in the Cache API — a store path is
+   immutable, so a cached NAR can never be stale.
 4. **Resume.** qemu-wasm with a prebuilt guest kernel and initramfs,
    resumed from a migration snapshot rather than booted (below). The
    store enters the guest over virtio-9p; init mounts it, sources the

@@ -6,10 +6,12 @@
 # xterm-pty is a UMD bundle exposing the openpty global: the line
 # discipline, pinned to the version whose emscripten-pty.js the
 # qemu-wasm build linked against. xzwasm exposes the xzwasm global
-# with XzReadableStream; fzstd exposes fzstd with decompress — the cache
-# serves xz for older paths and zstd for newer ones. coi-serviceworker
-# injects the COOP/COEP headers on hosts that cannot set them (GitHub
-# Pages).
+# with XzReadableStream and fzstd exposes fzstd with decompress, both
+# loaded by the page; crabz2 is an ES module the site imports the first
+# time it meets a bzip2 path, which for most boots is never — the cache
+# serves bzip2 for the oldest paths, xz for most of them and zstd for
+# the newest. coi-serviceworker injects the COOP/COEP headers on hosts
+# that cannot set them (GitHub Pages).
 { pkgs }:
 let
   npm =
@@ -22,6 +24,7 @@ let
   xtermPty = npm "xterm-pty" "0.10.1" "0jj3m2lhnvxk65b0mwa5f1dpfq22ilsyw6b61rn51ccs9kyk276a";
   xzwasm = npm "xzwasm" "0.1.2" "18zc8z5hfy34cy3z7a5baz07hccl2y0y17y7qsxiy4wsw8v6ig7n";
   fzstd = npm "fzstd" "0.1.1" "1ia5gjcs9r9pfj4jqd3jac233a08qy9342fh27i7n1ir6hnyxljy";
+  crabz2 = npm "crabz2" "0.4.0" "1iy7ihsc536zqbjkysh11l55sxk2mb5ibbpf5b7jpn0md84ws3p1";
   coi = npm "coi-serviceworker" "0.1.7" "05ln49m3gfi5x71azfbvmb0ww13ii2xmvkr3x46j45g2913nsm3a";
   ghostty =
     npm "ghostty-web" "0.4.0-next.20.g1858a59"
@@ -46,6 +49,19 @@ pkgs.runCommand "trynix-js-vendor" { } ''
 
   tar -xzf ${fzstd} -C unpack
   cp unpack/package/umd/index.js $out/fzstd.js
+  rm -r unpack/package
+
+  # bzip2, which is what cache.nixos.org served before it moved to xz,
+  # so the earliest years of nixpkgs are stored that way and nothing
+  # since (hello 2.7 is bzip2, hello 2.8 is xz). A wasm decoder rather
+  # than one of the pure-JS ones because the difference is not small:
+  # measured over python3-3.2.3's closure, 281 MB unpacked, this decodes
+  # at 16 MB/s against 1.4 for the quickest JS implementation on npm —
+  # seventeen seconds of a boot against three minutes. The wasm sits
+  # beside the module, which is where the wasm-bindgen glue looks for
+  # it.
+  tar -xzf ${crabz2} -C unpack
+  cp unpack/package/crabz2.js unpack/package/crabz2_bg.wasm $out/
   rm -r unpack/package
 
   tar -xzf ${coi} -C unpack

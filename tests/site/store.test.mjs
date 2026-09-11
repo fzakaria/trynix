@@ -158,3 +158,66 @@ test("a NAR whose signed size is wrong is refused", async () => {
 
   await assert.rejects(() => fetchNar(info, () => {}), /narinfo says/);
 });
+
+test("a NAR compressed with something nothing here reads is refused", async () => {
+  const nar = await servedNar();
+  const info = narinfo(nar.bytes, {
+    compression: "lzip",
+    narHash: nar.sha256,
+  });
+
+  await assert.rejects(
+    () => fetchNar(info, () => {}),
+    /unsupported NAR compression "lzip"/,
+  );
+  // Refused before the download rather than after it: the bytes would
+  // be unusable, and a boot that cannot finish should not spend the
+  // reader's bandwidth finding out.
+  assert.equal(nar.fetches(), 0);
+});
+
+// Tests the bzip2 path against the vendored decoder itself, because it
+// is the one decoder the page does not load: it is imported the first
+// time a boot meets a path the cache still stores that way (store.js),
+// and an import path that goes wrong has nothing else to catch it.
+// What it asserts through is NarHash, the field a cache signs — a
+// decoder that hands back plausible nonsense fails here the same way it
+// would fail a boot.
+//
+// site/vendor is assembled by the nix build (nix/vendor.nix), so a bare
+// `node --test` in a checkout skips this one rather than failing.
+const crabz2 = await import("../../site/vendor/crabz2.js").then(
+  (module) => module,
+  () => null,
+);
+
+test(
+  "a bzip2 NAR unpacks to what the narinfo signed",
+  {
+    skip: crabz2 === null && "site/vendor is only assembled by the nix build",
+  },
+  async () => {
+    // node's fetch cannot read the file: URL the wasm-bindgen glue
+    // builds from import.meta.url, so the decoder is initialised here
+    // from bytes; store.js finds it already initialised.
+    await crabz2.default({
+      module_or_path: await readFile(
+        new URL("../../site/vendor/crabz2_bg.wasm", import.meta.url),
+      ),
+    });
+
+    const nar = new Uint8Array(await readFile(narFixture));
+    const compressed = new Uint8Array(
+      await readFile(new URL("../fixtures/sample.nar.bz2", import.meta.url)),
+    );
+    globalThis.fetch = async () => new Response(compressed);
+
+    const info = narinfo(nar, {
+      compression: "bzip2",
+      narHash: `sha256:${createHash("sha256").update(nar).digest("hex")}`,
+    });
+
+    const entries = await fetchNar(info, () => {});
+    assert.equal(entries.length > 0, true);
+  },
+);
