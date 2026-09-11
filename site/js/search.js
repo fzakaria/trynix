@@ -1,13 +1,46 @@
 // The package picker: type an attribute, choose versions, collect them
 // into a selection the boot mounts together. Everything is read from
 // the multiverse index at runtime; nothing is bundled.
+//
+// A version the page cannot boot is shown rather than hidden. The index
+// records every (attribute, version) pair nixpkgs ever shipped, and
+// about one in nine of those pairs has no x86_64-linux store path at
+// all: unfree, broken, or outside Hydra's jobset. Dropping those rows
+// made the picker lie twice. The count beside the attribute stopped
+// matching the list under it, and a reader who came for one exact
+// version was told nothing about where that version went. So every
+// version gets a row, a version with no build is struck through and
+// cannot be picked, and one line under the list says why once.
+//
+// Every version number is a link to that version's page on
+// nixmultiverse.com, which is where the long answer lives: the
+// revisions that shipped it, the closure it pulled in, and the `nix
+// run` line that fetches the same store path outside the browser. The
+// number links out, the rest of the pill picks the version. Two targets
+// in one pill, and an underline is the only mark either of them needs.
 
-import { searchAttrs, versionsOf } from "./multiverse.js";
+import {
+  bootable,
+  multiverseUrl,
+  searchAttrs,
+  versionRowsOf,
+} from "./multiverse.js";
 import { humanBytes } from "./format.js";
-import { SEARCH_LIMIT } from "./config.js";
+import { SEARCH_LIMIT, SYSTEM } from "./config.js";
 
 // How long the box sits still before a keystroke becomes a search.
 const DEBOUNCE_MS = 120;
+
+// What the pick half of the pill says when there is no closure size to
+// show, which is the one case where the row would otherwise be blank.
+const PICK_LABEL = "pick";
+
+// What a version with no store path says instead of a size, and the
+// line under the list that says it once at length. The label carries
+// the whole message on a phone, where there is no hover and so no
+// tooltip.
+const NO_BUILD = "no build";
+const NO_BUILD_NOTE = `no build: nixpkgs shipped that version and Hydra never built it for ${SYSTEM}, so there is nothing to fetch. Hydra builds neither unfree nor broken packages, and an attribute can also be taken out of its jobset.`;
 
 export class PackagePicker {
   // onPick hears one version record each time a version is chosen; the
@@ -40,6 +73,9 @@ export class PackagePicker {
       return;
     }
 
+    // An attribute row opens its version list and nothing else. The
+    // link to the index waits until the list is open, where it belongs
+    // to a version the reader has actually got in front of them.
     this.results.replaceChildren(
       ...matches.map((match) =>
         el(
@@ -56,55 +92,110 @@ export class PackagePicker {
     );
   }
 
-  // One attribute's versions, newest first, each a button that adds it
-  // to the selection. A version the census found gone is shown but not
-  // selectable — its bytes are no longer in the cache.
+  // One attribute's versions, newest first, each a pill that adds it to
+  // the selection. The ones no boot can reach are there to be read.
   async expand(attr) {
     this.results.replaceChildren(
       el("p", { className: "muted" }, `loading ${attr}…`),
     );
-    const versions = await versionsOf(attr);
+    const versions = await versionRowsOf(attr);
 
     if (versions.length === 0) {
       this.results.replaceChildren(
         el(
           "p",
           { className: "muted" },
-          `${attr} has no x86_64-linux build in the index`,
+          `${attr} is not in the index. `,
+          indexLink({ attr }, `look for ${attr} on nixmultiverse.com`),
         ),
       );
       return;
     }
 
     this.results.replaceChildren(
-      el("p", { className: "muted" }, `${attr} · ${versions.length} versions`),
-      ...versions.map((version) => {
-        const dead = version.alive === false;
-        return el(
-          "button",
-          {
-            className: dead ? "version dead" : "version",
-            type: "button",
-            disabled: dead,
-            title: dead
-              ? "the cache no longer serves this path"
-              : version.storePath,
-            onclick: () => this.onPick(version),
-          },
-          el("span", { className: "name" }, version.version),
-          el(
-            "span",
-            { className: "muted" },
-            dead
-              ? "gone"
-              : version.closureSize > 0
-                ? humanBytes(version.closureSize)
-                : "",
-          ),
-        );
-      }),
+      summarize(attr, versions),
+      ...versions.map((version) => this.versionRow(version)),
+      ...legend(versions),
     );
   }
+
+  // One version: its number, linked to the index, and the pick target
+  // beside it. Both halves sit in one pill, so the row still reads as
+  // one thing while the two clicks mean different things.
+  versionRow(version) {
+    const can = bootable(version);
+
+    const number = indexLink(
+      version,
+      `${version.attr} ${version.version} on nixmultiverse.com`,
+      version.version,
+    );
+    number.classList.add("name");
+
+    const pick = el(
+      "button",
+      {
+        className: "take",
+        type: "button",
+        disabled: !can,
+        title: can ? version.storePath : NO_BUILD_NOTE,
+        ariaLabel: can
+          ? `select ${version.attr} ${version.version}`
+          : `${version.attr} ${version.version} has no ${SYSTEM} build`,
+        onclick: can ? () => this.onPick(version) : undefined,
+      },
+      can
+        ? version.closureSize > 0
+          ? humanBytes(version.closureSize)
+          : PICK_LABEL
+        : NO_BUILD,
+    );
+
+    return el("span", { className: can ? "pick" : "pick dead" }, number, pick);
+  }
+}
+
+// The list's header: the attribute, linked to its own page on the
+// index, then how many versions there are and how many of them this
+// page can boot. A reader who came for a version that cannot be picked
+// learns from this line that the picker knows about it.
+function summarize(attr, versions) {
+  const parts = [`${versions.length} versions`];
+
+  const unbuilt = versions.filter((v) => !bootable(v)).length;
+  if (unbuilt > 0) {
+    parts.push(`${unbuilt} with no ${SYSTEM} build`);
+  }
+
+  return el(
+    "p",
+    { className: "muted" },
+    indexLink({ attr }, `${attr} on nixmultiverse.com`),
+    ` · ${parts.join(" · ")}`,
+  );
+}
+
+// Said once under the list, and only when the list holds a row it
+// applies to.
+function legend(versions) {
+  if (versions.every(bootable)) {
+    return [];
+  }
+  return [el("p", { className: "muted note" }, NO_BUILD_NOTE)];
+}
+
+// A link to what nixmultiverse.com says about an attribute, or about
+// one version of it. Underlined rather than flagged with an icon: a
+// hundred icons down a version list is a hundred things to look past.
+function indexLink(target, title, text = target.attr) {
+  return el("a", {
+    className: "out",
+    href: multiverseUrl(target),
+    title,
+    rel: "noopener",
+    target: "_blank",
+    textContent: text,
+  });
 }
 
 // Minimal element helper: tag, properties, children.

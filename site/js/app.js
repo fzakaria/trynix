@@ -12,10 +12,16 @@ import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
 import { parseSpecs, resolveSpecs } from "./ranges.js";
-import { versionsOf } from "./multiverse.js";
+import {
+  bootable,
+  identify,
+  multiverseUrl,
+  versionRowsOf,
+} from "./multiverse.js";
 import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
+  holdsPath,
   parseSubstituters,
   readSubstituters,
   setExtraSubstituters,
@@ -32,6 +38,7 @@ import {
   QEMU_WASM,
   QEMU_WORKER,
   SNAPSHOT_URL,
+  SYSTEM,
 } from "./config.js";
 import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
@@ -62,6 +69,19 @@ const addNote = document.getElementById("add-note");
 // The selection: digest -> { digest, label, attr, version, storePath }.
 // A package chosen any of the three ways lands here in the same shape,
 // which is what lets the URL describe all of them.
+//
+// Two fields are filled in afterwards, from the network:
+//
+//   held   whether a configured cache actually holds the path: true,
+//          false, or null while nothing has answered yet
+//   named  the (attribute, version) a pasted store path turned out to
+//          be, when the index can name it
+//
+// `held` is the page checking rather than claiming. The index's census
+// only says whether a path was in the cache the last time anyone
+// looked, which is a week old at best and missing entirely for a path
+// nobody has ever probed. The answer that matters is the one the cache
+// gives now, and the boot needs that narinfo anyway.
 const selection = new Map();
 
 const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
@@ -80,10 +100,54 @@ function digestFromPath(raw) {
 function select(entry) {
   selection.set(entry.digest, entry);
   render();
+  probe(entry);
+  if (entry.attr === undefined) {
+    name(entry);
+  }
+}
+
+// Ask the caches whether they hold this path, and redraw when they
+// answer. A path the index knows and the cache has dropped is the one
+// failure the page can see coming, so it is worth saying while there
+// is still a cache lane to paste into, rather than three seconds into
+// a walk.
+async function probe(entry) {
+  const held = await holdsPath(entry.digest, readSubstituters());
+  entry.held = held;
+  // A selection removed while the fetch was in flight stays removed.
+  if (selection.has(entry.digest)) {
+    render();
+  }
+}
+
+// Every path that no cache admitted to having, asked again. Adding a
+// cache is exactly the fix for a path cache.nixos.org has dropped, so
+// the answer is re-earned rather than left standing.
+function reprobe() {
+  for (const entry of selection.values()) {
+    if (entry.held !== true) {
+      probe(entry);
+    }
+  }
+}
+
+// What a pasted store path is, when the index can say. The multiverse
+// publishes a digest-keyed lookup, so 32 opaque characters become an
+// attribute, a version, and a link to the page describing them.
+async function name(entry) {
+  const named = await identify(entry.digest);
+  if (named === null) {
+    return;
+  }
+  entry.named = named;
+  if (selection.has(entry.digest)) {
+    render();
+  }
 }
 
 function deselect(digest) {
   selection.delete(digest);
+  notes = [];
   render();
 }
 
@@ -105,25 +169,95 @@ function urlState() {
   };
 }
 
+// What the page has to say about the selection beyond the chips: a
+// version a link asked for that the index does not have, or has and
+// cannot boot. Kept here rather than written straight to the status
+// line because every redraw rewrites that line, and a note about a
+// package is still true after the next chip lands. Cleared by the next
+// thing the reader does.
+let notes = [];
+
+function setNotes(list) {
+  notes = list;
+  render();
+}
+
+// One chip, carrying the same two targets a version pill in the picker
+// carries: the label links to what the index says about this package,
+// and the x removes it from the selection. A pasted store path the
+// index cannot name has nothing to link to, so its label is plain text.
+function chipFor(entry) {
+  const target =
+    entry.attr !== undefined
+      ? { attr: entry.attr, version: entry.version }
+      : (entry.named ?? null);
+
+  const chip = document.createElement("span");
+  chip.className = entry.held === false ? "chip missing" : "chip";
+
+  // A pasted store path the index could name says what it is. The path
+  // itself stays in the tooltip either way.
+  const text =
+    entry.named === undefined
+      ? entry.label
+      : `${entry.named.attr} ${entry.named.version}`;
+  const held =
+    entry.held === false
+      ? ". No configured cache holds this path, so a boot will fail on it; add a cache that does in the Caches lane"
+      : "";
+
+  const label = document.createElement(target === null ? "span" : "a");
+  label.textContent = `${text}${entry.held === false ? " ⚠" : ""}`;
+  label.title = `${entry.storePath ?? entry.digest}${held}`;
+  if (target !== null) {
+    label.className = "out";
+    label.href = multiverseUrl(target);
+    label.title =
+      `${target.attr} ${target.version ?? ""} on nixmultiverse.com`.trim() +
+      `. ${entry.storePath ?? entry.digest}${held}`;
+    label.rel = "noopener";
+    label.target = "_blank";
+  }
+
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "drop";
+  drop.textContent = "✕";
+  drop.title = `remove ${text}`;
+  drop.ariaLabel = `remove ${text} from the selection`;
+  drop.onclick = () => deselect(entry.digest);
+
+  chip.append(label, drop);
+  return chip;
+}
+
 // The chips, the status line, and the address bar all describe the same
 // selection, so they are redrawn together.
 function render() {
   const entries = [...selection.values()];
 
-  selectionElement.replaceChildren(
-    ...entries.map((entry) => {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "chip";
-      chip.title = `${entry.storePath ?? entry.digest} — click to remove`;
-      chip.textContent = `${entry.label} ✕`;
-      chip.onclick = () => deselect(entry.digest);
-      return chip;
-    }),
-  );
+  selectionElement.replaceChildren(...entries.map(chipFor));
 
   bootButton.disabled = entries.length === 0;
-  status.textContent = entries.length === 0 ? "nothing selected yet" : "";
+  // A path no cache holds is the one thing worth repeating on every
+  // redraw. The boot is still offered, because a cache pasted into the
+  // caches lane may hold what cache.nixos.org has dropped, but the
+  // warning comes before the click rather than after it.
+  const missing = entries.filter((e) => e.held === false);
+  const lines = [...notes];
+  if (entries.length === 0) {
+    lines.push("nothing selected yet");
+  }
+  if (missing.length > 0) {
+    lines.push(
+      `no configured cache holds ${missing
+        .map((e) => e.label)
+        .join(", ")}: the index has the store path, the cache no longer ` +
+        `serves its bytes, so a boot fails on it unless a cache in the ` +
+        `Caches lane has it`,
+    );
+  }
+  status.textContent = lines.join(" · ");
 
   // A package with an attribute is shareable by name; a raw store path
   // rides as a path, and the caches ride along. Either way the link
@@ -150,12 +284,16 @@ const entryOf = (version) => ({
 new PackagePicker({
   input: document.getElementById("search"),
   results: document.getElementById("search-results"),
-  onPick: (version) => select(entryOf(version)),
+  onPick: (version) => {
+    notes = [];
+    select(entryOf(version));
+  },
 });
 
 rangesForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   rangesResults.replaceChildren();
+  notes = [];
 
   let specs;
   try {
@@ -213,6 +351,7 @@ walkForm.addEventListener("submit", (event) => {
     status.textContent = `need a store path with its ${DIGEST_LENGTH}-character digest`;
     return;
   }
+  notes = [];
   select({
     digest,
     label: raw.startsWith(STORE_PREFIX) ? raw.slice(STORE_PREFIX.length) : raw,
@@ -241,6 +380,7 @@ cachesInput.addEventListener("input", () => {
     cachesStatus.textContent =
       extraCaches.length === 0 ? "" : "in the link above";
     render();
+    reprobe();
   } catch (err) {
     cachesStatus.textContent = String(err);
   }
@@ -672,6 +812,8 @@ document.getElementById("copy-report").addEventListener("click", async () => {
 // A package named without a version means "whatever the index has
 // newest", which is what makes ?pkg=ripgrep a durable link.
 async function restore({ pkgs, paths }) {
+  const said = [];
+
   for (const path of paths) {
     const digest = digestFromPath(path);
     if (digest !== null) {
@@ -685,17 +827,43 @@ async function restore({ pkgs, paths }) {
     }
   }
 
+  // The whole version list, not only the versions with a build, so a
+  // link asking for a version that exists and cannot boot is answered
+  // with that fact instead of "not in the index".
   for (const { attr, version } of pkgs) {
-    const versions = await versionsOf(attr);
+    const versions = await versionRowsOf(attr);
     const hit =
       version === null
-        ? versions.find((v) => v.alive !== false)
+        ? versions.find(bootable)
         : versions.find((v) => v.version === version);
+
+    // Three different misses, and the difference matters to whoever
+    // sent the link.
     if (hit === undefined) {
-      status.textContent = `${attr}${version === null ? "" : ` ${version}`} is not in the index`;
+      if (versions.length === 0) {
+        said.push(`${attr} is not in the index`);
+      } else if (version === null) {
+        said.push(`no version of ${attr} can be booted here`);
+      } else {
+        said.push(`the index has no ${attr} ${version}`);
+      }
       continue;
     }
+
+    // A version nixpkgs shipped without a build for this system has no
+    // store path to select, so the link cannot be honoured at all.
+    if (!bootable(hit)) {
+      said.push(
+        `${attr} ${hit.version} shipped in nixpkgs with no ${SYSTEM} build, so there is nothing to fetch`,
+      );
+      continue;
+    }
+
     select(entryOf(hit));
+  }
+
+  if (said.length > 0) {
+    setNotes(said);
   }
 }
 

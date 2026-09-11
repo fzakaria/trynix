@@ -26,6 +26,35 @@ The pieces already exist in sibling projects; trynix is the glue:
    across outputs gets its `bin` sibling too, from the digest-keyed
    `outs/` shards the multiverse publishes beside the index
    ([site/js/outputs.js](../site/js/outputs.js)).
+
+   Not every version resolves. The multiverse's `versions/` shards list
+   every `(attribute, version)` nixpkgs ever shipped, 310,860 pairs,
+   while its per-system `meta-` shards hold a store path only for the
+   274,729 Hydra actually built for x86_64-linux. The other 36,131 are
+   unfree, broken, or out of the jobset, and there is nothing in the
+   cache to fetch for them. The picker joins the two shards rather than
+   showing only the second
+   ([site/js/multiverse.js](../site/js/multiverse.js), `mergeVersions`).
+   A version with no build for this system is shown struck through with
+   the reason rather than dropped, so the list matches the version count
+   beside the attribute and a reader is told where the version they came
+   for went. Every version number in the list is a link to that
+   version's page on the index, and the pick target sits beside it, so
+   the two clicks stay distinguishable without an icon on every row.
+
+   Whether the cache still serves a path is a separate question from
+   whether the index has one, and the page asks it directly rather than
+   reading the index's census: every selection is confirmed against the
+   configured caches the moment it is picked
+   ([site/js/substituters.js](../site/js/substituters.js), `holdsPath`).
+   The census verdict is up to a week old, and on 2026-09-10 it called
+   11 of 274,729 paths gone while cache.nixos.org served every one of
+   them. Those verdicts come from a NAR check that reads an exhausted
+   retry budget as a missing payload, so the index carries a handful of
+   false deaths at any time. Rare and wrong is no basis for a state in
+   the picker, and the live answer costs one round trip the boot needs
+   anyway.
+
 2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the
    full runtime closure, and verify every signature against the
    configured keys. The cache serves `access-control-allow-origin: *`,
@@ -299,9 +328,14 @@ share described under Memory.
   (Cloudflare Pages takes a `_headers` file), for control over headers
   and caching. Not for speed: the shim costs about half a second on a
   first-ever visit and nothing after.
-- Autocompleting store paths in the store-path lane needs an index
-  keyed by digest, which the multiverse does not publish; its shards
-  are keyed by attribute.
+- Autocompleting store paths in the store-path lane needs a prefix
+  index over digests. The multiverse's `identify/` shards are keyed by
+  digest, and the page already reads them to name a pasted path back to
+  its `(attribute, version)`
+  ([site/js/multiverse.js](../site/js/multiverse.js), `identify`), but a
+  shard covers a two-character prefix and holds no ordering within it.
+  A typeahead over the rest of the digest is therefore a scan rather
+  than a lookup.
 - Block chaining in the wasm TCG backend, and an aarch64 guest as the
   emulation experiment behind it ([performance.md](./performance.md)).
 

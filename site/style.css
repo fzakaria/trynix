@@ -279,7 +279,13 @@ code {
   margin: 0.2rem 0;
   width: 100%;
 }
-#search-results button {
+
+/* An attribute row and a version pill are the same box. The attribute
+   row is a single button that opens its version list; the version pill
+   holds two targets, the number that links to the index and the pick
+   beside it. */
+#search-results .attr,
+#search-results .pick {
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
@@ -289,19 +295,69 @@ code {
   background: var(--code-bg);
   border: 1px solid var(--line);
   border-radius: 4px;
+}
+#search-results .attr {
   cursor: pointer;
 }
-#search-results button:hover:not(:disabled) {
+#search-results .attr:hover,
+#search-results .pick:not(.dead):hover {
   border-color: var(--accent);
 }
-#search-results button:disabled {
+
+/* The pick half of a version pill. The pill already draws the box, so
+   what sits inside it is bare text. */
+#search-results .take {
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+#search-results .take:disabled {
   cursor: default;
-  opacity: 0.5;
 }
 #search-results .name {
   font:
     13px ui-monospace,
     monospace;
+}
+
+/* A link out to nixmultiverse.com. A dotted underline is the whole
+   mark it gets: these links run one per row down a list a hundred rows
+   long, so anything louder (an icon, a solid rule) is a hundred things
+   to look past. Hover is where the link states itself. */
+.out {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.out:hover {
+  color: var(--accent);
+  text-decoration: underline solid;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+/* A version with no store path for this system. The row is shown
+   rather than dropped, so the list matches the version count beside
+   the attribute. The number is struck through and still links out,
+   since the index is where that version's history is written out. */
+#search-results .pick.dead {
+  opacity: 0.6;
+  border-style: dashed;
+}
+#search-results .pick.dead .name {
+  text-decoration-line: underline line-through;
+  text-decoration-style: dotted;
+}
+
+/* The reasons, said once under the list rather than on every row. */
+#search-results .note {
+  max-width: 42rem;
+  font-size: 13px;
 }
 #selection {
   display: flex;
@@ -309,7 +365,13 @@ code {
   gap: 0.3rem;
   margin: 0.5rem 0;
 }
+
+/* A chip carries the same two targets as a version pill: the label
+   links to the index, the x removes the selection. */
 #selection .chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
   padding: 0.25rem 0.6rem;
   font:
     13px ui-monospace,
@@ -318,7 +380,37 @@ code {
   background: var(--accent);
   border: none;
   border-radius: 999px;
+}
+#selection .chip .out {
+  text-decoration-color: var(--bg);
+}
+#selection .chip .out:hover {
+  color: var(--bg);
+  text-decoration-color: var(--bg);
+}
+#selection .drop {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
   cursor: pointer;
+}
+
+/* A selected path no configured cache holds. The boot is still
+   offered, because a cache pasted into the caches lane may hold what
+   cache.nixos.org has dropped, so this is a warning rather than a
+   removal. It carries the accent's outline instead of its fill. */
+#selection .chip.missing {
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px dashed var(--muted);
+}
+#selection .chip.missing .out {
+  text-decoration-color: var(--muted);
+}
+#selection .chip.missing .out:hover {
+  color: var(--accent);
 }
 #advanced {
   margin: 0.6rem 0;
