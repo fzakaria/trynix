@@ -304,6 +304,14 @@ code {
   border-color: var(--accent);
 }
 
+/* A version already in the selection. Clicking the pill again takes it
+   back out, so the tint is the affordance for that: hover is a border
+   alone, which leaves the two states apart. */
+#search-results .pick.on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--code-bg));
+}
+
 /* The pick half of a version pill. The pill already draws the box, so
    what sits inside it is bare text. */
 #search-results .take {

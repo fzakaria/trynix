@@ -77,11 +77,11 @@ const addNote = document.getElementById("add-note");
 //   named  the (attribute, version) a pasted store path turned out to
 //          be, when the index can name it
 //
-// `held` is the page checking rather than claiming. The index's census
-// only says whether a path was in the cache the last time anyone
-// looked, which is a week old at best and missing entirely for a path
-// nobody has ever probed. The answer that matters is the one the cache
-// gives now, and the boot needs that narinfo anyway.
+// `held` is the page checking rather than claiming, and the store-path
+// lane is why it exists: a pasted digest is whatever the reader typed,
+// and no index can say whether a cache serves it. For a version that
+// came out of the index the answer is nearly always yes, and it still
+// costs nothing, since the boot needs that narinfo anyway.
 const selection = new Map();
 
 const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
@@ -97,6 +97,17 @@ function digestFromPath(raw) {
   return DIGEST_PATTERN.test(s) ? s : null;
 }
 
+// Clicking a version already in the selection takes it back out. The
+// picker offers this on the pill itself, so a misclick is undone where
+// it happened rather than down at the chips.
+function toggle(entry) {
+  if (selection.has(entry.digest)) {
+    deselect(entry.digest);
+    return;
+  }
+  select(entry);
+}
+
 function select(entry) {
   selection.set(entry.digest, entry);
   render();
@@ -107,10 +118,9 @@ function select(entry) {
 }
 
 // Ask the caches whether they hold this path, and redraw when they
-// answer. A path the index knows and the cache has dropped is the one
-// failure the page can see coming, so it is worth saying while there
-// is still a cache lane to paste into, rather than three seconds into
-// a walk.
+// answer. This is the one failure the page can see coming, so it is
+// worth saying while there is still a cache lane to paste into, rather
+// than three seconds into a walk.
 async function probe(entry) {
   const held = await holdsPath(entry.digest, readSubstituters());
   entry.held = held;
@@ -121,8 +131,8 @@ async function probe(entry) {
 }
 
 // Every path that no cache admitted to having, asked again. Adding a
-// cache is exactly the fix for a path cache.nixos.org has dropped, so
-// the answer is re-earned rather than left standing.
+// cache is exactly the fix for a path cache.nixos.org does not serve,
+// so the warning on the chip is re-earned rather than left standing.
 function reprobe() {
   for (const entry of selection.values()) {
     if (entry.held !== true) {
@@ -154,6 +164,11 @@ function deselect(digest) {
 // The extra caches in effect: the page's copy of what the caches lane
 // says, and what the link carries.
 let extraCaches = [];
+
+// The package picker, once the lanes below have built it. Named here
+// because render() marks its pills, and a selection can change before
+// the lanes are wired (a shared link restores one).
+let picker;
 
 // The link for what is on screen: the selection and the caches.
 function urlState() {
@@ -237,6 +252,9 @@ function render() {
   const entries = [...selection.values()];
 
   selectionElement.replaceChildren(...entries.map(chipFor));
+  // The pills in the search list say which versions are chosen, and a
+  // version can leave the selection by its chip as well as by its pill.
+  picker?.refresh();
 
   bootButton.disabled = entries.length === 0;
   // A path no cache holds is the one thing worth repeating on every
@@ -281,12 +299,13 @@ const entryOf = (version) => ({
 
 // ---------- the three lanes ----------
 
-new PackagePicker({
+picker = new PackagePicker({
   input: document.getElementById("search"),
   results: document.getElementById("search-results"),
-  onPick: (version) => {
+  selected: (version) => selection.has(version.digest),
+  onToggle: (version) => {
     notes = [];
-    select(entryOf(version));
+    toggle(entryOf(version));
   },
 });
 

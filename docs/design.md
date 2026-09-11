@@ -41,19 +41,19 @@ The pieces already exist in sibling projects; trynix is the glue:
    for went. Every version number in the list is a link to that
    version's page on the index, and the pick target sits beside it, so
    the two clicks stay distinguishable without an icon on every row.
+   The pick target is a toggle: a chosen version's pill is tinted, and
+   clicking it again takes the version back out, which undoes a misclick
+   where it happened rather than down at the chips.
 
-   Whether the cache still serves a path is a separate question from
-   whether the index has one, and the page asks it directly rather than
-   reading the index's census: every selection is confirmed against the
-   configured caches the moment it is picked
-   ([site/js/substituters.js](../site/js/substituters.js), `holdsPath`).
-   The census verdict is up to a week old, and on 2026-09-10 it called
-   11 of 274,729 paths gone while cache.nixos.org served every one of
-   them. Those verdicts come from a NAR check that reads an exhausted
-   retry budget as a missing payload, so the index carries a handful of
-   false deaths at any time. Rare and wrong is no basis for a state in
-   the picker, and the live answer costs one round trip the boot needs
-   anyway.
+   Whether a cache serves a path is a separate question from whether the
+   index has one, and the page asks it directly: every selection is
+   confirmed against the configured caches the moment it is picked
+   ([site/js/substituters.js](../site/js/substituters.js), `holdsPath`),
+   and asked again when a cache is added. The store-path lane is what
+   this is for, since a pasted digest is whatever the reader typed and
+   no index can speak for it. The index's own census verdict goes unread:
+   it is up to a week old and has almost nothing to report, its run of
+   2026-09-06 having found all 607,535 indexed narinfos still served.
 
 2. **Walk.** Breadth-first over narinfos from cache.nixos.org to the
    full runtime closure, and verify every signature against the

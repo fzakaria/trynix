@@ -151,10 +151,10 @@ export async function fetchNarinfo(digest, substituters) {
 // cache could not be reached" are different claims and only the first
 // one says a boot cannot work.
 //
-// This is what the page asks the moment a package is picked, rather
-// than trusting the index's census. A verdict there records the last
-// fetch anyone made against the path, which may be a week old, and a
-// digest nobody probed carries no verdict at all. The narinfo this
+// This is what the page asks the moment a package is picked. A pasted
+// store path has no index entry to consult, and for a version that came
+// out of the index the census verdict records the last fetch anyone
+// made against the path, which may be a week old. The narinfo this
 // fetches lands in the Cache API on the way past, so the closure walk
 // that follows a boot finds it already there and the check costs one
 // round trip in total.

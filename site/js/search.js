@@ -18,6 +18,11 @@
 // run` line that fetches the same store path outside the browser. The
 // number links out, the rest of the pill picks the version. Two targets
 // in one pill, and an underline is the only mark either of them needs.
+//
+// The pick half is a toggle, and the pill of a chosen version is
+// tinted. Clicking it again takes the version back out of the
+// selection, so a misclick is undone where it happened rather than down
+// at the chips.
 
 import {
   bootable,
@@ -43,13 +48,18 @@ const NO_BUILD = "no build";
 const NO_BUILD_NOTE = `no build: nixpkgs shipped that version and Hydra never built it for ${SYSTEM}, so there is nothing to fetch. Hydra builds neither unfree nor broken packages, and an attribute can also be taken out of its jobset.`;
 
 export class PackagePicker {
-  // onPick hears one version record each time a version is chosen; the
-  // page owns the selection, since packages also arrive from the range
-  // lane and from a pasted store path.
-  constructor({ input, results, onPick }) {
+  // The page owns the selection, since packages also arrive from the
+  // range lane and from a pasted store path. So the picker asks whether
+  // a version is in it (`selected`) and reports a click on one
+  // (`onToggle`) rather than keeping its own copy.
+  constructor({ input, results, selected, onToggle }) {
     this.input = input;
     this.results = results;
-    this.onPick = onPick;
+    this.selected = selected;
+    this.onToggle = onToggle;
+    // The bootable rows on screen, so a change in the selection can be
+    // redrawn without rebuilding a hundred pills.
+    this.rows = [];
 
     let timer;
     input.addEventListener("input", () => {
@@ -60,6 +70,7 @@ export class PackagePicker {
 
   async search() {
     const query = this.input.value.trim();
+    this.rows = [];
     if (query === "") {
       this.results.replaceChildren();
       return;
@@ -92,12 +103,14 @@ export class PackagePicker {
     );
   }
 
-  // One attribute's versions, newest first, each a pill that adds it to
-  // the selection. The ones no boot can reach are there to be read.
+  // One attribute's versions, newest first, each a pill that adds the
+  // version to the selection or takes it back out. The ones no boot can
+  // reach are there to be read.
   async expand(attr) {
     this.results.replaceChildren(
       el("p", { className: "muted" }, `loading ${attr}…`),
     );
+    this.rows = [];
     const versions = await versionRowsOf(attr);
 
     if (versions.length === 0) {
@@ -139,10 +152,8 @@ export class PackagePicker {
         type: "button",
         disabled: !can,
         title: can ? version.storePath : NO_BUILD_NOTE,
-        ariaLabel: can
-          ? `select ${version.attr} ${version.version}`
-          : `${version.attr} ${version.version} has no ${SYSTEM} build`,
-        onclick: can ? () => this.onPick(version) : undefined,
+        ariaLabel: `${version.attr} ${version.version} has no ${SYSTEM} build`,
+        onclick: can ? () => this.onToggle(version) : undefined,
       },
       can
         ? version.closureSize > 0
@@ -151,8 +162,46 @@ export class PackagePicker {
         : NO_BUILD,
     );
 
-    return el("span", { className: can ? "pick" : "pick dead" }, number, pick);
+    const pill = el(
+      "span",
+      { className: can ? "pick" : "pick dead" },
+      number,
+      pick,
+    );
+
+    if (!can) {
+      return pill;
+    }
+
+    const row = { version, pill, pick };
+    this.rows.push(row);
+    mark(row, this.selected(version));
+    return pill;
   }
+
+  // The selection changed somewhere: on a chip's x, in the range lane,
+  // or on a pill in this list. Whatever moved it, the pills say what is
+  // chosen, so they are re-marked rather than rebuilt.
+  refresh() {
+    for (const row of this.rows) {
+      mark(row, this.selected(row.version));
+    }
+  }
+}
+
+// What a pill says about a version that is already in the selection.
+// The label keeps saying the closure size: swapping it for a word would
+// change the pill's width, and a grid of a hundred pills reflowing
+// under the cursor on every click is worse than the word is worth.
+function mark({ version, pill, pick }, on) {
+  pill.classList.toggle("on", on);
+  pick.ariaPressed = String(on);
+  pick.title = on
+    ? `${version.storePath}. Click to take it back out of the selection.`
+    : version.storePath;
+  pick.ariaLabel = on
+    ? `remove ${version.attr} ${version.version} from the selection`
+    : `select ${version.attr} ${version.version}`;
 }
 
 // The list's header: the attribute, linked to its own page on the

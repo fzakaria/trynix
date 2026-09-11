@@ -71,18 +71,15 @@ export function attrNames() {
 // and a `?pkg=` in a link included.
 //
 // The meta shard also carries the census verdict `ok`, the multiverse's
-// last fetch of that path, and nothing here reads it. Over the whole
-// x86_64-linux index on 2026-09-10 the verdict was present for all
-// 274,729 entries and called 11 of them gone, and all 11 are
-// downloadable. The census of 2026-09-06 listed 30 digests across the
-// three published systems whose narinfo answered and whose NAR did not,
-// and cache.nixos.org served the narinfo and the NAR for all 30 when
-// they were re-checked. Its NAR check folds "the request ran out of
-// retries" into "the bytes are gone" (tools/census.py, `check`), so a
-// verdict of gone can be a fact about one HEAD request on one Sunday.
-// The page asks the cache itself the moment a version is picked
-// (substituters.js, `holdsPath`), which is the answer worth having
-// either way.
+// last fetch of that path, and nothing here reads it. The verdict is up
+// to a week old and the boot needs that narinfo regardless, so the page
+// asks the cache itself the moment a version is picked
+// (substituters.js, `holdsPath`) and gets a live answer, which covers
+// the paths cache.nixos.org drops next week as well as the ones it has
+// dropped already. That second set is close to empty: every one of the
+// 274,729 x86_64-linux entries carried a verdict on 2026-09-10, and the
+// census of 2026-09-06 found all 607,535 indexed narinfos still served
+// across the three published systems.
 export const bootable = (v) => v.storePath !== null;
 
 // One meta-shard entry as a version record.
