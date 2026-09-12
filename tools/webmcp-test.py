@@ -67,11 +67,10 @@ CACHE_KEY = "trynix.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
 # says while a boot is still downloading.
 MISSING_PATH = "/nix/store/00000000000000000000000000000000-missing"
 FETCHING_NOTE = "fetching…"
-# The status line's tail when boot() has caught a failure, and how the
-# boot tool's answer opens when the page already knows the path is
-# missing and refuses to start.
-FAILED_STATUS = "see the debug log"
-REFUSAL = "the boot did not start: no configured cache holds"
+# How the page words a path no cache holds, and how the boot tool's
+# answer opens when the page already knows that and refuses to start.
+NOT_FOUND = "not found in any configured cache"
+REFUSAL = f"the boot did not start: {NOT_FOUND}"
 # How long a doomed boot and the cache probe are given to answer.
 MISSING_LIMIT_SECONDS = 60
 
@@ -217,12 +216,14 @@ def check_missing_path(browser, checks, base):
     browser.send("Page.navigate", url=f"{base}/?{query}")
     await_tools(browser)
 
-    # The boot that raced the probe fails in the walk.
+    # The boot that raced the probe fails in the walk, and the error
+    # lands on its progress row.
     failed = poll(
         browser,
-        f"document.getElementById('status').textContent.includes({json.dumps(FAILED_STATUS)})",
+        "document.querySelector('#boot-progress .failed')?.textContent ?? ''",
     )
-    checks.true("the boot failed", failed)
+    print(f"  {failed}")
+    checks.true("the failed row says the path was not found", NOT_FOUND in (failed or ""))
     checks.true(
         "the veil no longer says it is fetching",
         browser.evaluate("document.getElementById('console-note').textContent")
@@ -240,6 +241,17 @@ def check_missing_path(browser, checks, base):
         ".then((r) => JSON.parse(r.content[0].text).selection[0].inCache === false)",
     )
     checks.true("the probe says no cache holds it", answered)
+
+    # The status line describes the selection rather than repeating the
+    # row's error.
+    status = poll(
+        browser,
+        "(() => { const s = document.getElementById('status').textContent;"
+        f" return s.includes({json.dumps(NOT_FOUND)}) && s; }})()",
+    )
+    print(f"  {status}")
+    checks.true("the status line names the missing path", status)
+    checks.true("the status line does not repeat the error", "Error" not in (status or ""))
     checks.true(
         "the boot button is disabled",
         browser.evaluate("document.getElementById('boot-button').disabled"),

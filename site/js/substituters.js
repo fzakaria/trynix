@@ -17,6 +17,10 @@ import { CACHE_URL } from "./config.js";
 import { parseNarinfo } from "./closure.js";
 import { cachedResponse, storeInCache } from "./cache.js";
 
+// How the page words a path that every configured cache answered for and
+// none holds, in the walk's error and on the selection.
+export const NOT_FOUND = "not found in any configured cache";
+
 // Nix's own key for cache.nixos.org, so the default path verifies
 // without the reader configuring anything.
 export const DEFAULT_SUBSTITUTERS = [
@@ -141,7 +145,7 @@ export async function fetchNarinfo(digest, substituters) {
   if (failures.length > 0) {
     throw new Error(`${digest}: ${failures.join("; ")}`);
   }
-  throw new Error(`${digest}: no configured cache holds it`);
+  throw new Error(`${digest}: ${NOT_FOUND}`);
 }
 
 // Whether some configured cache holds this path. True, false when every

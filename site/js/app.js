@@ -24,6 +24,7 @@ import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
   holdsPath,
+  NOT_FOUND,
   parseSubstituters,
   readSubstituters,
   setExtraSubstituters,
@@ -223,10 +224,7 @@ function chipFor(entry) {
     entry.named === undefined
       ? entry.label
       : `${entry.named.attr} ${entry.named.version}`;
-  const held =
-    entry.held === false
-      ? ". No configured cache holds this path, so a boot will fail on it; add a cache that does in the Caches lane"
-      : "";
+  const held = entry.held === false ? `: ${NOT_FOUND}` : "";
 
   const label = document.createElement(target === null ? "span" : "a");
   label.textContent = `${text}${entry.held === false ? " ⚠" : ""}`;
@@ -263,11 +261,7 @@ function unheld() {
 // Why a selection with unheld paths cannot boot, for the status line
 // and for an agent's boot call.
 function missingNote(missing) {
-  return (
-    `no configured cache holds ${missing.map((e) => e.label).join(", ")}: ` +
-    `the index has the store path, the cache no longer serves its bytes, ` +
-    `so a boot fails on it unless a cache in the Caches lane has it`
-  );
+  return `${NOT_FOUND}: ${missing.map((e) => e.label).join(", ")}`;
 }
 
 // The button offers a boot only when there is something to boot and no
@@ -759,7 +753,9 @@ async function boot() {
   } catch (err) {
     log(`boot failed: ${err.message}`);
     vmRow.fail(String(err));
-    status.textContent = `${err} — see the debug log`;
+    // The error is on the progress row. The status line goes back to
+    // describing the selection, which names any path no cache holds.
+    render();
     document.getElementById("debug").open = true;
     // The veil stays over the empty terminal, and says the boot is over
     // rather than still fetching.
