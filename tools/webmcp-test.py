@@ -19,6 +19,7 @@ spec. It tells you the page holds up its end. Run it against a built
 site:
 
     nix run .#webmcp-test -- --site result
+    nix run .#webmcp-test -- --url https://trynix.dev
 """
 import argparse
 import importlib.util
@@ -52,8 +53,12 @@ GREETING = "Hello, world!"
 CACHE_URL = "https://trynix.cachix.org"
 CACHE_KEY = "trynix.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
 
-# How long the page is given to load its modules, and a boot to finish.
-LOAD_SECONDS = 5
+# How long the page is given to register its tools, and a boot to
+# finish. The wait is a poll rather than a sleep: a host that cannot set
+# COOP/COEP headers serves the coi-serviceworker shim, which reloads the
+# page once before any module runs.
+REGISTER_LIMIT_SECONDS = 30
+REGISTER_POLL_SECONDS = 0.25
 BOOT_LIMIT_MS = 300000
 
 # The missing browser API, installed before any module runs. registerTool
@@ -151,11 +156,14 @@ def call(browser, name, timeout_ms=30000, **args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--site", required=True, help="a built site directory to serve")
+    parser.add_argument("--site", help="a built site directory to serve")
+    parser.add_argument("--url", help="test this address instead of serving a directory")
     parser.add_argument("--browser", default=os.environ.get("TRYNIX_BROWSER", "chromium"))
     args = parser.parse_args()
+    if (args.site is None) == (args.url is None):
+        parser.error("pass one of --site or --url")
 
-    base, shutdown = cpu.serve(args.site)
+    base, shutdown = (args.url, None) if args.site is None else cpu.serve(args.site)
     workdir = tempfile.mkdtemp()
     browser = cpu.Browser(args.browser, os.path.join(workdir, "profile"))
     checks = Checks()
@@ -164,13 +172,20 @@ def main():
         browser.send("Page.addScriptToEvaluateOnNewDocument", source=POLYFILL)
         # No ?boot=1 in the URL: booting is a tool call here, which is
         # the part a link cannot do for an agent.
-        browser.send("Page.navigate", url=f"{base}/")
-        time.sleep(LOAD_SECONDS)
+        browser.send("Page.navigate", url=base)
 
-        names = resolved(
-            browser,
-            "document.modelContext.getTools().then((t) => t.map((x) => x.name))",
-        )
+        deadline = time.monotonic() + REGISTER_LIMIT_SECONDS
+        names = []
+        while time.monotonic() < deadline and not names:
+            names = (
+                resolved(
+                    browser,
+                    "document.modelContext.getTools().then((t) => t.map((x) => x.name))",
+                )
+                or []
+            )
+            if not names:
+                time.sleep(REGISTER_POLL_SECONDS)
         print(f"tools registered: {names}")
         checks.equal("the tools", sorted(names or []), EXPECTED_TOOLS)
 
@@ -207,6 +222,10 @@ def main():
         state = json.loads(call(browser, "select-packages", packages=[{"attr": PACKAGE}]))
         checks.equal("one selected", len(state["selection"]), 1)
         checks.equal("named", state["selection"][0]["attr"], PACKAGE)
+        # Present even while the cache probe is still in flight.
+        # JSON.stringify drops an undefined value, so a key that is
+        # sometimes there and sometimes not is easy to ship by accident.
+        checks.true("inCache is always a key", "inCache" in state["selection"][0])
         # The selection is the link, which is what makes a tool call
         # something a person can be handed afterwards.
         checks.true("the link names it", f"pkg={PACKAGE}" in state["link"])
@@ -245,7 +264,8 @@ def main():
         )
     finally:
         browser.close()
-        shutdown()
+        if shutdown is not None:
+            shutdown()
 
     if checks.failed:
         print("\n".join(f"FAILED {line}" for line in checks.failed))

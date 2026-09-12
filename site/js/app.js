@@ -965,7 +965,10 @@ const page = {
       // Whether a configured cache admits to holding it: false is the
       // one failure worth knowing about before a boot rather than
       // three seconds into one.
-      inCache: entry.held,
+      // null rather than undefined, which JSON.stringify drops: a key
+      // that is missing only while a probe is in flight is worse to
+      // read than one that is explicitly unanswered.
+      inCache: entry.held ?? null,
     })),
     caches: extraCaches,
     link: new URL(writeUrl(urlState()), location.href).href,
