@@ -1,0 +1,4349 @@
+{
+ "description": "Native and browser measurements behind the \"Where the kernel work went\" section of docs/engine-execution.md (September 12, 2026). Cold jj --version with the jujutsu closure on a 9p share.",
+ "variants": {
+  "6.1": "Linux 6.1.187, rebuilt from the flake derivation with System.map kept.",
+  "612": "Linux 6.12.108 (pinned nixpkgs source) with the guest config; predates the 6.13 netfs collector and the 6.16 exec readahead change.",
+  "7.2": "Linux 7.2.5, rebuilt from the flake derivation with System.map kept (control).",
+  "exec": "7.2.5 with the VM_EXEC branch of do_sync_mmap_readahead disabled (centred read-around restored).",
+  "collect": "7.2.5 with netfs_wake_collector running the collector inline when in_task().",
+  "inline": "7.2.5 with both diagnostic patches.",
+  "nomitig": "7.2.5 with CONFIG_CPU_MITIGATIONS=n at build time (the guest already boots mitigations=off)."
+ },
+ "native": {
+  "6.1": {
+   "cold_host_seconds": [
+    0.545,
+    0.534,
+    0.554,
+    0.545
+   ],
+   "cold_ctxt": [
+    453,
+    442
+   ],
+   "warm_ctxt": [
+    169,
+    167
+   ],
+   "cold_pgmajfault": [
+    51,
+    51
+   ],
+   "cold_file_pages": [
+    5446,
+    5446
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 65,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 6
+   },
+   "v9fs_read_bytes": 22210299,
+   "fork_tbs_translated_cold": 30107,
+   "fork_tbs_translated_warm": 168
+  },
+  "612": {
+   "cold_host_seconds": [
+    0.541,
+    0.548,
+    0.558,
+    0.559
+   ],
+   "cold_ctxt": [
+    611,
+    600
+   ],
+   "warm_ctxt": [
+    166,
+    165
+   ],
+   "cold_pgmajfault": [
+    51,
+    51
+   ],
+   "cold_file_pages": [
+    5417,
+    5417
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 65,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 6
+   },
+   "v9fs_read_bytes": 22169339,
+   "fork_tbs_translated_cold": 30888,
+   "fork_tbs_translated_warm": 73
+  },
+  "7.2": {
+   "cold_host_seconds": [
+    0.58,
+    0.571,
+    0.601,
+    0.592
+   ],
+   "cold_ctxt": [
+    944,
+    956
+   ],
+   "warm_ctxt": [
+    160,
+    169
+   ],
+   "cold_pgmajfault": [
+    83,
+    83
+   ],
+   "cold_file_pages": [
+    5328,
+    5328
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 96,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 2
+   },
+   "v9fs_read_bytes": 21796603,
+   "fork_tbs_translated_cold": 31437,
+   "fork_tbs_translated_warm": 136
+  },
+  "exec": {
+   "cold_host_seconds": [
+    0.646,
+    0.563,
+    0.577,
+    0.583
+   ],
+   "cold_ctxt": [
+    731,
+    739
+   ],
+   "warm_ctxt": [
+    163,
+    159
+   ],
+   "cold_pgmajfault": [
+    51,
+    51
+   ],
+   "cold_file_pages": [
+    5419,
+    5419
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 65,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 2
+   },
+   "v9fs_read_bytes": 22169339,
+   "fork_tbs_translated_cold": 31372,
+   "fork_tbs_translated_warm": 126
+  },
+  "collect": {
+   "cold_host_seconds": [
+    0.585,
+    0.573,
+    0.59,
+    0.592
+   ],
+   "cold_ctxt": [
+    747,
+    744
+   ],
+   "warm_ctxt": [
+    161,
+    160
+   ],
+   "cold_pgmajfault": [
+    83,
+    83
+   ],
+   "cold_file_pages": [
+    5328,
+    5328
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 96,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 2
+   },
+   "v9fs_read_bytes": 21796603,
+   "fork_tbs_translated_cold": 31243,
+   "fork_tbs_translated_warm": 122
+  },
+  "inline": {
+   "cold_host_seconds": [
+    0.578,
+    0.559,
+    0.57,
+    0.588
+   ],
+   "cold_ctxt": [
+    606,
+    612
+   ],
+   "warm_ctxt": [
+    157,
+    160
+   ],
+   "cold_pgmajfault": [
+    51,
+    51
+   ],
+   "cold_file_pages": [
+    5419,
+    5419
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 65,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 2
+   },
+   "v9fs_read_bytes": 22169339,
+   "fork_tbs_translated_cold": 31158,
+   "fork_tbs_translated_warm": 75
+  },
+  "nomitig": {
+   "cold_host_seconds": [
+    0.565,
+    0.589,
+    0.595,
+    0.609
+   ],
+   "cold_ctxt": [
+    953,
+    952
+   ],
+   "warm_ctxt": [
+    148,
+    167
+   ],
+   "cold_pgmajfault": [
+    83,
+    83
+   ],
+   "cold_file_pages": [
+    5328,
+    5328
+   ],
+   "v9fs_requests": {
+    "v9fs_version": 1,
+    "v9fs_attach": 2,
+    "v9fs_getattr": 20,
+    "v9fs_walk": 58,
+    "v9fs_open": 11,
+    "v9fs_read": 96,
+    "v9fs_rerror": 28,
+    "v9fs_clunk": 11,
+    "v9fs_readlink": 2
+   },
+   "v9fs_read_bytes": 21796603,
+   "fork_tbs_translated_cold": 31121,
+   "fork_tbs_translated_warm": 129
+  }
+ },
+ "kprof_cold": {
+  "6.1": {
+   "total_insns": 39703816,
+   "kernel_insns": 6320246,
+   "user_insns": 15694811,
+   "tb_execs": 4172496,
+   "tbs_translated": 13928,
+   "classes": {
+    "rdtsc": 148,
+    "invlpg": 107,
+    "mov-cr3": 43,
+    "mov-cr": 1645,
+    "syscall": 521,
+    "sysretq": 512,
+    "iretq": 2364,
+    "hlt": 106,
+    "rep-movs": 8449,
+    "rep-stos": 14504,
+    "lock": 8947,
+    "lfence": 410,
+    "swapgs": 6976,
+    "cli": 22806,
+    "sti": 18794,
+    "cmpxchg16b": 3592,
+    "cpuid": 39
+   },
+   "top_kernel_functions": [
+    [
+     "unmap_page_range",
+     [
+      414668,
+      124905,
+      1
+     ]
+    ],
+    [
+     "get_page_from_freelist",
+     [
+      258041,
+      43695,
+      0
+     ]
+    ],
+    [
+     "xas_load",
+     [
+      220859,
+      46332,
+      0
+     ]
+    ],
+    [
+     "xa_is_node",
+     [
+      219480,
+      21948,
+      0
+     ]
+    ],
+    [
+     "__rmqueue_pcplist",
+     [
+      215039,
+      37682,
+      0
+     ]
+    ],
+    [
+     "release_pages",
+     [
+      164037,
+      39782,
+      1
+     ]
+    ],
+    [
+     "__alloc_pages",
+     [
+      159536,
+      30320,
+      0
+     ]
+    ],
+    [
+     "__handle_mm_fault",
+     [
+      156042,
+      30799,
+      0
+     ]
+    ],
+    [
+     "lru_add_fn",
+     [
+      143244,
+      23400,
+      0
+     ]
+    ],
+    [
+     "mtree_range_walk",
+     [
+      141955,
+      27960,
+      0
+     ]
+    ],
+    [
+     "__free_one_page",
+     [
+      137702,
+      17485,
+      0
+     ]
+    ],
+    [
+     "xas_find_conflict",
+     [
+      117472,
+      30026,
+      0
+     ]
+    ],
+    [
+     "xas_store",
+     [
+      114030,
+      22806,
+      0
+     ]
+    ],
+    [
+     "exc_page_fault",
+     [
+      107294,
+      32106,
+      0
+     ]
+    ],
+    [
+     "xas_start",
+     [
+      102844,
+      25711,
+      0
+     ]
+    ],
+    [
+     "__filemap_add_folio",
+     [
+      95568,
+      20634,
+      0
+     ]
+    ],
+    [
+     "list_del",
+     [
+      90348,
+      7529,
+      0
+     ]
+    ],
+    [
+     "expand",
+     [
+      87157,
+      6227,
+      0
+     ]
+    ],
+    [
+     "vm_normal_page",
+     [
+      85330,
+      17068,
+      5
+     ]
+    ],
+    [
+     "page_remove_rmap",
+     [
+      82341,
+      25583,
+      0
+     ]
+    ],
+    [
+     "zone_watermark_fast",
+     [
+      81198,
+      10410,
+      0
+     ]
+    ],
+    [
+     "netfs_rreq_unlock_folios",
+     [
+      79590,
+      22219,
+      34
+     ]
+    ],
+    [
+     "free_unref_page_prepare",
+     [
+      79491,
+      12573,
+      0
+     ]
+    ],
+    [
+     "free_unref_page_commit",
+     [
+      73884,
+      10447,
+      0
+     ]
+    ],
+    [
+     "xa_load",
+     [
+      67041,
+      12415,
+      0
+     ]
+    ],
+    [
+     "free_unref_page_list",
+     [
+      64982,
+      14930,
+      5
+     ]
+    ],
+    [
+     "check_new_pages",
+     [
+      64387,
+      12462,
+      0
+     ]
+    ],
+    [
+     "handle_mm_fault",
+     [
+      60436,
+      12778,
+      0
+     ]
+    ],
+    [
+     "__tlb_remove_page_size",
+     [
+      56719,
+      8744,
+      0
+     ]
+    ],
+    [
+     "__iov_iter_get_pages_alloc",
+     [
+      52611,
+      14253,
+      0
+     ]
+    ],
+    [
+     "prep_new_page",
+     [
+      52025,
+      6243,
+      0
+     ]
+    ],
+    [
+     "del_page_from_free_list",
+     [
+      51544,
+      6064,
+      0
+     ]
+    ],
+    [
+     "xas_create",
+     [
+      51210,
+      5976,
+      0
+     ]
+    ],
+    [
+     "mt_find",
+     [
+      48832,
+      10180,
+      0
+     ]
+    ],
+    [
+     "post_alloc_hook",
+     [
+      46656,
+      13467,
+      0
+     ]
+    ],
+    [
+     "page_cache_ra_unbounded",
+     [
+      45481,
+      12016,
+      2
+     ]
+    ],
+    [
+     "protnone_mask",
+     [
+      45352,
+      11338,
+      0
+     ]
+    ],
+    [
+     "ma_data_end",
+     [
+      44319,
+      8348,
+      0
+     ]
+    ],
+    [
+     "error_entry",
+     [
+      44214,
+      5255,
+      0
+     ]
+    ],
+    [
+     "next_uptodate_page",
+     [
+      43865,
+      13438,
+      0
+     ]
+    ],
+    [
+     "virtqueue_add",
+     [
+      43219,
+      9285,
+      0
+     ]
+    ],
+    [
+     "xa_err",
+     [
+      42644,
+      12184,
+      0
+     ]
+    ],
+    [
+     "filemap_add_folio",
+     [
+      42354,
+      7602,
+      0
+     ]
+    ],
+    [
+     "folio_batch_move_lru",
+     [
+      41317,
+      12859,
+      0
+     ]
+    ],
+    [
+     "should_zap_page",
+     [
+      39420,
+      11988,
+      0
+     ]
+    ],
+    [
+     "folio_nr_pages",
+     [
+      37807,
+      10802,
+      0
+     ]
+    ],
+    [
+     "folio_batch_add_and_move",
+     [
+      37296,
+      7866,
+      0
+     ]
+    ],
+    [
+     "readahead_folio",
+     [
+      36125,
+      7661,
+      0
+     ]
+    ],
+    [
+     "filemap_map_pages",
+     [
+      36055,
+      8359,
+      0
+     ]
+    ],
+    [
+     "pte_pfn",
+     [
+      34128,
+      8532,
+      0
+     ]
+    ],
+    [
+     "arch_vma_access_permitted.constprop.0",
+     [
+      33173,
+      7769,
+      0
+     ]
+    ],
+    [
+     "folio_mark_accessed",
+     [
+      32331,
+      5897,
+      0
+     ]
+    ],
+    [
+     "ma_dead_node",
+     [
+      31368,
+      5228,
+      0
+     ]
+    ],
+    [
+     "lock_mm_and_find_vma",
+     [
+      31248,
+      6048,
+      0
+     ]
+    ],
+    [
+     "swapgs_restore_regs_and_return_to_usermode",
+     [
+      30870,
+      4116,
+      0
+     ]
+    ],
+    [
+     "mas_start",
+     [
+      30866,
+      7712,
+      0
+     ]
+    ],
+    [
+     "free_pcppages_bulk",
+     [
+      29918,
+      6345,
+      0
+     ]
+    ],
+    [
+     "do_set_pte",
+     [
+      29148,
+      3470,
+      0
+     ]
+    ],
+    [
+     "mm_counter_file",
+     [
+      29040,
+      7260,
+      0
+     ]
+    ],
+    [
+     "pack_sg_list_p.constprop.0",
+     [
+      28687,
+      3313,
+      0
+     ]
+    ]
+   ]
+  },
+  "612": {
+   "total_insns": 40324217,
+   "kernel_insns": 8236123,
+   "user_insns": 16176900,
+   "tb_execs": 4566034,
+   "tbs_translated": 17961,
+   "classes": {
+    "rdtsc": 146,
+    "invlpg": 154,
+    "mov-cr3": 41,
+    "mov-cr": 1653,
+    "syscall": 525,
+    "sysretq": 516,
+    "iretq": 2381,
+    "hlt": 111,
+    "rep-movs": 8445,
+    "rep-stos": 27560,
+    "lock": 8957,
+    "lfence": 217,
+    "swapgs": 7780,
+    "cli": 25386,
+    "sti": 20974,
+    "cmpxchg16b": 3238,
+    "cpuid": 39
+   },
+   "top_kernel_functions": [
+    [
+     "unmap_page_range",
+     [
+      506821,
+      119345,
+      2
+     ]
+    ],
+    [
+     "__rmqueue_pcplist",
+     [
+      416029,
+      72347,
+      1
+     ]
+    ],
+    [
+     "get_page_from_freelist",
+     [
+      304877,
+      56362,
+      0
+     ]
+    ],
+    [
+     "expand",
+     [
+      206919,
+      20281,
+      0
+     ]
+    ],
+    [
+     "__handle_mm_fault",
+     [
+      206453,
+      44184,
+      0
+     ]
+    ],
+    [
+     "__alloc_pages_noprof",
+     [
+      197477,
+      35223,
+      0
+     ]
+    ],
+    [
+     "xa_is_node",
+     [
+      176530,
+      17653,
+      0
+     ]
+    ],
+    [
+     "lru_add",
+     [
+      175289,
+      31635,
+      0
+     ]
+    ],
+    [
+     "mtree_range_walk",
+     [
+      172671,
+      27324,
+      0
+     ]
+    ],
+    [
+     "xas_store",
+     [
+      156555,
+      31311,
+      0
+     ]
+    ],
+    [
+     "netfs_consume_read_data.isra.0",
+     [
+      144253,
+      32432,
+      0
+     ]
+    ],
+    [
+     "xas_find_conflict",
+     [
+      139894,
+      36105,
+      0
+     ]
+    ],
+    [
+     "folios_put_refs",
+     [
+      138982,
+      38556,
+      0
+     ]
+    ],
+    [
+     "__filemap_add_folio",
+     [
+      137172,
+      29820,
+      0
+     ]
+    ],
+    [
+     "free_unref_page_commit",
+     [
+      129352,
+      15466,
+      0
+     ]
+    ],
+    [
+     "exc_page_fault",
+     [
+      128664,
+      34426,
+      2
+     ]
+    ],
+    [
+     "xas_load",
+     [
+      127237,
+      25800,
+      0
+     ]
+    ],
+    [
+     "free_unref_folios",
+     [
+      122732,
+      25452,
+      0
+     ]
+    ],
+    [
+     "vm_normal_page",
+     [
+      115192,
+      17726,
+      0
+     ]
+    ],
+    [
+     "__tlb_remove_folio_pages_size.isra.0",
+     [
+      107945,
+      18025,
+      0
+     ]
+    ],
+    [
+     "netfs_load_buffer_from_ra.isra.0",
+     [
+      106764,
+      24150,
+      0
+     ]
+    ],
+    [
+     "folio_remove_rmap_ptes",
+     [
+      106272,
+      22140,
+      0
+     ]
+    ],
+    [
+     "__folio_mod_stat.constprop.0",
+     [
+      105198,
+      13152,
+      0
+     ]
+    ],
+    [
+     "xas_start",
+     [
+      103680,
+      24192,
+      0
+     ]
+    ],
+    [
+     "release_pages",
+     [
+      96314,
+      22784,
+      0
+     ]
+    ],
+    [
+     "zone_watermark_fast.isra.0",
+     [
+      92263,
+      12815,
+      0
+     ]
+    ],
+    [
+     "__del_page_from_free_list.isra.0",
+     [
+      89342,
+      8122,
+      0
+     ]
+    ],
+    [
+     "handle_mm_fault",
+     [
+      84860,
+      21583,
+      0
+     ]
+    ],
+    [
+     "__page_cache_release",
+     [
+      80127,
+      10715,
+      0
+     ]
+    ],
+    [
+     "next_uptodate_folio",
+     [
+      76197,
+      25447,
+      0
+     ]
+    ],
+    [
+     "__folio_batch_add_and_move",
+     [
+      75052,
+      14995,
+      0
+     ]
+    ],
+    [
+     "__iov_iter_get_pages_alloc",
+     [
+      74233,
+      9109,
+      0
+     ]
+    ],
+    [
+     "filemap_map_pages",
+     [
+      73779,
+      12338,
+      2
+     ]
+    ],
+    [
+     "get_and_clear_full_ptes.isra.0",
+     [
+      71116,
+      6184,
+      0
+     ]
+    ],
+    [
+     "prep_new_page",
+     [
+      69179,
+      7688,
+      0
+     ]
+    ],
+    [
+     "post_alloc_hook",
+     [
+      68254,
+      13856,
+      0
+     ]
+    ],
+    [
+     "xas_create",
+     [
+      67815,
+      7623,
+      0
+     ]
+    ],
+    [
+     "filemap_add_folio",
+     [
+      58149,
+      10437,
+      0
+     ]
+    ],
+    [
+     "check_new_pages",
+     [
+      56452,
+      7698,
+      0
+     ]
+    ],
+    [
+     "__pte_offset_map",
+     [
+      55799,
+      11625,
+      1
+     ]
+    ],
+    [
+     "page_cache_ra_unbounded",
+     [
+      53051,
+      15273,
+      0
+     ]
+    ],
+    [
+     "virtqueue_add",
+     [
+      53017,
+      11154,
+      0
+     ]
+    ],
+    [
+     "mt_find",
+     [
+      51336,
+      11160,
+      0
+     ]
+    ],
+    [
+     "protnone_mask",
+     [
+      50296,
+      12574,
+      0
+     ]
+    ],
+    [
+     "folio_mapcount",
+     [
+      48653,
+      8846,
+      0
+     ]
+    ],
+    [
+     "folio_batch_move_lru",
+     [
+      48000,
+      15681,
+      1
+     ]
+    ],
+    [
+     "xas_next_entry",
+     [
+      47467,
+      10937,
+      0
+     ]
+    ],
+    [
+     "xa_err",
+     [
+      46963,
+      13418,
+      0
+     ]
+    ],
+    [
+     "error_entry",
+     [
+      46850,
+      5866,
+      0
+     ]
+    ],
+    [
+     "xa_load",
+     [
+      46462,
+      10722,
+      0
+     ]
+    ],
+    [
+     "folio_add_new_anon_rmap",
+     [
+      45945,
+      10210,
+      0
+     ]
+    ],
+    [
+     "vring_map_one_sg",
+     [
+      44109,
+      7605,
+      0
+     ]
+    ],
+    [
+     "set_pte_range",
+     [
+      44004,
+      4517,
+      0
+     ]
+    ],
+    [
+     "__pte_offset_map_lock",
+     [
+      43740,
+      7290,
+      0
+     ]
+    ],
+    [
+     "folio_mark_accessed",
+     [
+      40231,
+      9296,
+      1
+     ]
+    ],
+    [
+     "pte_pfn",
+     [
+      39929,
+      8858,
+      2
+     ]
+    ],
+    [
+     "pack_sg_list_p.constprop.0",
+     [
+      39340,
+      4543,
+      0
+     ]
+    ],
+    [
+     "mas_start",
+     [
+      38256,
+      7179,
+      0
+     ]
+    ],
+    [
+     "pfn_pte",
+     [
+      36560,
+      5484,
+      0
+     ]
+    ],
+    [
+     "account_freepages",
+     [
+      36549,
+      8122,
+      0
+     ]
+    ]
+   ]
+  },
+  "7.2": {
+   "total_insns": 44199921,
+   "kernel_insns": 10793412,
+   "user_insns": 14750694,
+   "tb_execs": 4935444,
+   "tbs_translated": 8774,
+   "classes": {
+    "rdtsc": 178,
+    "invlpg": 155,
+    "mov-cr3": 43,
+    "mov-cr": 1680,
+    "syscall": 529,
+    "sysretq": 520,
+    "iretq": 2454,
+    "hlt": 114,
+    "rep-movs": 9007,
+    "rep-stos": 32660,
+    "lock": 8950,
+    "lfence": 5,
+    "swapgs": 9172,
+    "cli": 28861,
+    "sti": 23679,
+    "cmpxchg16b": 5,
+    "cpuid": 39,
+    "ldmxcsr": 9
+   },
+   "top_kernel_functions": [
+    [
+     "__zap_vma_range",
+     [
+      544431,
+      128508,
+      30
+     ]
+    ],
+    [
+     "get_page_from_freelist",
+     [
+      525688,
+      100238,
+      1
+     ]
+    ],
+    [
+     "xa_is_node",
+     [
+      294210,
+      29421,
+      0
+     ]
+    ],
+    [
+     "xas_load",
+     [
+      263321,
+      53290,
+      0
+     ]
+    ],
+    [
+     "__filemap_add_folio",
+     [
+      245342,
+      50275,
+      1
+     ]
+    ],
+    [
+     "__alloc_frozen_pages_noprof",
+     [
+      242241,
+      45585,
+      0
+     ]
+    ],
+    [
+     "lru_add",
+     [
+      215053,
+      34857,
+      0
+     ]
+    ],
+    [
+     "xas_store",
+     [
+      211125,
+      42225,
+      0
+     ]
+    ],
+    [
+     "__handle_mm_fault",
+     [
+      202053,
+      51143,
+      2
+     ]
+    ],
+    [
+     "xas_find_conflict",
+     [
+      188308,
+      48615,
+      0
+     ]
+    ],
+    [
+     "xas_start",
+     [
+      186475,
+      43517,
+      0
+     ]
+    ],
+    [
+     "mtree_range_walk",
+     [
+      178526,
+      29452,
+      0
+     ]
+    ],
+    [
+     "folios_put_refs",
+     [
+      169339,
+      51969,
+      0
+     ]
+    ],
+    [
+     "__free_one_page",
+     [
+      166788,
+      24901,
+      0
+     ]
+    ],
+    [
+     "expand",
+     [
+      157224,
+      18060,
+      0
+     ]
+    ],
+    [
+     "rolling_buffer_load_from_ra",
+     [
+      151043,
+      32678,
+      0
+     ]
+    ],
+    [
+     "__add_to_free_list",
+     [
+      128077,
+      13573,
+      0
+     ]
+    ],
+    [
+     "exc_page_fault",
+     [
+      123872,
+      33799,
+      7
+     ]
+    ],
+    [
+     "xa_load",
+     [
+      120896,
+      30224,
+      0
+     ]
+    ],
+    [
+     "free_unref_folios",
+     [
+      119685,
+      27259,
+      0
+     ]
+    ],
+    [
+     "zone_watermark_fast.isra.0",
+     [
+      109497,
+      15210,
+      2
+     ]
+    ],
+    [
+     "netfs_read_collection",
+     [
+      105894,
+      27130,
+      56
+     ]
+    ],
+    [
+     "__del_page_from_free_list.isra.0",
+     [
+      101994,
+      12747,
+      1
+     ]
+    ],
+    [
+     "__tlb_remove_folio_pages_size.isra.0",
+     [
+      101704,
+      16984,
+      0
+     ]
+    ],
+    [
+     "folio_remove_rmap_ptes",
+     [
+      101184,
+      21080,
+      0
+     ]
+    ],
+    [
+     "__iov_iter_get_pages_alloc",
+     [
+      100863,
+      14411,
+      0
+     ]
+    ],
+    [
+     "virtqueue_add_split",
+     [
+      100027,
+      15771,
+      0
+     ]
+    ],
+    [
+     "__folio_mod_stat.constprop.0",
+     [
+      99525,
+      12444,
+      0
+     ]
+    ],
+    [
+     "__folio_batch_add_and_move",
+     [
+      98136,
+      20804,
+      0
+     ]
+    ],
+    [
+     "page_cache_ra_unbounded",
+     [
+      97990,
+      28797,
+      1
+     ]
+    ],
+    [
+     "vm_normal_page",
+     [
+      96692,
+      17582,
+      4
+     ]
+    ],
+    [
+     "xas_create",
+     [
+      91729,
+      10355,
+      0
+     ]
+    ],
+    [
+     "release_pages",
+     [
+      90820,
+      21476,
+      0
+     ]
+    ],
+    [
+     "filemap_add_folio",
+     [
+      90495,
+      16088,
+      0
+     ]
+    ],
+    [
+     "post_alloc_hook",
+     [
+      84374,
+      15210,
+      0
+     ]
+    ],
+    [
+     "handle_mm_fault",
+     [
+      83055,
+      21062,
+      2
+     ]
+    ],
+    [
+     "next_uptodate_folio",
+     [
+      82833,
+      27182,
+      0
+     ]
+    ],
+    [
+     "__page_cache_release",
+     [
+      79887,
+      10655,
+      0
+     ]
+    ],
+    [
+     "prep_new_page",
+     [
+      79104,
+      9131,
+      2
+     ]
+    ],
+    [
+     "xa_err",
+     [
+      74305,
+      21230,
+      0
+     ]
+    ],
+    [
+     "split_large_buddy",
+     [
+      71910,
+      5640,
+      0
+     ]
+    ],
+    [
+     "filemap_map_pages",
+     [
+      69594,
+      13870,
+      2
+     ]
+    ],
+    [
+     "__pte_offset_map",
+     [
+      68969,
+      13794,
+      1
+     ]
+    ],
+    [
+     "get_and_clear_full_ptes.isra.0",
+     [
+      65895,
+      8595,
+      0
+     ]
+    ],
+    [
+     "folio_lruvec_relock_irqsave.isra.0",
+     [
+      65820,
+      12738,
+      0
+     ]
+    ],
+    [
+     "folio_batch_move_lru",
+     [
+      65208,
+      18924,
+      0
+     ]
+    ],
+    [
+     "free_one_page",
+     [
+      63450,
+      11280,
+      1
+     ]
+    ],
+    [
+     "vring_map_one_sg",
+     [
+      60291,
+      8316,
+      0
+     ]
+    ],
+    [
+     "mt_find",
+     [
+      59616,
+      12144,
+      0
+     ]
+    ],
+    [
+     "__update_load_avg_se",
+     [
+      58394,
+      10715,
+      0
+     ]
+    ],
+    [
+     "__pfn_to_section",
+     [
+      56400,
+      14100,
+      0
+     ]
+    ],
+    [
+     "pack_sg_list_p.constprop.0",
+     [
+      53598,
+      6193,
+      0
+     ]
+    ],
+    [
+     "xas_next_entry",
+     [
+      53422,
+      12349,
+      0
+     ]
+    ],
+    [
+     "set_pte_range",
+     [
+      51336,
+      7629,
+      0
+     ]
+    ],
+    [
+     "get_pfnblock_migratetype",
+     [
+      50760,
+      5640,
+      0
+     ]
+    ],
+    [
+     "folio_order",
+     [
+      50057,
+      14302,
+      0
+     ]
+    ],
+    [
+     "protnone_mask",
+     [
+      49696,
+      12424,
+      0
+     ]
+    ],
+    [
+     "folioq_clear",
+     [
+      49572,
+      5508,
+      1
+     ]
+    ],
+    [
+     "sg_next",
+     [
+      48696,
+      8316,
+      0
+     ]
+    ],
+    [
+     "mlock_vma_folio.isra.0",
+     [
+      47518,
+      7231,
+      0
+     ]
+    ]
+   ]
+  },
+  "inline": {
+   "total_insns": 41940587,
+   "kernel_insns": 8833926,
+   "user_insns": 16166185,
+   "tb_execs": 4713082,
+   "tbs_translated": 18587,
+   "classes": {},
+   "top_kernel_functions": [
+    [
+     "__zap_vma_range",
+     [
+      554385,
+      130892,
+      31
+     ]
+    ],
+    [
+     "get_page_from_freelist",
+     [
+      453520,
+      86484,
+      0
+     ]
+    ],
+    [
+     "__alloc_frozen_pages_noprof",
+     [
+      207678,
+      38774,
+      0
+     ]
+    ],
+    [
+     "__handle_mm_fault",
+     [
+      205351,
+      51552,
+      0
+     ]
+    ],
+    [
+     "__filemap_add_folio",
+     [
+      189588,
+      38850,
+      1
+     ]
+    ],
+    [
+     "lru_add",
+     [
+      184702,
+      29846,
+      0
+     ]
+    ],
+    [
+     "xa_is_node",
+     [
+      179760,
+      17976,
+      0
+     ]
+    ],
+    [
+     "mtree_range_walk",
+     [
+      172315,
+      27350,
+      0
+     ]
+    ],
+    [
+     "__free_one_page",
+     [
+      168083,
+      25173,
+      0
+     ]
+    ],
+    [
+     "xas_store",
+     [
+      163140,
+      32628,
+      0
+     ]
+    ],
+    [
+     "folios_put_refs",
+     [
+      156089,
+      47881,
+      0
+     ]
+    ],
+    [
+     "xas_find_conflict",
+     [
+      143448,
+      37177,
+      0
+     ]
+    ],
+    [
+     "expand",
+     [
+      135728,
+      15600,
+      0
+     ]
+    ],
+    [
+     "xas_load",
+     [
+      127751,
+      25884,
+      0
+     ]
+    ],
+    [
+     "exc_page_fault",
+     [
+      124859,
+      33991,
+      2
+     ]
+    ],
+    [
+     "free_unref_folios",
+     [
+      118824,
+      27176,
+      0
+     ]
+    ],
+    [
+     "__add_to_free_list",
+     [
+      116259,
+      12363,
+      0
+     ]
+    ],
+    [
+     "rolling_buffer_load_from_ra",
+     [
+      116143,
+      25159,
+      0
+     ]
+    ],
+    [
+     "xas_start",
+     [
+      107275,
+      25037,
+      0
+     ]
+    ],
+    [
+     "__tlb_remove_folio_pages_size.isra.0",
+     [
+      104008,
+      17368,
+      0
+     ]
+    ],
+    [
+     "folio_remove_rmap_ptes",
+     [
+      103128,
+      21485,
+      0
+     ]
+    ],
+    [
+     "__folio_mod_stat.constprop.0",
+     [
+      100581,
+      12576,
+      0
+     ]
+    ],
+    [
+     "vm_normal_page",
+     [
+      94646,
+      17210,
+      4
+     ]
+    ],
+    [
+     "zone_watermark_fast.isra.0",
+     [
+      94459,
+      13120,
+      0
+     ]
+    ],
+    [
+     "release_pages",
+     [
+      92845,
+      21959,
+      0
+     ]
+    ],
+    [
+     "__del_page_from_free_list.isra.0",
+     [
+      92802,
+      11598,
+      0
+     ]
+    ],
+    [
+     "__folio_batch_add_and_move",
+     [
+      84506,
+      17914,
+      0
+     ]
+    ],
+    [
+     "handle_mm_fault",
+     [
+      83975,
+      21377,
+      0
+     ]
+    ],
+    [
+     "netfs_read_collection",
+     [
+      80353,
+      20674,
+      56
+     ]
+    ],
+    [
+     "__page_cache_release",
+     [
+      79811,
+      10643,
+      0
+     ]
+    ],
+    [
+     "__iov_iter_get_pages_alloc",
+     [
+      77398,
+      11060,
+      13
+     ]
+    ],
+    [
+     "virtqueue_add_split",
+     [
+      75683,
+      11892,
+      50
+     ]
+    ],
+    [
+     "post_alloc_hook",
+     [
+      72454,
+      13120,
+      0
+     ]
+    ],
+    [
+     "split_large_buddy",
+     [
+      71808,
+      5632,
+      0
+     ]
+    ],
+    [
+     "xas_create",
+     [
+      70954,
+      8021,
+      0
+     ]
+    ],
+    [
+     "filemap_add_folio",
+     [
+      69930,
+      12432,
+      0
+     ]
+    ],
+    [
+     "__pte_offset_map",
+     [
+      69119,
+      13824,
+      1
+     ]
+    ],
+    [
+     "prep_new_page",
+     [
+      68226,
+      7873,
+      0
+     ]
+    ],
+    [
+     "get_and_clear_full_ptes.isra.0",
+     [
+      68126,
+      11848,
+      0
+     ]
+    ],
+    [
+     "next_uptodate_folio",
+     [
+      65840,
+      21654,
+      0
+     ]
+    ],
+    [
+     "free_one_page",
+     [
+      63360,
+      11264,
+      0
+     ]
+    ],
+    [
+     "mt_find",
+     [
+      59616,
+      12144,
+      0
+     ]
+    ],
+    [
+     "folio_lruvec_relock_irqsave.isra.0",
+     [
+      59490,
+      11514,
+      0
+     ]
+    ],
+    [
+     "xa_load",
+     [
+      59200,
+      14800,
+      0
+     ]
+    ],
+    [
+     "__pfn_to_section",
+     [
+      56320,
+      14080,
+      0
+     ]
+    ],
+    [
+     "filemap_map_pages",
+     [
+      56052,
+      11129,
+      0
+     ]
+    ],
+    [
+     "page_cache_ra_unbounded",
+     [
+      55988,
+      15815,
+      1
+     ]
+    ],
+    [
+     "folio_batch_move_lru",
+     [
+      55899,
+      16251,
+      0
+     ]
+    ],
+    [
+     "get_pfnblock_migratetype",
+     [
+      50688,
+      5632,
+      0
+     ]
+    ],
+    [
+     "protnone_mask",
+     [
+      49600,
+      12400,
+      0
+     ]
+    ],
+    [
+     "xa_err",
+     [
+      48587,
+      13882,
+      0
+     ]
+    ],
+    [
+     "map_anon_folio_pte_nopf",
+     [
+      48480,
+      8080,
+      0
+     ]
+    ],
+    [
+     "folio_order",
+     [
+      48384,
+      13824,
+      0
+     ]
+    ],
+    [
+     "irqentry_exit",
+     [
+      48229,
+      9587,
+      14
+     ]
+    ],
+    [
+     "folio_mark_accessed",
+     [
+      47457,
+      11876,
+      1
+     ]
+    ],
+    [
+     "folio_mapcount",
+     [
+      47212,
+      8584,
+      0
+     ]
+    ],
+    [
+     "error_entry",
+     [
+      46735,
+      5855,
+      0
+     ]
+    ],
+    [
+     "vring_map_one_sg",
+     [
+      46255,
+      6380,
+      4
+     ]
+    ],
+    [
+     "folio_add_new_anon_rmap",
+     [
+      45720,
+      10160,
+      0
+     ]
+    ],
+    [
+     "mlock_vma_folio.isra.0",
+     [
+      44850,
+      6825,
+      0
+     ]
+    ]
+   ]
+  }
+ },
+ "browser_ab": {
+  "four_way": {
+   "note": "Fresh snapshots from the same native qemu, CPUs 88-91, NUMA node 5, alternating rounds. Wall time is quantised by the 0.25 s runner poll; compare browser CPU.",
+   "runs": {
+    "collect": [
+     {
+      "file": "collect-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.28,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.45,
+           "user": 0.8,
+           "sys": 0.57
+          },
+          "browser_cpu_seconds": 4.89,
+          "browser_peak_rss_bytes": 3046002688
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.23,
+           "sys": 0.21
+          },
+          "browser_cpu_seconds": 1.77,
+          "browser_peak_rss_bytes": 3056562176
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.25,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.58,
+          "status": 0,
+          "guest": {
+           "real": 2.19,
+           "user": 1.58,
+           "sys": 0.55
+          },
+          "browser_cpu_seconds": 7.16,
+          "browser_peak_rss_bytes": 3101270016
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.81,
+           "sys": 0.34
+          },
+          "browser_cpu_seconds": 4.17,
+          "browser_peak_rss_bytes": 3019354112
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "collect-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.02,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.43,
+           "user": 0.73,
+           "sys": 0.62
+          },
+          "browser_cpu_seconds": 4.82,
+          "browser_peak_rss_bytes": 2933964800
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.24,
+           "sys": 0.19
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2945273856
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.61,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.2,
+           "user": 1.56,
+           "sys": 0.59
+          },
+          "browser_cpu_seconds": 7.17,
+          "browser_peak_rss_bytes": 3105034240
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.86,
+           "sys": 0.31
+          },
+          "browser_cpu_seconds": 4.23,
+          "browser_peak_rss_bytes": 3026616320
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "collect-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.99,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.43,
+           "user": 0.82,
+           "sys": 0.53
+          },
+          "browser_cpu_seconds": 4.81,
+          "browser_peak_rss_bytes": 2930991104
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.27,
+           "sys": 0.17
+          },
+          "browser_cpu_seconds": 1.77,
+          "browser_peak_rss_bytes": 2939973632
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.22,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.17,
+           "user": 1.55,
+           "sys": 0.57
+          },
+          "browser_cpu_seconds": 7.11,
+          "browser_peak_rss_bytes": 3117588480
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.87,
+           "sys": 0.29
+          },
+          "browser_cpu_seconds": 4.22,
+          "browser_peak_rss_bytes": 3031027712
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "control": [
+     {
+      "file": "control-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.26,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.45,
+           "user": 0.85,
+           "sys": 0.5
+          },
+          "browser_cpu_seconds": 4.92,
+          "browser_peak_rss_bytes": 2920116224
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.29,
+           "sys": 0.15
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2931367936
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.34,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.2,
+           "user": 1.57,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 7.17,
+          "browser_peak_rss_bytes": 3028611072
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.85,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.23,
+          "browser_peak_rss_bytes": 2960539648
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.08,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.45,
+           "user": 0.78,
+           "sys": 0.57
+          },
+          "browser_cpu_seconds": 4.9,
+          "browser_peak_rss_bytes": 2935140352
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.26,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.79,
+          "browser_peak_rss_bytes": 2944839680
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.36,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.83,
+          "status": 0,
+          "guest": {
+           "real": 2.22,
+           "user": 1.61,
+           "sys": 0.54
+          },
+          "browser_cpu_seconds": 7.3,
+          "browser_peak_rss_bytes": 3111948288
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.87,
+           "sys": 0.29
+          },
+          "browser_cpu_seconds": 4.18,
+          "browser_peak_rss_bytes": 3033374720
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.13,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.97,
+          "status": 0,
+          "guest": {
+           "real": 1.45,
+           "user": 0.77,
+           "sys": 0.58
+          },
+          "browser_cpu_seconds": 4.94,
+          "browser_peak_rss_bytes": 2925871104
+         },
+         "warm": {
+          "wall_seconds": 1.32,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.26,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2936864768
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.11,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.56,
+          "status": 0,
+          "guest": {
+           "real": 2.19,
+           "user": 1.57,
+           "sys": 0.55
+          },
+          "browser_cpu_seconds": 7.2,
+          "browser_peak_rss_bytes": 3103989760
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.82,
+           "sys": 0.34
+          },
+          "browser_cpu_seconds": 4.19,
+          "browser_peak_rss_bytes": 3018903552
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "exec": [
+     {
+      "file": "exec-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.09,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.4,
+           "user": 0.82,
+           "sys": 0.49
+          },
+          "browser_cpu_seconds": 4.77,
+          "browser_peak_rss_bytes": 2922930176
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.23,
+           "sys": 0.21
+          },
+          "browser_cpu_seconds": 1.8,
+          "browser_peak_rss_bytes": 2934251520
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.34,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.56,
+          "status": 0,
+          "guest": {
+           "real": 2.15,
+           "user": 1.59,
+           "sys": 0.5
+          },
+          "browser_cpu_seconds": 7.07,
+          "browser_peak_rss_bytes": 3107061760
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.83,
+           "sys": 0.34
+          },
+          "browser_cpu_seconds": 4.21,
+          "browser_peak_rss_bytes": 3025158144
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "exec-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 7.16,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.39,
+           "user": 0.75,
+           "sys": 0.55
+          },
+          "browser_cpu_seconds": 4.76,
+          "browser_peak_rss_bytes": 2924314624
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.26,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.79,
+          "browser_peak_rss_bytes": 2935652352
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.3,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.56,
+          "status": 0,
+          "guest": {
+           "real": 2.16,
+           "user": 1.59,
+           "sys": 0.51
+          },
+          "browser_cpu_seconds": 7.09,
+          "browser_peak_rss_bytes": 3109588992
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.82,
+           "sys": 0.34
+          },
+          "browser_cpu_seconds": 4.21,
+          "browser_peak_rss_bytes": 3025743872
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "exec-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.12,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.73,
+          "status": 0,
+          "guest": {
+           "real": 1.39,
+           "user": 0.78,
+           "sys": 0.53
+          },
+          "browser_cpu_seconds": 4.71,
+          "browser_peak_rss_bytes": 2868125696
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.28,
+           "sys": 0.15
+          },
+          "browser_cpu_seconds": 1.77,
+          "browser_peak_rss_bytes": 2880376832
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.68,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.13,
+           "user": 1.58,
+           "sys": 0.49
+          },
+          "browser_cpu_seconds": 6.98,
+          "browser_peak_rss_bytes": 3056013312
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.87,
+           "sys": 0.28
+          },
+          "browser_cpu_seconds": 4.15,
+          "browser_peak_rss_bytes": 2986893312
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "inline": [
+     {
+      "file": "inline-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.92,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.37,
+           "user": 0.75,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 4.7,
+          "browser_peak_rss_bytes": 2918760448
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.27,
+           "sys": 0.17
+          },
+          "browser_cpu_seconds": 1.75,
+          "browser_peak_rss_bytes": 2927689728
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.2,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.13,
+           "user": 1.53,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 6.99,
+          "browser_peak_rss_bytes": 3112116224
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.83,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.21,
+          "browser_peak_rss_bytes": 3024896000
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "inline-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.02,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.38,
+           "user": 0.79,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 4.69,
+          "browser_peak_rss_bytes": 2924908544
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.27,
+           "sys": 0.17
+          },
+          "browser_cpu_seconds": 1.76,
+          "browser_peak_rss_bytes": 2931806208
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.91,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.55,
+          "status": 0,
+          "guest": {
+           "real": 2.13,
+           "user": 1.57,
+           "sys": 0.51
+          },
+          "browser_cpu_seconds": 7.0,
+          "browser_peak_rss_bytes": 3057233920
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.86,
+           "sys": 0.3
+          },
+          "browser_cpu_seconds": 4.19,
+          "browser_peak_rss_bytes": 2994966528
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "inline-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.09,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.73,
+          "status": 0,
+          "guest": {
+           "real": 1.38,
+           "user": 0.81,
+           "sys": 0.5
+          },
+          "browser_cpu_seconds": 4.7,
+          "browser_peak_rss_bytes": 2925498368
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.26,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2936856576
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.29,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.55,
+          "status": 0,
+          "guest": {
+           "real": 2.13,
+           "user": 1.56,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 6.95,
+          "browser_peak_rss_bytes": 3097415680
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.84,
+           "sys": 0.33
+          },
+          "browser_cpu_seconds": 4.21,
+          "browser_peak_rss_bytes": 3015225344
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "lts": {
+   "note": "Fresh snapshots from the same native qemu, CPUs 88-91, NUMA node 5, alternating rounds. Wall time is quantised by the 0.25 s runner poll; compare browser CPU. Rounds 2 and 3 overlapped plugin runs on other cores.",
+   "runs": {
+    "6.1": [
+     {
+      "file": "6.1-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.92,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.25,
+           "user": 0.82,
+           "sys": 0.41
+          },
+          "browser_cpu_seconds": 4.23,
+          "browser_peak_rss_bytes": 2903666688
+         },
+         "warm": {
+          "wall_seconds": 1.34,
+          "status": 0,
+          "guest": {
+           "real": 0.44,
+           "user": 0.27,
+           "sys": 0.15
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2916143104
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.09,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.84,
+          "status": 0,
+          "guest": {
+           "real": 2.28,
+           "user": 1.74,
+           "sys": 0.51
+          },
+          "browser_cpu_seconds": 7.35,
+          "browser_peak_rss_bytes": 3082772480
+         },
+         "warm": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.39,
+           "user": 1.02,
+           "sys": 0.35
+          },
+          "browser_cpu_seconds": 4.82,
+          "browser_peak_rss_bytes": 2993037312
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "6.1-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.8,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.46,
+          "status": 0,
+          "guest": {
+           "real": 1.29,
+           "user": 0.84,
+           "sys": 0.43
+          },
+          "browser_cpu_seconds": 4.39,
+          "browser_peak_rss_bytes": 2906660864
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.44,
+           "user": 0.29,
+           "sys": 0.14
+          },
+          "browser_cpu_seconds": 1.79,
+          "browser_peak_rss_bytes": 2919239680
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.16,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.31,
+          "status": 0,
+          "guest": {
+           "real": 2.09,
+           "user": 1.61,
+           "sys": 0.46
+          },
+          "browser_cpu_seconds": 6.83,
+          "browser_peak_rss_bytes": 3093389312
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.9,
+           "sys": 0.26
+          },
+          "browser_cpu_seconds": 4.2,
+          "browser_peak_rss_bytes": 3001393152
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "6.1-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.73,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.2,
+          "status": 0,
+          "guest": {
+           "real": 1.25,
+           "user": 0.82,
+           "sys": 0.41
+          },
+          "browser_cpu_seconds": 4.27,
+          "browser_peak_rss_bytes": 2902863872
+         },
+         "warm": {
+          "wall_seconds": 1.34,
+          "status": 0,
+          "guest": {
+           "real": 0.44,
+           "user": 0.27,
+           "sys": 0.15
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2915196928
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.04,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.33,
+          "status": 0,
+          "guest": {
+           "real": 2.07,
+           "user": 1.61,
+           "sys": 0.44
+          },
+          "browser_cpu_seconds": 6.84,
+          "browser_peak_rss_bytes": 3079208960
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.87,
+           "sys": 0.29
+          },
+          "browser_cpu_seconds": 4.19,
+          "browser_peak_rss_bytes": 2985992192
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "612": [
+     {
+      "file": "612-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.92,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.73,
+          "status": 0,
+          "guest": {
+           "real": 1.38,
+           "user": 0.83,
+           "sys": 0.49
+          },
+          "browser_cpu_seconds": 4.75,
+          "browser_peak_rss_bytes": 2915225600
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.48,
+           "user": 0.34,
+           "sys": 0.13
+          },
+          "browser_cpu_seconds": 1.86,
+          "browser_peak_rss_bytes": 2924605440
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.19,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.17,
+           "user": 1.65,
+           "sys": 0.48
+          },
+          "browser_cpu_seconds": 7.13,
+          "browser_peak_rss_bytes": 3043381248
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.85,
+           "sys": 0.31
+          },
+          "browser_cpu_seconds": 4.2,
+          "browser_peak_rss_bytes": 2966859776
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "612-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.01,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.46,
+          "status": 0,
+          "guest": {
+           "real": 1.32,
+           "user": 0.79,
+           "sys": 0.48
+          },
+          "browser_cpu_seconds": 4.54,
+          "browser_peak_rss_bytes": 2916929536
+         },
+         "warm": {
+          "wall_seconds": 1.34,
+          "status": 0,
+          "guest": {
+           "real": 0.44,
+           "user": 0.28,
+           "sys": 0.14
+          },
+          "browser_cpu_seconds": 1.73,
+          "browser_peak_rss_bytes": 2927157248
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.08,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.59,
+          "status": 0,
+          "guest": {
+           "real": 2.14,
+           "user": 1.65,
+           "sys": 0.44
+          },
+          "browser_cpu_seconds": 7.09,
+          "browser_peak_rss_bytes": 3042287616
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.89,
+           "sys": 0.29
+          },
+          "browser_cpu_seconds": 4.21,
+          "browser_peak_rss_bytes": 2964848640
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "612-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.94,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.47,
+          "status": 0,
+          "guest": {
+           "real": 1.32,
+           "user": 0.78,
+           "sys": 0.49
+          },
+          "browser_cpu_seconds": 4.52,
+          "browser_peak_rss_bytes": 2918313984
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.44,
+           "user": 0.27,
+           "sys": 0.15
+          },
+          "browser_cpu_seconds": 1.77,
+          "browser_peak_rss_bytes": 2926686208
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.19,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.6,
+          "status": 0,
+          "guest": {
+           "real": 2.13,
+           "user": 1.65,
+           "sys": 0.44
+          },
+          "browser_cpu_seconds": 7.02,
+          "browser_peak_rss_bytes": 3101986816
+         },
+         "warm": {
+          "wall_seconds": 3.2,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.85,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.18,
+          "browser_peak_rss_bytes": 3011661824
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "control": [
+     {
+      "file": "control-exec-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.16,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.46,
+           "user": 0.8,
+           "sys": 0.55
+          },
+          "browser_cpu_seconds": 4.97,
+          "browser_peak_rss_bytes": 2921390080
+         },
+         "warm": {
+          "wall_seconds": 1.34,
+          "status": 0,
+          "guest": {
+           "real": 0.48,
+           "user": 0.26,
+           "sys": 0.21
+          },
+          "browser_cpu_seconds": 1.87,
+          "browser_peak_rss_bytes": 2933039104
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.37,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.83,
+          "status": 0,
+          "guest": {
+           "real": 2.22,
+           "user": 1.58,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 7.36,
+          "browser_peak_rss_bytes": 3105468416
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.19,
+           "user": 0.79,
+           "sys": 0.38
+          },
+          "browser_cpu_seconds": 4.27,
+          "browser_peak_rss_bytes": 3024498688
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-exec-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.05,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.99,
+          "status": 0,
+          "guest": {
+           "real": 1.46,
+           "user": 0.84,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 5.02,
+          "browser_peak_rss_bytes": 2928857088
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.27,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.83,
+          "browser_peak_rss_bytes": 2938568704
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.24,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.84,
+          "status": 0,
+          "guest": {
+           "real": 2.22,
+           "user": 1.6,
+           "sys": 0.54
+          },
+          "browser_cpu_seconds": 7.36,
+          "browser_peak_rss_bytes": 3119484928
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.2,
+           "user": 0.88,
+           "sys": 0.31
+          },
+          "browser_cpu_seconds": 4.28,
+          "browser_peak_rss_bytes": 3034861568
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-exec-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.2,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.98,
+          "status": 0,
+          "guest": {
+           "real": 1.46,
+           "user": 0.84,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 5.04,
+          "browser_peak_rss_bytes": 2924752896
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.46,
+           "user": 0.25,
+           "sys": 0.2
+          },
+          "browser_cpu_seconds": 1.81,
+          "browser_peak_rss_bytes": 2936905728
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.33,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.84,
+          "status": 0,
+          "guest": {
+           "real": 2.22,
+           "user": 1.61,
+           "sys": 0.54
+          },
+          "browser_cpu_seconds": 7.36,
+          "browser_peak_rss_bytes": 3101454336
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.22,
+           "user": 0.89,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.36,
+          "browser_peak_rss_bytes": 3019542528
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "opencode": {
+   "note": "Fresh snapshots from the same native qemu, CPUs 88-91, NUMA node 5, alternating rounds. Wall time is quantised by the 0.25 s runner poll; compare browser CPU. Two rounds; the second 6.1 sample exited with status 4, the known intermittent opencode crash, and is excluded from the medians.",
+   "runs": {
+    "6.1": [
+     {
+      "file": "6.1-opencode-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 8.28,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "cold": {
+          "wall_seconds": 152.96,
+          "status": 0,
+          "guest": {
+           "real": 62.43,
+           "user": 56.49,
+           "sys": 5.57
+          },
+          "browser_cpu_seconds": 198.74,
+          "browser_peak_rss_bytes": 3766575104
+         },
+         "warm": {
+          "wall_seconds": 143.41,
+          "status": 0,
+          "guest": {
+           "real": 58.45,
+           "user": 53.03,
+           "sys": 5.06
+          },
+          "browser_cpu_seconds": 185.33,
+          "browser_peak_rss_bytes": 3768139776
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "6.1-opencode-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 8.23,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "transcript_tail": "BENCH_' '0' $?\r\r\n============================================================\r\r\n\u001b[0m\u001b[2mBun v1.3.13 (bf2e2cec) Linux x64 (baseline)\r\r\nLinux Kernel v6.1.187 | glibc v2.42\r\r\nCPU: sse42 popcnt avx avx2\r\r\nArgs: \"opencode\" \"--user-agent=opencode/1.18.29\" \"--use-system-ca\" \"--\" \"--version\"\r\r\nFeatures: Bun.stderr(2) Bun.stdin(2) Bun.stdout(2) jsc standalone_executable \r\r\nBuiltins: \"bun:ffi\" \"bun:main\" \"bun:sqlite\" \"node:assert\" \"node:async_hooks\" \"node:buffer\" \"node:child_process\" \"node:crypto\" \"node:dns\" \"node:events\" \"node:fs\" \"node:fs/promises\" \"node:http\" \"node:https\" \"node:module\" \"node:net\" \"node:os\" \"node:path\" \"node:process\" \"node:querystring\" \"node:readline\" \"node:stream\" \"node:stream/consumers\" \"node:stream/promises\" \"node:string_decoder\" \"node:timers/promises\" \"node:tty\" \"node:url\" \"node:util\" \"ws\" \"node:v8\" \"node:http2\" \"node:diagnostics_channel\" \r\r\nElapsed: 58542ms | User: 53146ms | Sys: 5340ms\r\r\nRSS: 40.11MB | Peak: 0.18GB | Commit: 40.11MB | Faults: 359 | Machine: 0.52GB\r\r\n\u001b[0m\r\r\n\u001b[31mpanic\u001b[0m\u001b[2m(main thread): \u001b[0mSegmentation fault at address 0x8\r\r\noh no\u001b[0m\u001b[2m:\u001b[0m Bun has crashed. This indicates a bug in Bun, not your code.\r\r\n\r\r\nTo send a redacted crash report to Bun's team,\r\r\nplease file a GitHub issue using the link below:\r\r\n\r\r\n\u001b[36m https://bun.report/1.3.13/Ba1bf2e2ceEugggC4vyi7E+5wQ________mq87jEmsj0jEwgxqzF2uwm3F__msj0jEy14k3F8oxg8F4w+9nEA2AQ\r\r\n\u001b[0m\r\r\nCommand terminated by signal 4\r\r\nreal\t0m 59.09s\r\r\nuser\t0m 53.18s\r\r\nsys\t0m 5.53s\r\r\n\r\r\nEXEC_BENCH_0:4\r\r\n~ # ",
+         "cold": {
+          "wall_seconds": 144.71,
+          "status": 4,
+          "guest": {
+           "real": 59.09,
+           "user": 53.18,
+           "sys": 5.53
+          },
+          "browser_cpu_seconds": 187.64,
+          "browser_peak_rss_bytes": 3754508288,
+          "error": "command exited with status 4"
+         },
+         "warm": {
+          "wall_seconds": 145.07,
+          "status": 0,
+          "guest": {
+           "real": 59.17,
+           "user": 53.37,
+           "sys": 5.44
+          },
+          "browser_cpu_seconds": 187.83,
+          "browser_peak_rss_bytes": 3742523392
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "612": [
+     {
+      "file": "612-opencode-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 9.38,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "cold": {
+          "wall_seconds": 153.86,
+          "status": 0,
+          "guest": {
+           "real": 62.79,
+           "user": 56.5,
+           "sys": 5.8
+          },
+          "browser_cpu_seconds": 200.25,
+          "browser_peak_rss_bytes": 3768299520
+         },
+         "warm": {
+          "wall_seconds": 145.4,
+          "status": 0,
+          "guest": {
+           "real": 59.32,
+           "user": 52.88,
+           "sys": 6.05
+          },
+          "browser_cpu_seconds": 187.56,
+          "browser_peak_rss_bytes": 3779223552
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "612-opencode-r2-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 8.59,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "cold": {
+          "wall_seconds": 152.96,
+          "status": 0,
+          "guest": {
+           "real": 62.37,
+           "user": 56.19,
+           "sys": 5.69
+          },
+          "browser_cpu_seconds": 198.82,
+          "browser_peak_rss_bytes": 3772882944
+         },
+         "warm": {
+          "wall_seconds": 144.62,
+          "status": 0,
+          "guest": {
+           "real": 58.9,
+           "user": 52.8,
+           "sys": 5.7
+          },
+          "browser_cpu_seconds": 186.13,
+          "browser_peak_rss_bytes": 3775705088
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "control": [
+     {
+      "file": "control-opencode-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 8.9,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "cold": {
+          "wall_seconds": 158.05,
+          "status": 0,
+          "guest": {
+           "real": 64.47,
+           "user": 56.99,
+           "sys": 6.75
+          },
+          "browser_cpu_seconds": 205.65,
+          "browser_peak_rss_bytes": 3836706816
+         },
+         "warm": {
+          "wall_seconds": 144.48,
+          "status": 0,
+          "guest": {
+           "real": 58.94,
+           "user": 52.54,
+           "sys": 5.94
+          },
+          "browser_cpu_seconds": 186.39,
+          "browser_peak_rss_bytes": 3811328000
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-opencode-r2-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "opencode",
+         "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "command": "opencode --version",
+         "shell_seconds": 8.44,
+         "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+         "cold": {
+          "wall_seconds": 154.6,
+          "status": 0,
+          "guest": {
+           "real": 63.08,
+           "user": 55.68,
+           "sys": 6.69
+          },
+          "browser_cpu_seconds": 201.06,
+          "browser_peak_rss_bytes": 3730886656
+         },
+         "warm": {
+          "wall_seconds": 141.31,
+          "status": 0,
+          "guest": {
+           "real": 57.64,
+           "user": 51.67,
+           "sys": 5.53
+          },
+          "browser_cpu_seconds": 182.39,
+          "browser_peak_rss_bytes": 3802013696
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "nomitig": {
+   "note": "Fresh snapshots from the same native qemu, CPUs 88-91, NUMA node 5, alternating rounds. Wall time is quantised by the 0.25 s runner poll; compare browser CPU.",
+   "runs": {
+    "control": [
+     {
+      "file": "control-nomitig-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.18,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.44,
+           "user": 0.78,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 4.87,
+          "browser_peak_rss_bytes": 2922225664
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.24,
+           "sys": 0.19
+          },
+          "browser_cpu_seconds": 1.77,
+          "browser_peak_rss_bytes": 2932461568
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.17,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.59,
+          "status": 0,
+          "guest": {
+           "real": 2.18,
+           "user": 1.61,
+           "sys": 0.5
+          },
+          "browser_cpu_seconds": 7.13,
+          "browser_peak_rss_bytes": 3108691968
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.81,
+           "sys": 0.34
+          },
+          "browser_cpu_seconds": 4.16,
+          "browser_peak_rss_bytes": 3027103744
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-nomitig-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.96,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.72,
+          "status": 0,
+          "guest": {
+           "real": 1.45,
+           "user": 0.78,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 4.91,
+          "browser_peak_rss_bytes": 2877587456
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.24,
+           "sys": 0.2
+          },
+          "browser_cpu_seconds": 1.76,
+          "browser_peak_rss_bytes": 2887262208
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.11,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.19,
+           "user": 1.51,
+           "sys": 0.6
+          },
+          "browser_cpu_seconds": 7.18,
+          "browser_peak_rss_bytes": 3118116864
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.17,
+           "user": 0.85,
+           "sys": 0.3
+          },
+          "browser_cpu_seconds": 4.17,
+          "browser_peak_rss_bytes": 3031883776
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "control-nomitig-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 6.07,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.73,
+          "status": 0,
+          "guest": {
+           "real": 1.44,
+           "user": 0.82,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 4.9,
+          "browser_peak_rss_bytes": 2872074240
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.23,
+           "sys": 0.2
+          },
+          "browser_cpu_seconds": 1.78,
+          "browser_peak_rss_bytes": 2882928640
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.08,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.2,
+           "user": 1.57,
+           "sys": 0.55
+          },
+          "browser_cpu_seconds": 7.16,
+          "browser_peak_rss_bytes": 3059597312
+         },
+         "warm": {
+          "wall_seconds": 3.2,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.84,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.2,
+          "browser_peak_rss_bytes": 2985877504
+         }
+        }
+       ]
+      }
+     }
+    ],
+    "nomitig": [
+     {
+      "file": "nomitig-nomitig-1.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.97,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.43,
+           "user": 0.73,
+           "sys": 0.59
+          },
+          "browser_cpu_seconds": 4.82,
+          "browser_peak_rss_bytes": 2923212800
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.26,
+           "sys": 0.18
+          },
+          "browser_cpu_seconds": 1.75,
+          "browser_peak_rss_bytes": 2934267904
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.08,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.56,
+          "status": 0,
+          "guest": {
+           "real": 2.17,
+           "user": 1.54,
+           "sys": 0.56
+          },
+          "browser_cpu_seconds": 7.07,
+          "browser_peak_rss_bytes": 3110289408
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.16,
+           "user": 0.83,
+           "sys": 0.32
+          },
+          "browser_cpu_seconds": 4.14,
+          "browser_peak_rss_bytes": 3023126528
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "nomitig-nomitig-2.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.9,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.43,
+           "user": 0.74,
+           "sys": 0.58
+          },
+          "browser_cpu_seconds": 4.84,
+          "browser_peak_rss_bytes": 2919731200
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.27,
+           "sys": 0.17
+          },
+          "browser_cpu_seconds": 1.75,
+          "browser_peak_rss_bytes": 2930823168
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.04,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.18,
+           "user": 1.62,
+           "sys": 0.49
+          },
+          "browser_cpu_seconds": 7.09,
+          "browser_peak_rss_bytes": 3053948928
+         },
+         "warm": {
+          "wall_seconds": 3.19,
+          "status": 0,
+          "guest": {
+           "real": 1.16,
+           "user": 0.83,
+           "sys": 0.31
+          },
+          "browser_cpu_seconds": 4.15,
+          "browser_peak_rss_bytes": 2979876864
+         }
+        }
+       ]
+      }
+     },
+     {
+      "file": "nomitig-nomitig-3.json",
+      "data": {
+       "engine": "site",
+       "results": [
+        {
+         "name": "jujutsu",
+         "spec": "pkg=jujutsu",
+         "command": "jj --version",
+         "shell_seconds": 5.93,
+         "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+         "cold": {
+          "wall_seconds": 3.71,
+          "status": 0,
+          "guest": {
+           "real": 1.42,
+           "user": 0.78,
+           "sys": 0.53
+          },
+          "browser_cpu_seconds": 4.8,
+          "browser_peak_rss_bytes": 2921992192
+         },
+         "warm": {
+          "wall_seconds": 1.33,
+          "status": 0,
+          "guest": {
+           "real": 0.45,
+           "user": 0.27,
+           "sys": 0.16
+          },
+          "browser_cpu_seconds": 1.74,
+          "browser_peak_rss_bytes": 2931712000
+         }
+        },
+        {
+         "name": "python",
+         "spec": "pkg=python3",
+         "command": "python3 -c 'print(1)'",
+         "shell_seconds": 8.04,
+         "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+         "cold": {
+          "wall_seconds": 5.57,
+          "status": 0,
+          "guest": {
+           "real": 2.17,
+           "user": 1.58,
+           "sys": 0.52
+          },
+          "browser_cpu_seconds": 7.15,
+          "browser_peak_rss_bytes": 3102769152
+         },
+         "warm": {
+          "wall_seconds": 3.18,
+          "status": 0,
+          "guest": {
+           "real": 1.18,
+           "user": 0.88,
+           "sys": 0.27
+          },
+          "browser_cpu_seconds": 4.12,
+          "browser_peak_rss_bytes": 3015819264
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ }
+}
