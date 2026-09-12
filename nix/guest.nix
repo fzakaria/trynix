@@ -60,10 +60,21 @@ let
     # reason the initramfs below is built reproducibly: the snapshot is
     # pinned to the hash of this image, and a builder that cannot
     # reproduce it byte for byte fails checks.snapshot. Pin them.
+    #
+    # The fourth string is subtler: stdenv links everything with
+    # `-rpath $out/lib` (NIX_LDFLAGS), the vDSO included, and the vDSO
+    # is embedded in the kernel's read-only data. Left alone, the image
+    # carried its own store path, so any edit to this file or the config
+    # fragment, a comment included, produced a different bzImage from an
+    # identical .config and failed the pin check. The kernel never loads
+    # the vDSO through ld.so, so the rpath is dead weight; NIX_NO_SELF_RPATH
+    # keeps stdenv from adding it, and leaves the wrapper's inferred rpaths
+    # (objtool needs libelf) alone.
     env = {
       KBUILD_BUILD_TIMESTAMP = "Thu Jan  1 00:00:00 UTC 1970";
       KBUILD_BUILD_USER = "trynix";
       KBUILD_BUILD_HOST = "trynix";
+      NIX_NO_SELF_RPATH = "1";
     };
 
     configurePhase = ''
