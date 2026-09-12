@@ -76,3 +76,23 @@ class StoreRoot(unittest.TestCase):
     def test_nothing_resolved(self):
         bench = load()
         self.assertIsNone(bench.store_root("sh: hello: not found\r\n"))
+
+
+class CommandError(unittest.TestCase):
+    """Failed commands must not be recorded as successful benchmark samples."""
+
+    def test_nonzero_exit_is_an_error(self):
+        """Reject a completed command whose exit status reports failure."""
+        bench = load()
+        signal_exit = 4
+        self.assertEqual(bench.command_error(signal_exit), "command exited with status 4")
+
+    def test_timeout_is_an_error(self):
+        """Keep a missing completion marker classified as a timeout."""
+        bench = load()
+        self.assertEqual(bench.command_error(None), "timed out")
+
+    def test_success_has_no_error(self):
+        """Allow a completed command with a zero exit status."""
+        bench = load()
+        self.assertIsNone(bench.command_error(0))

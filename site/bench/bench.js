@@ -56,6 +56,10 @@ const MILESTONES = [
     label:
       "a jump caches its successor, calls inside a batch go direct, 64-bit multiplies inline",
   },
+  {
+    tag: "engine-20260912-2220",
+    label: "the guest kernel moves from Linux 6.1 to 7.2.5",
+  },
 ];
 
 // The suite exec-bench runs, in the order the charts show them.
@@ -596,6 +600,13 @@ function describeRunner(records) {
       `every instruction-class point is the median of ${probeRuns ?? "several"} probe runs; every package point is one run, cold then warm, in a fresh guest`,
     ],
     ["CPU", `${runner.cpu}, ${runner.cores} hardware threads`],
+    [
+      "latest run placement",
+      runner.cpu_affinity
+        ? `CPUs ${runner.cpu_affinity.join(", ")}; NUMA memory node ${runner.memory_node}`
+        : null,
+    ],
+    ["latest run notes", latest.notes],
     [
       "memory",
       typeof runner.memory_gib === "number" ? `${runner.memory_gib} GiB` : null,

@@ -393,3 +393,51 @@ binary; 2.4x does not change two orders of magnitude. The native service
 already sandboxes the closure with bubblewrap and returns in under a
 second. The browser engine is the zero-install demo, and this patch makes
 that demo 2.4x faster on the workload that hurt most.
+
+## Linux 7.2.5 comparison
+
+On September 12, 2026, we measured `engine-20260910-0209` (Linux
+6.1.187) and `engine-20260912-2220` (Linux 7.2.5) sequentially on
+leviathan. Both used the same Wasm engine, Chromium 152.0.7977.75,
+package paths, and browser page. The guest kernel and resume snapshot
+changed. The new guest also disables 9p negative dentry caching so
+packages added after boot become visible immediately.
+
+Both runs used `numactl --physcpubind=88-91 --membind=5`: four physical
+cores on socket 1, with local memory. CPU affinity restricts placement;
+it does not reserve cores or isolate shared caches and memory bandwidth.
+The baseline's SMT siblings (216-219) averaged below 0.3% busy each,
+with no five-second sample above 1.2%. An earlier run overlapped a Rust
+build and was discarded.
+
+| Package | 6.1 cold | 7.2.5 cold | 6.1 warm | 7.2.5 warm |
+| ------- | -------: | ---------: | -------: | ---------: |
+| hello   |   1.35 s |     1.34 s |   0.55 s |     0.54 s |
+| ripgrep |   1.08 s |     1.33 s |   0.54 s |     0.54 s |
+| jujutsu |   3.20 s |     3.97 s |   1.34 s |     1.33 s |
+| python  |   5.32 s |     5.84 s |   3.18 s |     3.19 s |
+
+Each package has one cold and one warm sample. Warm times are within
+0.01 seconds; cold jujutsu and Python took longer in this pair. The
+runner polls every 0.25 seconds, which limits interpretation of small
+wall-time differences. These samples do not establish the variance or
+prove that the kernel causes a repeatable slowdown.
+
+Instruction-class results are medians of three runs. Guest-clock ALU
+and memory timings remain close, while page faults increase from
+95.94 to 128.39 microseconds per iteration and syscalls decrease from
+4.14 to 3.21 microseconds. Guest/host clock ratios differ (0.922 versus
+0.880); use the recorded host-clock throughput when comparing browser
+performance.
+
+Opencode succeeded on Linux 7.2.5: 189.65 seconds cold and 171.39 seconds
+warm. Both timings are included on the benchmark page. The baseline
+exited with status 4 and 5, so its elapsed times cannot serve as
+successful execution measurements. The known intermittent crash above remains unresolved;
+we did not capture enough baseline output to identify these failures as
+the same crash. Previous published opencode timings remain unchanged.
+
+The [paired measurements](../experiments/linux-7.2.5-results.json)
+retain the pinned baseline and candidate data. The benchmark page adds
+the new kernel's five successful package results and instruction-class
+measurements, and reports the CPU affinity in its method notes.

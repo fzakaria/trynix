@@ -1,0 +1,721 @@
+{
+  "description": "Sequential comparison on the same four physical cores. Failed baseline opencode measurements are omitted; historical benchmark data is unchanged.",
+  "records": [
+    {
+      "runner": {
+        "host": "leviathan",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
+        "cores": 256,
+        "memory_gib": 251,
+        "kernel": "6.18.44",
+        "browser": "Chromium 152.0.7977.75",
+        "cpu_affinity": [
+          88,
+          89,
+          90,
+          91
+        ],
+        "memory_node": 5
+      },
+      "probe": "/nix/store/wbsxcp5j5qxv9fhmiw47vp8san370682-trynix-emubench-static-x86_64-unknown-linux-musl-1",
+      "measured": "2026-09-12T23:16:27+00:00",
+      "commit": "d7347edb1351fbd52ccaf779e83b57fa01039b48",
+      "date": "2026-09-09T19:11:26-07:00",
+      "subject": "Let the resumed machine load its own stream",
+      "tag": "engine-20260910-0209",
+      "emubench": {
+        "runs": 3,
+        "failed_runs": 0,
+        "clock_ratio": 0.922,
+        "host_seconds": 9.6,
+        "rows": {
+          "alu": {
+            "mips": 1250.5,
+            "ns_per_iter": 4.0,
+            "mips_host": 1152.9396482294335,
+            "runs": 3
+          },
+          "alu2": {
+            "mips": 234.6,
+            "ns_per_iter": 25.6,
+            "mips_host": 216.2971943019793,
+            "runs": 3
+          },
+          "alu4": {
+            "mips": 217.2,
+            "ns_per_iter": 36.8,
+            "mips_host": 199.2830015266449,
+            "runs": 3
+          },
+          "call": {
+            "mips": 84.5,
+            "ns_per_iter": 71.0,
+            "mips_host": 77.90755719743073,
+            "runs": 3
+          },
+          "indirect": {
+            "mips": 137.2,
+            "ns_per_iter": 72.9,
+            "mips_host": 125.8822643160943,
+            "runs": 3
+          },
+          "mem": {
+            "mips": 451.8,
+            "ns_per_iter": 13.3,
+            "mips_host": 415.72210106889366,
+            "runs": 3
+          },
+          "memstride": {
+            "mips": 11.6,
+            "ns_per_iter": 518.5,
+            "mips_host": 10.695001934795224,
+            "runs": 3
+          },
+          "syscall": {
+            "mips": 0.2,
+            "ns_per_iter": 4144.7,
+            "mips_host": 0.1843965850826763,
+            "runs": 3
+          },
+          "pagefault": {
+            "mips": 0.0,
+            "ns_per_iter": 95943.4,
+            "mips_host": 0.0,
+            "runs": 3
+          },
+          "cold50k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 30557.2,
+            "mips_host": 0.2765948776240144,
+            "runs": 3
+          },
+          "cold50k/p2": {
+            "mips": 33.3,
+            "ns_per_iter": 240.4,
+            "mips_host": 30.7020314162656,
+            "runs": 3
+          },
+          "cold50k/p3": {
+            "mips": 33.8,
+            "ns_per_iter": 236.8,
+            "mips_host": 31.351225832326314,
+            "runs": 3
+          },
+          "cold2k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 29622.4,
+            "mips_host": 0.27525276453956476,
+            "runs": 3
+          },
+          "cold2k/p2": {
+            "mips": 35.2,
+            "ns_per_iter": 227.5,
+            "mips_host": 32.45379897455103,
+            "runs": 3
+          },
+          "cold2k/p3": {
+            "mips": 41.6,
+            "ns_per_iter": 192.5,
+            "mips_host": 38.16838334948632,
+            "runs": 3
+          },
+          "cold2k/p4": {
+            "mips": 42.7,
+            "ns_per_iter": 187.5,
+            "mips_host": 39.63639809369733,
+            "runs": 3
+          },
+          "cold2k/p100": {
+            "mips": 58.2,
+            "ns_per_iter": 137.5,
+            "mips_host": 54.14366004277126,
+            "runs": 3
+          },
+          "cold2k/p200": {
+            "mips": 58.2,
+            "ns_per_iter": 137.5,
+            "mips_host": 53.659406259058805,
+            "runs": 3
+          },
+          "cold2k/p300": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.701949912922956,
+            "runs": 3
+          },
+          "cold2k/p400": {
+            "mips": 60.3,
+            "ns_per_iter": 132.6,
+            "mips_host": 55.325805672452525,
+            "runs": 3
+          },
+          "cold2k/p500": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 55.68776869496824,
+            "runs": 3
+          },
+          "cold2k/p600": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 55.166993823648376,
+            "runs": 3
+          },
+          "cold2k/p700": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.42681673061078,
+            "runs": 3
+          },
+          "cold2k/p800": {
+            "mips": 58.2,
+            "ns_per_iter": 137.6,
+            "mips_host": 53.659406259058805,
+            "runs": 3
+          },
+          "cold2k/p900": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 57.21366138540262,
+            "runs": 3
+          },
+          "cold2k/p1000": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.42681673061078,
+            "runs": 3
+          },
+          "cold2k/p1100": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 55.68776869496824,
+            "runs": 3
+          },
+          "cold2k/p1200": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 56.19032760452549,
+            "runs": 3
+          },
+          "cold2k/p1300": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.701949912922956,
+            "runs": 3
+          },
+          "cold2k/p1400": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 55.68776869496824,
+            "runs": 3
+          },
+          "cold2k/p1500": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.42681673061078,
+            "runs": 3
+          },
+          "cold2k/p1600": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 56.701949912922956,
+            "runs": 3
+          }
+        }
+      },
+      "exec": {
+        "results": [
+          {
+            "name": "hello",
+            "spec": "pkg=hello",
+            "command": "hello",
+            "shell_seconds": 5.28,
+            "resolved": "/nix/store/xl1h9i29pgq2q5cszjhm5wpfxfbbqwyi-hello-2.12.3",
+            "cold": {
+              "wall_seconds": 1.35,
+              "status": 0,
+              "guest": {
+                "real": 0.97,
+                "user": 0.41,
+                "sys": 0.53
+              },
+              "browser_cpu_seconds": 1.49,
+              "browser_peak_rss_bytes": 2786660352
+            },
+            "warm": {
+              "wall_seconds": 0.55,
+              "status": 0,
+              "guest": {
+                "real": 0.39,
+                "user": 0.18,
+                "sys": 0.19
+              },
+              "browser_cpu_seconds": 0.71,
+              "browser_peak_rss_bytes": 2793435136
+            }
+          },
+          {
+            "name": "ripgrep",
+            "spec": "pkg=ripgrep",
+            "command": "rg --version",
+            "shell_seconds": 5.43,
+            "resolved": "/nix/store/hkclq7d0j10l7gk1v2hpif398dvnq6lz-ripgrep-15.2.0",
+            "cold": {
+              "wall_seconds": 1.08,
+              "status": 0,
+              "guest": {
+                "real": 0.83,
+                "user": 0.19,
+                "sys": 0.61
+              },
+              "browser_cpu_seconds": 1.3,
+              "browser_peak_rss_bytes": 2878865408
+            },
+            "warm": {
+              "wall_seconds": 0.54,
+              "status": 0,
+              "guest": {
+                "real": 0.25,
+                "user": 0.05,
+                "sys": 0.19
+              },
+              "browser_cpu_seconds": 0.51,
+              "browser_peak_rss_bytes": 2883665920
+            }
+          },
+          {
+            "name": "jujutsu",
+            "spec": "pkg=jujutsu",
+            "command": "jj --version",
+            "shell_seconds": 5.8,
+            "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+            "cold": {
+              "wall_seconds": 3.2,
+              "status": 0,
+              "guest": {
+                "real": 3.02,
+                "user": 2.0,
+                "sys": 0.96
+              },
+              "browser_cpu_seconds": 4.23,
+              "browser_peak_rss_bytes": 2931154944
+            },
+            "warm": {
+              "wall_seconds": 1.34,
+              "status": 0,
+              "guest": {
+                "real": 1.08,
+                "user": 0.61,
+                "sys": 0.44
+              },
+              "browser_cpu_seconds": 1.7,
+              "browser_peak_rss_bytes": 2942402560
+            }
+          },
+          {
+            "name": "python",
+            "spec": "pkg=python3",
+            "command": "python3 -c 'print(1)'",
+            "shell_seconds": 7.96,
+            "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+            "cold": {
+              "wall_seconds": 5.32,
+              "status": 0,
+              "guest": {
+                "real": 5.11,
+                "user": 4.0,
+                "sys": 1.03
+              },
+              "browser_cpu_seconds": 6.89,
+              "browser_peak_rss_bytes": 3107909632
+            },
+            "warm": {
+              "wall_seconds": 3.18,
+              "status": 0,
+              "guest": {
+                "real": 2.85,
+                "user": 2.08,
+                "sys": 0.73
+              },
+              "browser_cpu_seconds": 4.1,
+              "browser_peak_rss_bytes": 3011174400
+            }
+          }
+        ]
+      }
+    },
+    {
+      "runner": {
+        "host": "leviathan",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
+        "cores": 256,
+        "memory_gib": 251,
+        "kernel": "6.18.44",
+        "browser": "Chromium 152.0.7977.75",
+        "cpu_affinity": [
+          88,
+          89,
+          90,
+          91
+        ],
+        "memory_node": 5
+      },
+      "probe": "/nix/store/wbsxcp5j5qxv9fhmiw47vp8san370682-trynix-emubench-static-x86_64-unknown-linux-musl-1",
+      "measured": "2026-09-12T23:23:47+00:00",
+      "commit": "4a8e6500e695400abee7f3f4515db2f4876c36ed",
+      "date": "2026-09-12T15:21:36-07:00",
+      "subject": "Upgrade the guest to Linux 7.2.5",
+      "tag": "engine-20260912-2220",
+      "emubench": {
+        "runs": 3,
+        "failed_runs": 0,
+        "clock_ratio": 0.88,
+        "host_seconds": 10.5,
+        "rows": {
+          "alu": {
+            "mips": 1308.4,
+            "ns_per_iter": 3.8,
+            "mips_host": 1155.4240691963028,
+            "runs": 3
+          },
+          "alu2": {
+            "mips": 242.9,
+            "ns_per_iter": 24.7,
+            "mips_host": 193.45947979993588,
+            "runs": 3
+          },
+          "alu4": {
+            "mips": 215.2,
+            "ns_per_iter": 37.2,
+            "mips_host": 190.03917738539005,
+            "runs": 3
+          },
+          "call": {
+            "mips": 83.8,
+            "ns_per_iter": 71.6,
+            "mips_host": 73.73732022156166,
+            "runs": 3
+          },
+          "indirect": {
+            "mips": 134.1,
+            "ns_per_iter": 74.6,
+            "mips_host": 115.57946509440855,
+            "runs": 3
+          },
+          "mem": {
+            "mips": 452.9,
+            "ns_per_iter": 13.2,
+            "mips_host": 391.59800502306456,
+            "runs": 3
+          },
+          "memstride": {
+            "mips": 11.4,
+            "ns_per_iter": 525.9,
+            "mips_host": 9.58764208165185,
+            "runs": 3
+          },
+          "syscall": {
+            "mips": 0.3,
+            "ns_per_iter": 3214.3,
+            "mips_host": 0.26388005729317016,
+            "runs": 3
+          },
+          "pagefault": {
+            "mips": 0.0,
+            "ns_per_iter": 128389.6,
+            "mips_host": 0.0,
+            "runs": 3
+          },
+          "cold50k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 30425.7,
+            "mips_host": 0.26388005729317016,
+            "runs": 3
+          },
+          "cold50k/p2": {
+            "mips": 34.0,
+            "ns_per_iter": 235.4,
+            "mips_host": 29.906406493225955,
+            "runs": 3
+          },
+          "cold50k/p3": {
+            "mips": 35.0,
+            "ns_per_iter": 228.4,
+            "mips_host": 30.46631793585482,
+            "runs": 3
+          },
+          "cold2k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 28879.9,
+            "mips_host": 0.23640669629320066,
+            "runs": 3
+          },
+          "cold2k/p2": {
+            "mips": 38.1,
+            "ns_per_iter": 210.0,
+            "mips_host": 33.512767276232616,
+            "runs": 3
+          },
+          "cold2k/p3": {
+            "mips": 43.8,
+            "ns_per_iter": 182.5,
+            "mips_host": 36.59136794465294,
+            "runs": 3
+          },
+          "cold2k/p4": {
+            "mips": 47.8,
+            "ns_per_iter": 167.5,
+            "mips_host": 37.667466942716636,
+            "runs": 3
+          },
+          "cold2k/p100": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 53.0398915159272,
+            "runs": 3
+          },
+          "cold2k/p200": {
+            "mips": 60.3,
+            "ns_per_iter": 132.6,
+            "mips_host": 53.24982526179842,
+            "runs": 3
+          },
+          "cold2k/p300": {
+            "mips": 60.3,
+            "ns_per_iter": 132.6,
+            "mips_host": 53.0398915159272,
+            "runs": 3
+          },
+          "cold2k/p400": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 54.09541174509989,
+            "runs": 3
+          },
+          "cold2k/p500": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 47.51774595493333,
+            "runs": 3
+          },
+          "cold2k/p600": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 53.33813342972844,
+            "runs": 3
+          },
+          "cold2k/p700": {
+            "mips": 58.2,
+            "ns_per_iter": 137.6,
+            "mips_host": 47.51774595493333,
+            "runs": 3
+          },
+          "cold2k/p800": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 52.160291324949974,
+            "runs": 3
+          },
+          "cold2k/p900": {
+            "mips": 58.2,
+            "ns_per_iter": 137.5,
+            "mips_host": 51.39535373526813,
+            "runs": 3
+          },
+          "cold2k/p1000": {
+            "mips": 58.2,
+            "ns_per_iter": 137.5,
+            "mips_host": 45.862899080880936,
+            "runs": 3
+          },
+          "cold2k/p1100": {
+            "mips": 60.4,
+            "ns_per_iter": 132.4,
+            "mips_host": 53.33813342972844,
+            "runs": 3
+          },
+          "cold2k/p1200": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 53.24982526179842,
+            "runs": 3
+          },
+          "cold2k/p1300": {
+            "mips": 55.2,
+            "ns_per_iter": 145.0,
+            "mips_host": 48.46337274010614,
+            "runs": 3
+          },
+          "cold2k/p1400": {
+            "mips": 57.1,
+            "ns_per_iter": 140.0,
+            "mips_host": 48.46337274010614,
+            "runs": 3
+          },
+          "cold2k/p1500": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 47.7622903700638,
+            "runs": 3
+          },
+          "cold2k/p1600": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 49.48780175737667,
+            "runs": 3
+          }
+        }
+      },
+      "exec": {
+        "results": [
+          {
+            "name": "hello",
+            "spec": "pkg=hello",
+            "command": "hello",
+            "shell_seconds": 5.3,
+            "resolved": "/nix/store/xl1h9i29pgq2q5cszjhm5wpfxfbbqwyi-hello-2.12.3",
+            "cold": {
+              "wall_seconds": 1.34,
+              "status": 0,
+              "guest": {
+                "real": 1.11,
+                "user": 0.41,
+                "sys": 0.58
+              },
+              "browser_cpu_seconds": 1.61,
+              "browser_peak_rss_bytes": 2879201280
+            },
+            "warm": {
+              "wall_seconds": 0.54,
+              "status": 0,
+              "guest": {
+                "real": 0.4,
+                "user": 0.17,
+                "sys": 0.2
+              },
+              "browser_cpu_seconds": 0.71,
+              "browser_peak_rss_bytes": 2884960256
+            }
+          },
+          {
+            "name": "ripgrep",
+            "spec": "pkg=ripgrep",
+            "command": "rg --version",
+            "shell_seconds": 5.72,
+            "resolved": "/nix/store/hkclq7d0j10l7gk1v2hpif398dvnq6lz-ripgrep-15.2.0",
+            "cold": {
+              "wall_seconds": 1.33,
+              "status": 0,
+              "guest": {
+                "real": 1.01,
+                "user": 0.31,
+                "sys": 0.58
+              },
+              "browser_cpu_seconds": 1.53,
+              "browser_peak_rss_bytes": 2897444864
+            },
+            "warm": {
+              "wall_seconds": 0.54,
+              "status": 0,
+              "guest": {
+                "real": 0.27,
+                "user": 0.06,
+                "sys": 0.19
+              },
+              "browser_cpu_seconds": 0.55,
+              "browser_peak_rss_bytes": 2903183360
+            }
+          },
+          {
+            "name": "jujutsu",
+            "spec": "pkg=jujutsu",
+            "command": "jj --version",
+            "shell_seconds": 6.25,
+            "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+            "cold": {
+              "wall_seconds": 3.97,
+              "status": 0,
+              "guest": {
+                "real": 3.56,
+                "user": 1.87,
+                "sys": 1.41
+              },
+              "browser_cpu_seconds": 4.93,
+              "browser_peak_rss_bytes": 2949255168
+            },
+            "warm": {
+              "wall_seconds": 1.33,
+              "status": 0,
+              "guest": {
+                "real": 1.11,
+                "user": 0.61,
+                "sys": 0.47
+              },
+              "browser_cpu_seconds": 1.8,
+              "browser_peak_rss_bytes": 2960257024
+            }
+          },
+          {
+            "name": "python",
+            "spec": "pkg=python3",
+            "command": "python3 -c 'print(1)'",
+            "shell_seconds": 8.12,
+            "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+            "cold": {
+              "wall_seconds": 5.84,
+              "status": 0,
+              "guest": {
+                "real": 5.46,
+                "user": 4.1,
+                "sys": 1.18
+              },
+              "browser_cpu_seconds": 7.29,
+              "browser_peak_rss_bytes": 3135328256
+            },
+            "warm": {
+              "wall_seconds": 3.19,
+              "status": 0,
+              "guest": {
+                "real": 2.91,
+                "user": 1.97,
+                "sys": 0.89
+              },
+              "browser_cpu_seconds": 4.22,
+              "browser_peak_rss_bytes": 3049431040
+            }
+          },
+          {
+            "name": "opencode",
+            "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+            "command": "opencode --version",
+            "shell_seconds": 8.54,
+            "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+            "cold": {
+              "wall_seconds": 189.65,
+              "status": 0,
+              "guest": {
+                "real": 189.26,
+                "user": 167.89,
+                "sys": 18.66
+              },
+              "browser_cpu_seconds": 244.98,
+              "browser_peak_rss_bytes": 3853025280
+            },
+            "warm": {
+              "wall_seconds": 171.39,
+              "status": 0,
+              "guest": {
+                "real": 170.99,
+                "user": 153.65,
+                "sys": 15.53
+              },
+              "browser_cpu_seconds": 218.63,
+              "browser_peak_rss_bytes": 3854004224
+            }
+          }
+        ]
+      },
+      "notes": "Pinned to CPUs 88-91 and NUMA memory node 5."
+    }
+  ]
+}

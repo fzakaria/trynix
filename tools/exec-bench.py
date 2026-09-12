@@ -70,6 +70,8 @@ COMMAND_LIMIT_SECONDS = 1800
 POLL_SECONDS = 0.25
 KIB = 1024
 CLOCK_TICKS = os.sysconf("SC_CLK_TCK")
+SUCCESS_STATUS = 0
+TRANSCRIPT_TAIL_LENGTH = 1500
 
 # busybox time prints "real\t0m 0.12s" (or "0m0.123s" in other builds)
 TIME_LINE = re.compile(r"^(real|user|sys)\s+(\d+)m\s*([\d.]+)s", re.MULTILINE)
@@ -89,6 +91,15 @@ def completion(transcript, marker):
         return None
     match = re.search(r"(?:^|\n)" + re.escape(marker) + r":(\d+)\r*\n", transcript)
     return int(match[1]) if match else None
+
+
+def command_error(status):
+    """Reject timeouts and failed exits before publishing a timing sample."""
+    if status is None:
+        return "timed out"
+    if status != SUCCESS_STATUS:
+        return f"command exited with status {status}"
+    return None
 
 
 STORE_PATH = re.compile(r"(/nix/store/[a-z0-9]{32}-[^/\s]+)")
@@ -203,12 +214,14 @@ def run_entry(entry, base, browser_binary, runs_dir):
                 "browser_cpu_seconds": round(cpu_after - cpu_before, 2),
                 "browser_peak_rss_bytes": peak_rss,
             }
-            if status is None:
-                measurement["error"] = "timed out"
-                result[label] = measurement
-                result["transcript_tail"] = said[-1500:]
-                break
+            # Report a failed benchmark run and preserve the guest's diagnosis.
+            error = command_error(status)
+            if error is not None:
+                measurement["error"] = error
+                result["transcript_tail"] = said[-TRANSCRIPT_TAIL_LENGTH:]
             result[label] = measurement
+            if status is None:
+                break
             print(
                 f"  {entry['name']:9s} {label:4s} wall {wall:8.2f}s"
                 f" guest user {measurement['guest'].get('user', float('nan')):7.2f}s"
