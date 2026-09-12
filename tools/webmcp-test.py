@@ -29,6 +29,7 @@ import shlex
 import sys
 import tempfile
 import time
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -61,6 +62,18 @@ COMMAND_NOT_FOUND = 127
 # takes them and puts them in the link. Nothing is fetched from it.
 CACHE_URL = "https://trynix.cachix.org"
 CACHE_KEY = "trynix.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
+
+# A well-formed store path no cache holds, and what the console veil
+# says while a boot is still downloading.
+MISSING_PATH = "/nix/store/00000000000000000000000000000000-missing"
+FETCHING_NOTE = "fetching…"
+# The status line's tail when boot() has caught a failure, and how the
+# boot tool's answer opens when the page already knows the path is
+# missing and refuses to start.
+FAILED_STATUS = "see the debug log"
+REFUSAL = "the boot did not start: no configured cache holds"
+# How long a doomed boot and the cache probe are given to answer.
+MISSING_LIMIT_SECONDS = 60
 
 # How long the page is given to register its tools, and a boot to
 # finish. The wait is a poll rather than a sleep: a host that cannot set
@@ -163,6 +176,81 @@ def call(browser, name, timeout_ms=30000, **args):
     return resolved(browser, expression, timeout_ms)
 
 
+def await_tools(browser):
+    """Poll until the page has registered its tools; returns their names."""
+    deadline = time.monotonic() + REGISTER_LIMIT_SECONDS
+    names = []
+    while time.monotonic() < deadline and not names:
+        names = (
+            resolved(
+                browser,
+                "document.modelContext.getTools().then((t) => t.map((x) => x.name))",
+            )
+            or []
+        )
+        if not names:
+            time.sleep(REGISTER_POLL_SECONDS)
+    return names
+
+
+def poll(browser, expression):
+    """Evaluate `expression`, awaited, until it is truthy or the limit passes."""
+    deadline = time.monotonic() + MISSING_LIMIT_SECONDS
+    while time.monotonic() < deadline:
+        value = resolved(browser, expression)
+        if value:
+            return value
+        time.sleep(REGISTER_POLL_SECONDS)
+    return None
+
+
+def check_missing_path(browser, checks, base):
+    """A link to a store path no cache holds: the boot fails and says so.
+
+    The link carries boot=1, so the boot starts before the cache probe
+    answers and fails in the closure walk. The veil must stop saying it
+    is fetching. Once the probe has answered, the button is disabled and
+    the boot tool refuses without downloading anything.
+    """
+    print("a link to a missing store path, booting at once")
+    query = urllib.parse.urlencode({"path": MISSING_PATH, "boot": "1"})
+    browser.send("Page.navigate", url=f"{base}/?{query}")
+    await_tools(browser)
+
+    # The boot that raced the probe fails in the walk.
+    failed = poll(
+        browser,
+        f"document.getElementById('status').textContent.includes({json.dumps(FAILED_STATUS)})",
+    )
+    checks.true("the boot failed", failed)
+    checks.true(
+        "the veil no longer says it is fetching",
+        browser.evaluate("document.getElementById('console-note').textContent")
+        != FETCHING_NOTE,
+    )
+    checks.true(
+        "the spinner stopped",
+        browser.evaluate("document.getElementById('console-spinner')?.hidden"),
+    )
+
+    # Once the probe has answered, a second boot is not offered.
+    answered = poll(
+        browser,
+        "document.modelContext.executeTool('page-state', {})"
+        ".then((r) => JSON.parse(r.content[0].text).selection[0].inCache === false)",
+    )
+    checks.true("the probe says no cache holds it", answered)
+    checks.true(
+        "the boot button is disabled",
+        browser.evaluate("document.getElementById('boot-button').disabled"),
+    )
+    # The walk's own error names the missing path too, so only the
+    # refusal's opening tells a refusal from a boot that tried and failed.
+    said = call(browser, "boot")
+    print(f"  {said}")
+    checks.true("the boot tool refuses and says why", said.startswith(REFUSAL))
+
+
 def check_live_addition(browser, checks):
     """Cache missing paths, add figlet, and execute figlet without replacing the VM."""
     print("select-packages, after boot")
@@ -219,22 +307,12 @@ def main():
 
     try:
         browser.send("Page.addScriptToEvaluateOnNewDocument", source=POLYFILL)
-        # No ?boot=1 in the URL: booting is a tool call here, which is
-        # the part a link cannot do for an agent.
-        browser.send("Page.navigate", url=base)
+        check_missing_path(browser, checks, base)
 
-        deadline = time.monotonic() + REGISTER_LIMIT_SECONDS
-        names = []
-        while time.monotonic() < deadline and not names:
-            names = (
-                resolved(
-                    browser,
-                    "document.modelContext.getTools().then((t) => t.map((x) => x.name))",
-                )
-                or []
-            )
-            if not names:
-                time.sleep(REGISTER_POLL_SECONDS)
+        # A fresh page for the rest. No ?boot=1 in the URL: booting is a
+        # tool call here, which is the part a link cannot do for an agent.
+        browser.send("Page.navigate", url=base)
+        names = await_tools(browser)
         print(f"tools registered: {names}")
         checks.equal("the tools", sorted(names or []), EXPECTED_TOOLS)
 

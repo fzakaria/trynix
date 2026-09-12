@@ -64,9 +64,14 @@ const terminalElement = document.getElementById("terminal");
 const keyBarElement = document.getElementById("keybar");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
+const consoleSpinner = document.getElementById("console-spinner");
 const rebootLink = document.getElementById("reboot-link");
 const debugLog = document.getElementById("debug-log");
 const addNote = document.getElementById("add-note");
+
+// What the console veil says once a boot has failed, in place of the
+// progress it was reporting.
+const BOOT_FAILED_NOTE = "boot failed";
 
 // The selection: digest -> { digest, label, attr, version, storePath }.
 // A package chosen any of the three ways lands here in the same shape,
@@ -248,6 +253,31 @@ function chipFor(entry) {
   return chip;
 }
 
+// Selected paths that a configured cache answered for and none holds.
+// A path whose probe is still in flight, or whose caches could not be
+// reached, is not among them: neither proves the boot fails.
+function unheld() {
+  return [...selection.values()].filter((e) => e.held === false);
+}
+
+// Why a selection with unheld paths cannot boot, for the status line
+// and for an agent's boot call.
+function missingNote(missing) {
+  return (
+    `no configured cache holds ${missing.map((e) => e.label).join(", ")}: ` +
+    `the index has the store path, the cache no longer serves its bytes, ` +
+    `so a boot fails on it unless a cache in the Caches lane has it`
+  );
+}
+
+// The button offers a boot only when there is something to boot and no
+// cache has said it lacks any of it. One missing path fails the whole
+// closure walk. Adding a cache reprobes, and removing the chip redraws,
+// so either fix turns the button back on.
+function refreshBootButton() {
+  bootButton.disabled = selection.size === 0 || unheld().length > 0;
+}
+
 // The chips, the status line, and the address bar all describe the same
 // selection, so they are redrawn together.
 function render() {
@@ -258,24 +288,17 @@ function render() {
   // version can leave the selection by its chip as well as by its pill.
   picker?.refresh();
 
-  bootButton.disabled = entries.length === 0;
+  refreshBootButton();
+
   // A path no cache holds is the one thing worth repeating on every
-  // redraw. The boot is still offered, because a cache pasted into the
-  // caches lane may hold what cache.nixos.org has dropped, but the
-  // warning comes before the click rather than after it.
-  const missing = entries.filter((e) => e.held === false);
+  // redraw, next to the button it disables.
+  const missing = unheld();
   const lines = [...notes];
   if (entries.length === 0) {
     lines.push("nothing selected yet");
   }
   if (missing.length > 0) {
-    lines.push(
-      `no configured cache holds ${missing
-        .map((e) => e.label)
-        .join(", ")}: the index has the store path, the cache no longer ` +
-        `serves its bytes, so a boot fails on it unless a cache in the ` +
-        `Caches lane has it`,
-    );
+    lines.push(missingNote(missing));
   }
   status.textContent = lines.join(" · ");
 
@@ -575,6 +598,7 @@ async function boot() {
   bootSection.hidden = false;
   bootButton.disabled = true;
   consoleVeil.hidden = false;
+  consoleSpinner.hidden = false;
   consoleNote.textContent = "fetching…";
   const panel = new ProgressPanel(bootProgress);
 
@@ -737,7 +761,11 @@ async function boot() {
     vmRow.fail(String(err));
     status.textContent = `${err} — see the debug log`;
     document.getElementById("debug").open = true;
-    bootButton.disabled = false;
+    // The veil stays over the empty terminal, and says the boot is over
+    // rather than still fetching.
+    consoleSpinner.hidden = true;
+    consoleNote.textContent = BOOT_FAILED_NOTE;
+    refreshBootButton();
   }
 }
 
@@ -776,7 +804,7 @@ async function addToRunningVM() {
     );
     if (fresh.size === 0) {
       row.done("already there");
-      bootButton.disabled = false;
+      refreshBootButton();
       return;
     }
 
@@ -801,7 +829,7 @@ async function addToRunningVM() {
   } catch (err) {
     row.fail(String(err));
   } finally {
-    bootButton.disabled = false;
+    refreshBootButton();
   }
 }
 
@@ -998,6 +1026,12 @@ const page = {
   // A guest that is already running takes the new paths without a
   // reboot, which is the same thing the button does once it is up.
   async boot() {
+    // The button is disabled for a path no cache holds, so the tool
+    // answers the same way instead of downloading toward a failure.
+    const missing = unheld();
+    if (missing.length > 0) {
+      return `the boot did not start: ${missingNote(missing)}`;
+    }
     if (vmStarted) {
       await addToRunningVM();
       return `added to the running guest; ${mounted.size} paths mounted`;
