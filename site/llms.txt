@@ -1,0 +1,75 @@
+# trynix
+
+> Boot anything nixpkgs ever shipped, in a browser tab. Pick a package
+> and a version from 13 years of nixpkgs history; its closure is fetched
+> from cache.nixos.org into an x86_64 Linux virtual machine running in
+> the page, and you get a shell with the package on PATH. Nothing runs
+> on a server.
+
+Two things are worth knowing if you are driving this page rather than
+reading it. The selection is entirely in the URL, so most of what the
+page does needs no API. The console is not in the DOM, so reading it
+does.
+
+## The URL is the state
+
+Everything selected lives in the query string, so an environment is a
+link you can construct or send:
+
+- `?pkg=ripgrep` newest version of an attribute that the index can boot
+- `?pkg=jujutsu@0.43.0&pkg=hello@2.12.3` attributes at exact versions
+- `?path=/nix/store/<digest>-name` a store path, verbatim
+- `&cache=https://x.cachix.org x-1:<key>` an extra binary cache and the
+  key that vouches for it
+- `&boot=1` start the boot without a click
+
+Repeat `pkg` and `path` for more than one. A package with no version
+takes the newest the index has a build for, which makes such a link
+durable. The page rewrites the address bar as the selection changes, so
+whatever is on screen is always a link.
+
+Booting takes about three seconds on a warm cache and considerably
+longer on a cold one, since the closure is downloaded and unpacked in
+the page.
+
+## Reading the console
+
+ghostty draws the terminal on a canvas. Nothing the guest prints
+reaches the DOM, and there is no accessibility tree for it, so
+screenshotting and reading pixels is the only option left if you do not
+use one of the two interfaces below.
+
+If your browser supports WebMCP, the page registers its operations as
+tools on `document.modelContext`: `page-state`, `search-packages`,
+`list-versions`, `select-packages`, `set-caches`, `boot`,
+`run-command` and `read-console`. Call `getTools()` to read their
+schemas. `run-command` takes a `command` and an optional `timeoutMs`
+and answers with the output and the exit status.
+
+If it does not, the same operations are on `window.trynix` once a guest
+is running, which is what the project's own benchmark harnesses call
+over the DevTools protocol:
+
+- `window.trynix.run(command, { timeoutMs })` resolves to
+  `{ status, output, timedOut }`
+- `window.trynix.transcript()` returns everything the guest has said
+- `window.trynix.type(text)` sends raw bytes, for an interrupt or a
+  partial line
+
+Wait for the boot to finish before typing. The page hides the element
+with id `console-veil` when the guest reaches its prompt, and it sends
+a Ctrl-L to redraw the prompt just before that, which will otherwise
+land in the middle of your first command.
+
+## Docs
+
+- [README](https://github.com/fzakaria/trynix): what it is and how it is
+  put together
+- [Design](https://github.com/fzakaria/trynix/blob/main/docs/design.md):
+  the architecture, the URL format, and what was measured
+- [Driving it from an agent](https://github.com/fzakaria/trynix/blob/main/docs/webmcp.md):
+  the tool list and both interfaces
+- [Performance](https://github.com/fzakaria/trynix/blob/main/docs/performance.md):
+  where a first run's time goes
+- [Benchmarks](https://trynix.dev/bench/): every engine release against
+  the same probes

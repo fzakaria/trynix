@@ -125,6 +125,17 @@
               pkgs.chromium
             ];
 
+          # call the page's WebMCP tools the way an agent would, through a
+          # polyfill, since no headless browser ships the API yet.
+          # The tools directory as a whole, since this imports cpu-test.py
+          webmcp-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "webmcp-test" "${python}/bin/python3 ${./tools}/webmcp-test.py" [
+              pkgs.chromium
+            ];
+
           # run the throughput probe in a real browser and print what each
           # instruction class costs; --engine compares a local engine.
           # The tools directory as a whole, since this imports cpu-test.py

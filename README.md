@@ -89,6 +89,21 @@ and public key to the browser. [action/README.md](action/README.md) has
 the options, the example workflows, and what it costs to give forks a
 preview.
 
+## Driving it from an agent
+
+The selection lives in the query string, so `?pkg=ripgrep@14.1.0&boot=1`
+already boots a package with no API involved. What a link cannot do is
+read the console: ghostty draws the terminal on a canvas, so nothing the
+guest prints is in the DOM.
+
+[`site/js/agent.js`](site/js/agent.js) is the way past that. It types a
+command, waits for it, and returns the output and the exit status. The
+benchmark harnesses in `tools/` call it over CDP as `window.trynix`, and
+[`site/js/webmcp.js`](site/js/webmcp.js) offers the same operations as
+WebMCP tools for an agent driving the browser.
+[docs/webmcp.md](docs/webmcp.md) has the tool list and both
+interfaces.
+
 ## Layout
 
 `site/` is the static site: vanilla ES modules, on the multiverse
@@ -103,7 +118,10 @@ snapshot tool.
 
 `patches/` carries the changes to qemu-wasm the engine is built with.
 `tools/` holds the engine tools, each a flake app (`nix run .#<name>`).
-`tests/` is the node test suite, which runs offline. `action/` is a
+`tests/` is the node test suite, which runs offline.
+[`site/llms.txt`](site/llms.txt) is the same orientation for a program
+that lands on the page: the URL grammar, and the two ways to read the
+guest's console. `action/` is a
 GitHub action other projects install: it names the store paths a pull
 request's flake attribute produces, in whatever cache their workflow
 already pushes to, and comments a link that boots them here
@@ -113,7 +131,7 @@ The docs are [design.md](docs/design.md) for the architecture and what
 was measured, [engine.md](docs/engine.md) for building and publishing
 the engine and the snapshot, and [performance.md](docs/performance.md)
 for where a first run's time goes and which optimisations were dead
-ends. [trynix.dev/bench/](https://trynix.dev/bench/) charts every engine
+ends, and [webmcp.md](docs/webmcp.md) for driving the page from code. [trynix.dev/bench/](https://trynix.dev/bench/) charts every engine
 release against the same probes and packages, and says what moved each
 number.
 

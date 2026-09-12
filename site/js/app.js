@@ -16,8 +16,10 @@ import {
   bootable,
   identify,
   multiverseUrl,
+  searchAttrs,
   versionRowsOf,
 } from "./multiverse.js";
+import { registerTools } from "./webmcp.js";
 import { RangeComplete } from "./complete.js";
 import { readUrl, writeUrl } from "./url.js";
 import {
@@ -944,3 +946,76 @@ if (!STORE_PATH.startsWith("__")) {
   document.getElementById("store-path-footer").textContent = STORE_PATH;
   document.getElementById("store").hidden = false;
 }
+
+// ---------- the tools an agent drives this page with ----------
+
+// The same operations the three lanes and the boot button perform,
+// named and given argument schemas so an agent can call them instead
+// of clicking (webmcp.js). Nothing new happens here: every one of
+// these is the function the reader's click already runs.
+const page = {
+  state: () => ({
+    booted: vmStarted,
+    bootMode,
+    closurePaths: mounted.size,
+    selection: [...selection.values()].map((entry) => ({
+      attr: entry.attr ?? entry.named?.attr ?? null,
+      version: entry.version ?? entry.named?.version ?? null,
+      storePath: entry.storePath ?? null,
+      // Whether a configured cache admits to holding it: false is the
+      // one failure worth knowing about before a boot rather than
+      // three seconds into one.
+      inCache: entry.held,
+    })),
+    caches: extraCaches,
+    link: new URL(writeUrl(urlState()), location.href).href,
+  }),
+
+  search: (query, limit) => searchAttrs(query, limit),
+
+  // Trimmed to what a caller choosing a version needs. The full row
+  // carries sizes and a name the picker draws with, and none of that
+  // helps an agent decide.
+  versions: async (attr) =>
+    (await versionRowsOf(attr)).map((row) => ({
+      version: row.version,
+      bootable: bootable(row),
+      closureSize: row.closureSize,
+    })),
+
+  // An attribute named without a version means the newest the index
+  // can boot, which is what restore() reads a missing version as, but
+  // only when it is null rather than absent.
+  select: ({ packages, storePaths }) =>
+    restore({
+      pkgs: packages.map(({ attr, version = null }) => ({ attr, version })),
+      paths: storePaths,
+    }),
+
+  // A guest that is already running takes the new paths without a
+  // reboot, which is the same thing the button does once it is up.
+  async boot() {
+    if (vmStarted) {
+      await addToRunningVM();
+      return `added to the running guest; ${mounted.size} paths mounted`;
+    }
+    await boot();
+    if (!vmStarted) {
+      return `the boot did not start: ${status.textContent}`;
+    }
+    return `booted; ${mounted.size} paths mounted`;
+  },
+
+  // The caches lane, as an operation. A cache is reachable from a page
+  // only if it allows cross-origin reads, and every path it serves is
+  // still checked against the key given here before it is booted.
+  caches(list) {
+    applyCaches(list);
+    reprobe();
+    return page.state();
+  },
+
+  guest: () => window.trynix ?? null,
+};
+
+registerTools(page);
