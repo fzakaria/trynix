@@ -75,6 +75,10 @@ jobs:
       - name: Boots a package the cache still keeps in bzip2
         run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --package 'hello@2.7' --runs 1
 
+      # Missing names must become visible when a package joins a running VM.
+      - name: Adds packages after boot through WebMCP
+        run: nix run .#webmcp-test -- --site "$(nix build .#site --no-link --print-out-paths)"
+
       # And the thing booting cannot see: that the emulator computes what
       # the hardware would. Its JIT answered POPCNT with a stale register
       # for as long as the guest ran a CPU model too old to emit the

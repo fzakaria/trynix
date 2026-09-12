@@ -25,6 +25,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shlex
 import sys
 import tempfile
 import time
@@ -47,6 +48,14 @@ EXPECTED_TOOLS = [
 # What is booted: one small package whose output is fixed.
 PACKAGE = "hello"
 GREETING = "Hello, world!"
+
+# figlet exercises a new store directory and a new command in the shared bin farm.
+ADDED_PACKAGE = "figlet"
+ADDED_VERSION = "2.2.5"
+ADDED_ARGUMENT = "-I1"
+ADDED_OUTPUT = "20205"
+BOOT_ID_COMMAND = "cat /proc/sys/kernel/random/boot_id"
+COMMAND_NOT_FOUND = 127
 
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
@@ -154,6 +163,46 @@ def call(browser, name, timeout_ms=30000, **args):
     return resolved(browser, expression, timeout_ms)
 
 
+def check_live_addition(browser, checks):
+    """Cache missing paths, add figlet, and execute figlet without replacing the VM."""
+    print("select-packages, after boot")
+    before = json.loads(call(browser, "page-state"))
+    boot_id = json.loads(call(browser, "run-command", command=BOOT_ID_COMMAND))
+    checks.equal("boot ID readable", boot_id["status"], 0)
+    checks.true("boot ID present", boot_id["output"])
+    state = json.loads(
+        call(browser, "select-packages", packages=[{"attr": ADDED_PACKAGE, "version": ADDED_VERSION}])
+    )
+    selected = next(row for row in state["selection"] if row["attr"] == ADDED_PACKAGE)
+    executable = selected["storePath"] + "/bin/" + ADDED_PACKAGE
+
+    # Prime negative dentries in the store and bin farm before publishing figlet.
+    for command in (shlex.quote(executable), ADDED_PACKAGE):
+        missing = json.loads(call(browser, "run-command", command=command))
+        checks.equal(f"absent before adding: {command}", missing["status"], COMMAND_NOT_FOUND)
+
+    print("boot, adding to the running guest")
+    said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+    checks.true("added without booting", said.startswith("added to the running guest;"))
+
+    # Execute both previously missing names; PATH alone would miss store lookup bugs.
+    for command in (shlex.quote(executable), ADDED_PACKAGE):
+        result = json.loads(
+            call(browser, "run-command", command=f"{command} {ADDED_ARGUMENT}")
+        )
+        checks.equal(f"added command status: {command}", result["status"], 0)
+        checks.equal(f"added command output: {command}", result["output"], ADDED_OUTPUT)
+
+    # A successful fresh boot must not pass as a successful live addition.
+    after = json.loads(call(browser, "run-command", command=BOOT_ID_COMMAND))
+    checks.equal("same guest boot ID", after, boot_id)
+    state = json.loads(call(browser, "page-state"))
+    checks.true("closure grew", state["closurePaths"] > before["closurePaths"])
+    original = json.loads(call(browser, "run-command", command=PACKAGE))
+    checks.equal("original command status", original["status"], 0)
+    checks.equal("original command output", original["output"], GREETING)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
@@ -256,6 +305,8 @@ def main():
         state = json.loads(call(browser, "page-state"))
         checks.equal("booted", state["booted"], True)
         checks.true("paths mounted", state["closurePaths"] > 0)
+
+        check_live_addition(browser, checks)
 
         print("read-console")
         checks.true(

@@ -54,8 +54,9 @@ read -r _handshake
 # through emscripten's proxied syscalls, which is where ruby's start-up
 # time went. The store is immutable, so nothing cached can go stale;
 # the paths and links the page adds later are names the guest has
-# never looked up, and 9p drops negative dentries in this mode, so a
-# name that was missing once is looked up again.
+# never looked up. Disable negative dentry caching explicitly so a
+# name that was missing once is looked up again after a package addition.
+# Linux 7.2 otherwise retains missing names for 24 hours in cache=loose.
 # Throw away the randomness this snapshot was frozen with, before
 # anything can consume it. Every visitor resumes these same bytes, and
 # only a reseed pulls fresh ones from the CPU instruction QEMU answers
@@ -64,7 +65,7 @@ read -r _handshake
 # $RANDOM, not a uuid, not a key -- is generated from shared state.
 reseed || echo "trynix: warning: could not reseed the random pool"
 
-mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose store0 /share
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose,negtimeout=0 store0 /share
 ln -s /share/nix /nix
 if [ -f /share/manifest ]; then
   . /share/manifest

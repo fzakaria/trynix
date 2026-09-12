@@ -23,18 +23,16 @@ let
     "linuxboot_dma.bin" = "sha256-nEniVTQMePwS5U7QQ0YrygL7f8opt8+rYv+IpTRLaVA=";
   };
 
-  # The fork's examples boot Linux v6.1 with the vendored config; build
-  # the same series at its current point release — 6.1.0 itself no
-  # longer compiles under gcc 15 (C23 default vs 6.1-era bool typedefs),
-  # and the stable series backported the fixes — plus initramfs support
-  # the disk-root examples never needed (guest/kernel-fragment.config).
+  # Keep the fork's trimmed config while using a current stable kernel.
+  # Newer ELF loading clears BSS in every interpreter segment, which
+  # Fil-C's loader requires.
   kernel = pkgs.stdenv.mkDerivation {
     pname = "trynix-guest-kernel";
-    version = "6.1.187";
+    version = "7.2.5";
 
     src = pkgs.fetchurl {
-      url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.187.tar.xz";
-      sha256 = "0av4fcw3hv4pfql85s2rirxj7hkdr2kdasj219kwl257xa57jvhv";
+      url = "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.5.tar.xz";
+      sha256 = "sha256-Vd3w34Ml2drZb8/3vZOXfSLj9QrwZSdXKvWbd8djK3g=";
     };
 
     nativeBuildInputs = with pkgs; [
