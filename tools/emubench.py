@@ -257,10 +257,7 @@ def main():
         print(f"shell in {taken:.1f}s", flush=True)
 
         mark = len(browser.transcript())
-        browser.evaluate(
-            "window.trynix.master.ldisc.writeFromLower("
-            f'{json.dumps("emubench " + args.test + chr(10))})'
-        )
+        browser.type("emubench " + args.test + chr(10))
         taken, said, arrivals = watch_rows(browser, mark, args.limit)
         if taken is None:
             print(said)

@@ -24,6 +24,7 @@ import {
   writeEntries,
 } from "./store.js";
 import { openTerminal } from "./terminal.js";
+import { guestDriver } from "./agent.js";
 import { log } from "./log.js";
 
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
@@ -318,14 +319,21 @@ export async function startVM({
     mod.FS.writeFile(`${WINSIZE_FILE}.${resizes}`, `${rows} ${cols}\n`);
   });
 
-  // Reachable from the browser console: the terminal, the pty pair,
-  // and everything the guest has said. Debugging a guest that will not
-  // talk is otherwise guesswork.
+  // The handle everything outside the page reaches the guest through:
+  // the browser console when a guest will not talk and debugging it is
+  // otherwise guesswork, the benchmark harnesses in tools/ over CDP,
+  // and the WebMCP tools in webmcp.js. The driver is the supported
+  // surface: type a command, wait for it, read what it said. The
+  // terminal and the pty pair stay reachable below it for the cases
+  // that need the raw thing.
   window.trynix = {
+    ...guestDriver({
+      send: (data) => send(master, data),
+      transcript: console_.transcript,
+    }),
     terminal: ui.terminal,
     master,
     slave,
-    transcript: console_.transcript,
   };
 
   return {

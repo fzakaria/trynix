@@ -176,6 +176,11 @@ class Browser:
         )
         return reply.get("result", {}).get("result", {}).get("value")
 
+    def type(self, text):
+        """Type into the guest the way a keystroke arrives. The page owns
+        the pty (site/js/agent.js); this only carries the bytes to it."""
+        self.evaluate("window.trynix.type(" + json.dumps(text) + ")")
+
     def transcript(self):
         return (
             self.evaluate(
@@ -290,10 +295,7 @@ def main():
         # status so a guest that dies on SIGILL is a failure rather than
         # a wait for a verdict that never comes.
         mark = len(browser.transcript())
-        browser.evaluate(
-            "window.trynix.master.ldisc.writeFromLower("
-            f'{json.dumps("cputest; echo " + STATUS_PREFIX + "$?" + chr(10))})'
-        )
+        browser.type("cputest; echo " + STATUS_PREFIX + "$?" + chr(10))
 
         taken = await_marker(browser, STATUS_PREFIX + "0", PROBE_LIMIT_SECONDS)
         said = browser.transcript()[mark:]

@@ -172,11 +172,7 @@ def run_entry(entry, base, browser_binary, runs_dir):
         program = entry["command"].split()[0]
         marker = "EXEC_BENCH_WHICH"
         mark = len(browser.transcript())
-        browser.evaluate(
-            "window.trynix.master.ldisc.writeFromLower("
-            + json.dumps(wrap_command(f'readlink -f "$(command -v {program})"', marker) + "\n")
-            + ")"
-        )
+        browser.type(wrap_command(f'readlink -f "$(command -v {program})"', marker) + "\n")
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline and completion(browser.transcript()[mark:], marker) is None:
             time.sleep(POLL_SECONDS)
@@ -188,10 +184,7 @@ def run_entry(entry, base, browser_binary, runs_dir):
             cpu_before, _ = group_usage(pgid)
             peak_rss = 0
             t0 = time.monotonic()
-            browser.evaluate(
-                "window.trynix.master.ldisc.writeFromLower("
-                + json.dumps(wrap_command(entry["command"], marker) + "\n") + ")"
-            )
+            browser.type(wrap_command(entry["command"], marker) + "\n")
             status = None
             while time.monotonic() - t0 < COMMAND_LIMIT_SECONDS:
                 _, rss = group_usage(pgid)
