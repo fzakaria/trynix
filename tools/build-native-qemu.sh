@@ -23,6 +23,8 @@ OUT=$2
 IMAGE=trynix-buildqemu-native
 CONTAINER=trynix-build-native-$$
 JOBS=$(nproc)
+# Override when the Docker bridge cannot reach dependency servers.
+NETWORK=${TRYNIX_DOCKER_NETWORK:-default}
 
 WORK=$(mktemp -d)
 trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK"' EXIT
@@ -34,7 +36,7 @@ rsync -a --exclude .git "$SRC_CHECKOUT/" "$WORK/src/"
 # builds with nix instead.
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "building the toolchain image $IMAGE"
-  docker build -t "$IMAGE" - <<'EOF'
+  docker build --network "$NETWORK" -t "$IMAGE" - <<'EOF'
 FROM gcc:14
 RUN apt-get update && apt-get install -y libffi-dev libglib2.0-dev libpixman-1-dev libattr1 libattr1-dev ninja-build pipx
 RUN PIPX_BIN_DIR=/usr/local/bin pipx install meson==1.5.0
@@ -56,7 +58,7 @@ for patch in "$PATCHES"/*.patch; do
   patch -d "$WORK/src" -p1 < "$patch"
 done
 
-docker run --rm -d --name "$CONTAINER" -v "$WORK/src:/qemu" "$IMAGE" >/dev/null
+docker run --rm -d --network "$NETWORK" --name "$CONTAINER" -v "$WORK/src:/qemu" "$IMAGE" >/dev/null
 docker exec "$CONTAINER" /qemu/configure --static --target-list=x86_64-softmmu \
   --without-default-features --enable-system --with-coroutine=ucontext --enable-virtfs --enable-attr \
   --extra-cflags=-DQEMU_GENERIC_HOST_TICKS

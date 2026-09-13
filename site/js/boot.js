@@ -26,6 +26,12 @@ import {
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { log } from "./log.js";
+import {
+  networkEnabled,
+  startNetwork,
+  disableNetwork,
+  networkManifest,
+} from "./network.js";
 
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
 // /share the init script mounts (tag store0, matching nix/guest/init).
@@ -77,6 +83,8 @@ const GUEST_STORE_DIR = "/nix/store";
 // so.
 function manifest({ rows, cols }) {
   return [
+    // A snapshot freezes wall time too; refresh it before TLS clients run.
+    `/bin/date -u -s @${Math.floor(Date.now() / 1000)} >/dev/null`,
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
@@ -239,6 +247,8 @@ export async function startVM({
   keyBarElement,
   engine,
 }) {
+  const network = networkEnabled() ? await startNetwork() : null;
+  if (!network) disableNetwork();
   const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
   ui.attach(master);
@@ -334,6 +344,7 @@ export async function startVM({
     terminal: ui.terminal,
     master,
     slave,
+    network,
   };
 
   return {
@@ -347,7 +358,8 @@ export async function startVM({
       share.linkAll(share.written(), roots, Precedence.KEEP);
       mod.FS.writeFile(
         `${SHARE_DIR}/manifest`,
-        manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }),
+        manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }) +
+          (network ? networkManifest(network.ip, network.mac) : ""),
       );
       mod.removeRunDependency(STORE_DEPENDENCY);
 

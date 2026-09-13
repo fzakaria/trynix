@@ -56,6 +56,10 @@ export function readUrl() {
 // only the reload path wants it automatic.
 export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
   const params = new URLSearchParams();
+  const current = new URLSearchParams(location.search);
+  for (const key of ["network", "socks"]) {
+    if (current.has(key)) params.set(key, current.get(key));
+  }
   for (const { attr, version } of pkgs) {
     params.append(
       PARAM_PKG,
