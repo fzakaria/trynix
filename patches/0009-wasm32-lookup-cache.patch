@@ -1,0 +1,715 @@
+--- a/accel/tcg/cpu-exec.c	2026-09-13 08:20:29.273956424 -0700
++++ b/accel/tcg/cpu-exec.c	2026-09-13 10:33:24.789492809 -0700
+@@ -42,6 +42,13 @@
+ #include "tb-jmp-cache.h"
+ #include "tb-hash.h"
+ #include "tb-context.h"
++#if defined(EMSCRIPTEN) && !defined(CONFIG_TCG_INTERPRETER)
++#include "tcg/wasm32-hooks.h"
++#else
++#define WASM_CENSUS_C(i) ((void)0)
++#define wasm32_lookup_fill(tb, pc, flags) ((void)0)
++#define wasm32_census_idle() ((void)0)
++#endif
+ #include "internal-common.h"
+ #include "internal-target.h"
+ 
+@@ -262,12 +269,15 @@
+                    tb->cs_base == cs_base &&
+                    tb->flags == flags &&
+                    tb_cflags(tb) == cflags)) {
++            WASM_CENSUS_C(WCC_LOOKUP_JC_HIT);
+             return tb;
+         }
+         tb = tb_htable_lookup(cpu, pc, cs_base, flags, cflags);
+         if (tb == NULL) {
++            WASM_CENSUS_C(WCC_LOOKUP_NULL);
+             return NULL;
+         }
++        WASM_CENSUS_C(WCC_LOOKUP_HTABLE);
+         jc->array[hash].pc = pc;
+         /* Ensure pc is written first. */
+         qatomic_store_release(&jc->array[hash].tb, tb);
+@@ -420,10 +430,12 @@
+         cpu_loop_exit(cpu);
+     }
+ 
++    WASM_CENSUS_C(wasm_in_tci ? WCC_LOOKUP_HELPER_TCI : WCC_LOOKUP_HELPER);
+     tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
+     if (tb == NULL) {
+         return tcg_code_gen_epilogue;
+     }
++    wasm32_lookup_fill(tb, pc, flags);
+ 
+     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+         log_cpu_exec(pc, cpu, tb);
+@@ -468,6 +480,8 @@
+      */
+     last_tb = tcg_splitwx_to_rw((void *)(ret & ~TB_EXIT_MASK));
+     *tb_exit = ret & TB_EXIT_MASK;
++    WASM_CENSUS_C(ret == 0 ? WCC_EXIT_ZERO
++                  : *tb_exit <= TB_EXIT_IDX1 ? WCC_EXIT_UNLINKED : WCC_EXIT_REQUESTED);
+ 
+     trace_exec_tb_exit(last_tb, *tb_exit);
+ 
+@@ -677,6 +691,7 @@
+ {
+ #ifndef CONFIG_USER_ONLY
+     if (cpu->halted) {
++        wasm32_census_idle();
+ #if defined(TARGET_I386)
+         if (cpu->interrupt_request & CPU_INTERRUPT_POLL) {
+             X86CPU *x86_cpu = X86_CPU(cpu);
+@@ -997,11 +1012,13 @@
+                 break;
+             }
+ 
++            WASM_CENSUS_C(WCC_LOOP_LOOKUP);
+             tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
+             if (tb == NULL) {
+                 CPUJumpCache *jc;
+                 uint32_t h;
+ 
++                WASM_CENSUS_C(WCC_TB_GEN);
+                 mmap_lock();
+                 tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+                 mmap_unlock();
+@@ -1035,6 +1052,7 @@
+ #endif
+             /* See if we can patch the calling TB. */
+             if (last_tb) {
++                WASM_CENSUS_C(WCC_TB_ADD_JUMP);
+                 tb_add_jump(last_tb, tb_exit, tb);
+             }
+ 
+--- a/accel/tcg/tb-maint.c	2026-09-13 08:20:29.274858038 -0700
++++ b/accel/tcg/tb-maint.c	2026-09-13 10:33:24.789668207 -0700
+@@ -890,10 +890,17 @@
+ #include "../../tcg/wasm32.h"
+ #endif
+ 
++#if defined(EMSCRIPTEN) && !defined(CONFIG_TCG_INTERPRETER)
++#include "tcg/wasm32-hooks.h"
++#else
++#define WASM_CENSUS_C(i) ((void)0)
++#endif
++
+ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
+ {
+     CPUState *cpu;
+ 
++    WASM_CENSUS_C(WCC_TB_INVAL);
+     if (tb_cflags(tb) & CF_PCREL) {
+         /* A TB may be at any virtual address */
+         CPU_FOREACH(cpu) {
+--- a/accel/tcg/translate-all.c	2026-09-13 08:20:29.274750807 -0700
++++ b/accel/tcg/translate-all.c	2026-09-13 10:33:24.789581956 -0700
+@@ -660,10 +660,20 @@
+  * Called by generic code at e.g. cpu reset after cpu creation,
+  * therefore we must be prepared to allocate the jump cache.
+  */
++#if defined(EMSCRIPTEN) && !defined(CONFIG_TCG_INTERPRETER)
++#include "tcg/wasm32-hooks.h"
++#endif
++
+ void tcg_flush_jmp_cache(CPUState *cpu)
+ {
+     CPUJumpCache *jc = cpu->tb_jmp_cache;
+ 
++#if defined(EMSCRIPTEN) && !defined(CONFIG_TCG_INTERPRETER)
++    /* the wasm backend's goto_ptr cache keys on the same state */
++    WASM_CENSUS_C(WCC_JC_FLUSH);
++    wasm32_lookup_flush_all();
++#endif
++
+     /* During early initialization, the cache may not yet be allocated. */
+     if (unlikely(jc == NULL)) {
+         return;
+--- a/include/tcg/wasm32-hooks.h	1969-12-31 16:00:00.000000000 -0800
++++ b/include/tcg/wasm32-hooks.h	1969-12-31 16:00:00.000000000 -0800
+@@ -0,0 +1,67 @@
++/*
++ * Hooks from the accelerator into the wasm32 backend, for the
++ * block-transition investigation: a goto_ptr lookup cache read by
++ * generated code, and a census of transition kinds. Both are build
++ * variants selected in tcg/wasm32.h.
++ */
++#ifndef TCG_WASM32_HOOKS_H
++#define TCG_WASM32_HOOKS_H
++
++#include <stdint.h>
++
++/*
++ * Build variants. WASM32_CENSUS counts every kind of block transition
++ * (generated code increments ctx.census, C code wasm_census_c) and
++ * prints the totals when the vCPU halts. WASM32_LOOKUP_CACHE puts a
++ * direct-mapped cache from guest state to compiled function in front
++ * of every helper_lookup_tb_ptr call in generated code.
++ */
++#define WASM32_CENSUS 0
++#define WASM32_LOOKUP_CACHE 1
++
++/* Counters kept by C code (the dispatcher, the interpreter, cpu-exec). */
++enum {
++    WCC_EXEC_ENTRY,        /* tcg_qemu_tb_exec calls from cpu_exec */
++    WCC_DISPATCH_CALL,     /* compiled functions entered by the dispatcher */
++    WCC_TCI_RUN,           /* interpreter entries */
++    WCC_TCI_GOTO_TB_STAY,  /* interpreter followed a goto_tb without leaving */
++    WCC_TCI_GOTO_PTR_STAY, /* interpreter followed a goto_ptr without leaving */
++    WCC_TCI_TO_COMPILED,   /* interpreter handed a compiled successor to the dispatcher */
++    WCC_TCI_EXIT,          /* interpreter left through exit_tb or a NULL goto_ptr */
++    WCC_LOOKUP_HELPER,     /* helper_lookup_tb_ptr from compiled code */
++    WCC_LOOKUP_HELPER_TCI, /* helper_lookup_tb_ptr from the interpreter (ffi) */
++    WCC_LOOKUP_JC_HIT,     /* tb_lookup: QEMU jump cache hit */
++    WCC_LOOKUP_HTABLE,     /* tb_lookup: jump cache miss, hash table found it */
++    WCC_LOOKUP_NULL,       /* tb_lookup: no block */
++    WCC_LOOP_LOOKUP,       /* cpu_exec loop iterations (each looks a block up) */
++    WCC_TB_GEN,            /* blocks translated */
++    WCC_TB_ADD_JUMP,       /* direct jumps linked by cpu_exec */
++    WCC_EXIT_ZERO,         /* tcg_qemu_tb_exec returned 0 */
++    WCC_EXIT_UNLINKED,     /* returned a block with jump index 0 or 1 */
++    WCC_EXIT_REQUESTED,    /* returned TB_EXIT_REQUESTED */
++    WCC_JC_FLUSH,          /* tcg_flush_jmp_cache calls */
++    WCC_TB_INVAL,          /* tb_jmp_cache_inval_tb calls */
++    WCC_FILL_NEW,          /* lookup cache: entry filled (empty or stale) */
++    WCC_FILL_CONFLICT,     /* lookup cache: a live entry overwritten */
++    WCC_FILL_SAME,         /* lookup cache: entry already held this block */
++    WCC_FILL_SAME_TCI,     /* ... and the caller was the interpreter */
++    WCC_FILL_UNCOMPILED,   /* lookup cache: target has no function yet */
++    WCC_FILL_NOT64,        /* lookup cache: not 64-bit code, never probed */
++    WCC_EPOCH,             /* lookup cache invalidations (epoch bumps) */
++    WCC_N
++};
++
++extern __thread uint32_t wasm_census_c[WCC_N];
++extern __thread int wasm_in_tci;
++#if WASM32_CENSUS
++#define WASM_CENSUS_C(i) (wasm_census_c[i]++)
++#else
++#define WASM_CENSUS_C(i) ((void)0)
++#endif
++
++struct TranslationBlock;
++void wasm32_lookup_fill(struct TranslationBlock *tb, uint64_t pc, uint32_t flags);
++void wasm32_lookup_flush_all(void);
++void wasm32_census_idle(void);
++
++#endif
+--- a/tcg/wasm32.c	2026-09-13 08:20:29.682002559 -0700
++++ b/tcg/wasm32.c	2026-09-13 10:35:24.123801761 -0700
+@@ -29,10 +29,111 @@
+ #include <emscripten.h>
+ #include <emscripten/threading.h>
+ #include "exec/translation-block.h"
++#include "exec/helper-proto-common.h"
+ #include "wasm32.h"
+ 
+ __thread uintptr_t tci_tb_ptr;
+ 
++/*
++ * The transition census. Generated code counts into ctx.census; the C
++ * paths below count into wasm_census_c. Both are printed together when
++ * the vCPU halts having moved by WASM_CENSUS_REPORT_DELTA since the
++ * last line (wasm32_census_idle), so a run shows up as a few lines.
++ */
++__thread uint32_t wasm_census_c[WCC_N];
++__thread int wasm_in_tci;
++#define WASM_CENSUS_REPORT_DELTA 2000
++
++/*
++ * The goto_ptr lookup cache (struct wasm_lookup_entry in wasm32.h).
++ * One table per vCPU thread; one epoch for all of them, so a flush from
++ * any thread (tcg_flush_jmp_cache runs for a CPU from wherever the TLB
++ * flush or the invalidation happens) is one store.
++ */
++uint32_t wasm_lookup_epoch = 1;
++__thread struct wasm_lookup_entry *wasm_lookup_cache;
++extern __thread int cur_core_num;
++const void *wasm_lookup_helper = (const void *)helper_lookup_tb_ptr;
++const uint32_t wasm_lookup_off_eip = offsetof(CPUArchState, eip);
++const uint32_t wasm_lookup_off_eflags = offsetof(CPUArchState, eflags);
++const uint32_t wasm_lookup_off_hflags = offsetof(CPUArchState, hflags);
++const uint32_t wasm_lookup_cs64_mask = HF_CS64_MASK;
++const uint32_t wasm_lookup_flags_mask = IOPL_MASK | TF_MASK | RF_MASK | VM_MASK | AC_MASK;
++
++/*
++ * Called by helper_lookup_tb_ptr with the block it found: remember its
++ * compiled function under the state that found it, so the next probe of
++ * that state from generated code skips the helper. Only 64-bit code is
++ * cached, because the probe keys on eip alone (cs_base is 0 there), and
++ * only compiled blocks, because the probe has nothing to call otherwise.
++ */
++void wasm32_lookup_fill(TranslationBlock *tb, uint64_t pc, uint32_t flags)
++{
++#if WASM32_LOOKUP_CACHE
++    if (!(flags & HF_CS64_MASK)) {
++        WASM_CENSUS_C(WCC_FILL_NOT64);
++        return;
++    }
++    struct wasm_tb_hdr *hdr = (struct wasm_tb_hdr *)tb->tc.ptr;
++    uint32_t fidx = hdr->fidx[cur_core_num];
++    if (fidx == 0) {
++        WASM_CENSUS_C(WCC_FILL_UNCOMPILED);
++        return;
++    }
++    struct wasm_lookup_entry *e = &wasm_lookup_cache[WASM_LOOKUP_HASH(pc)];
++    uint32_t epoch = qatomic_read(&wasm_lookup_epoch);
++#if WASM32_CENSUS
++    if (e->epoch == epoch && e->fidx == fidx && e->pc == pc && e->flags == flags) {
++        WASM_CENSUS_C(wasm_in_tci ? WCC_FILL_SAME_TCI : WCC_FILL_SAME);
++    } else if (e->epoch == epoch && e->fidx != 0) {
++        WASM_CENSUS_C(WCC_FILL_CONFLICT);
++    } else {
++        WASM_CENSUS_C(WCC_FILL_NEW);
++    }
++#endif
++    e->pc = pc;
++    e->flags = flags;
++    e->fidx = fidx;
++    e->hdr = (uint32_t)hdr;
++    e->epoch = epoch;
++#endif
++}
++
++/* Every entry of every vCPU's cache is stale from here on. */
++void wasm32_lookup_flush_all(void)
++{
++    WASM_CENSUS_C(WCC_EPOCH);
++    qatomic_inc(&wasm_lookup_epoch);
++}
++
++EM_JS(void, report_census_js, (double t, int gp, int gn, int cp, int cn), {
++        const g = Array.from(HEAPU32.subarray(gp >> 2, (gp >> 2) + gn));
++        const c = Array.from(HEAPU32.subarray(cp >> 2, (cp >> 2) + cn));
++        console.log("wasm32census t=" + t.toFixed(0) + " g=" + g.join(",") + " c=" + c.join(","));
++});
++
++/* One line of totals per burst of activity, printed when the vCPU halts. */
++void wasm32_census_idle(void)
++{
++#if WASM32_CENSUS
++    static __thread uint32_t last_total;
++    extern __thread struct wasmContext ctx;
++    uint32_t total = 0;
++    for (int i = 0; i < WC_N; i++) {
++        total += ctx.census[i];
++    }
++    for (int i = 0; i < WCC_N; i++) {
++        total += wasm_census_c[i];
++    }
++    if (total - last_total < WASM_CENSUS_REPORT_DELTA) {
++        return;
++    }
++    last_total = total;
++    report_census_js(emscripten_get_now(), (int)ctx.census, WC_N,
++                     (int)wasm_census_c, WCC_N);
++#endif
++}
++
+ /* Disassemble TCI bytecode. */
+ int print_insn_tci(bfd_vma addr, disassemble_info *info)
+ {
+@@ -445,6 +546,8 @@
+         batch_count--;
+         stat_evictions++;
+     }
++    /* the lookup cache may name any of the evicted functions */
++    wasm32_lookup_flush_all();
+ }
+ 
+ void wasm32_report_stats(void);
+@@ -562,6 +665,7 @@
+     }
+     evict_batches(batch_count, false);
+     pending_n = 0;
++    wasm32_lookup_flush_all();
+ }
+ 
+ /*
+@@ -673,6 +777,8 @@
+         QEMU_BUILD_BUG_ON(ARRAY_SIZE(((TranslationBlock *)0)->wasm_jmp_fidx) != WASM_MAX_VCPUS);
+         ctx.jmp_fidx_off = sizeof(((TranslationBlock *)0)->wasm_jmp_fidx[0]) * cur_core_num;
+         ctx.miss_tb = 0;
++        wasm_lookup_cache = calloc(WASM_LOOKUP_SIZE, sizeof(struct wasm_lookup_entry));
++        ctx.lookup_base = (uint32_t)wasm_lookup_cache;
+ #ifdef WASM32_FORCE_NO_TAIL_CALLS
+         wasm_tail_calls_ok = 0;
+ #else
+@@ -1638,6 +1744,7 @@
+         case INDEX_op_exit_tb:
+             tci_args_l(insn, tb_ptr, &ptr);
+             ctx.tb_ptr = 0;
++            WASM_CENSUS_C(WCC_TCI_EXIT);
+             return (uintptr_t)ptr;
+ 
+         case INDEX_op_goto_tb:
+@@ -1647,8 +1754,10 @@
+                 ctx.tb_ptr = tb_ptr;
+                 if (wasm_account((struct wasm_tb_hdr *)tb_ptr) != 0) {
+                     // a compiled function is ready; let the dispatcher call it
++                    WASM_CENSUS_C(WCC_TCI_TO_COMPILED);
+                     return 0;
+                 }
++                WASM_CENSUS_C(WCC_TCI_GOTO_TB_STAY);
+                 tb_ptr = (uint8_t*)tb_ptr + *(uint32_t*)tb_ptr;
+             }
+             break;
+@@ -1658,6 +1767,7 @@
+             ptr = (void *)regs[r0];
+             if (!ptr) {
+                 ctx.tb_ptr = 0;
++                WASM_CENSUS_C(WCC_TCI_EXIT);
+                 return 0;
+             }
+             tb_ptr = ptr;
+@@ -1665,8 +1775,10 @@
+             ctx.tb_ptr = tb_ptr;
+             if (wasm_account((struct wasm_tb_hdr *)tb_ptr) != 0) {
+                 // a compiled function is ready; let the dispatcher call it
++                WASM_CENSUS_C(WCC_TCI_TO_COMPILED);
+                 return 0;
+             }
++            WASM_CENSUS_C(WCC_TCI_GOTO_PTR_STAY);
+             tb_ptr = (uint8_t*)tb_ptr + *(uint32_t*)tb_ptr;
+ 
+             break;
+@@ -1737,6 +1849,7 @@
+ {
+     ctx.env = env;
+     ctx.tb_ptr = (uint32_t*)v_tb_ptr;
++    WASM_CENSUS_C(WCC_EXEC_ENTRY);
+     while (true) {
+         trysleep();
+         struct wasm_tb_hdr *hdr = (struct wasm_tb_hdr *)ctx.tb_ptr;
+@@ -1754,9 +1867,13 @@
+              * clear it made on its first run, and takes its rewind path.
+              */
+             ctx.do_init = 1;
++            WASM_CENSUS_C(WCC_DISPATCH_CALL);
+             res = ((wasm_func_ptr)(fidx))(&ctx, WASM_ENTRY_DISPATCH);
+         } else {
++            WASM_CENSUS_C(WCC_TCI_RUN);
++            wasm_in_tci = 1;
+             res = tcg_qemu_tb_exec_tci(env);
++            wasm_in_tci = 0;
+         }
+         if ((uint32_t)ctx.tb_ptr == 0) {
+             return res;
+--- a/tcg/wasm32.h	2026-09-13 08:20:29.774148437 -0700
++++ b/tcg/wasm32.h	2026-09-13 10:33:24.789191708 -0700
+@@ -2,6 +2,7 @@
+ #define TCG_WASM32_H
+ 
+ #include <stdint.h>
++#include "tcg/wasm32-hooks.h"
+ 
+ struct wasmContext {
+     // 0
+@@ -34,6 +35,10 @@
+     // 48: where a block spills its register locals when a helper call
+     // unwinds, and reloads them from when the dispatcher rewinds into it
+     uint64_t save[15];
++    // 168: this vCPU's goto_ptr lookup cache (WASM32_LOOKUP_CACHE)
++    uint32_t lookup_base;
++    // 172: transition counters kept by generated code (WASM32_CENSUS)
++    uint32_t census[16];
+ };
+ 
+ #define ENV_OFF 0
+@@ -50,6 +55,58 @@
+ #define MISS_WHICH_OFF 44
+ #define SAVE_OFF 48
+ #define SAVE_BLOCK_PTR_OFF (SAVE_OFF + 14 * 8)
++#define LOOKUP_BASE_OFF 168
++#define CENSUS_OFF 172
++
++/* The variant switches WASM32_CENSUS and WASM32_LOOKUP_CACHE are in tcg/wasm32-hooks.h. */
++
++/* Counters kept by generated code, ctx.census[i]. */
++enum {
++    WC_GOTO_TB_SELF,        /* goto_tb whose target is this block */
++    WC_GOTO_TB_DIRECT,      /* goto_tb through the in-batch direct call */
++    WC_GOTO_TB_CACHED,      /* goto_tb through the cached function index */
++    WC_GOTO_TB_MISS,        /* goto_tb slot empty: back to the dispatcher */
++    WC_GOTO_TB_UNLINKED,    /* goto_tb not linked: falls into exit_tb */
++    WC_GOTO_PTR_SELF,       /* goto_ptr whose target is this block */
++    WC_GOTO_PTR_CHAIN,      /* goto_ptr tail-called a compiled target */
++    WC_GOTO_PTR_UNCOMPILED, /* goto_ptr target has no function: dispatcher */
++    WC_GOTO_PTR_NULL,       /* goto_ptr found no block: dispatcher */
++    WC_EXIT_TB,             /* exit_tb executed (includes the unlinked case) */
++    WC_LOOKUP_PROBE,        /* lookup cache probed (64-bit code) */
++    WC_LOOKUP_HIT,          /* lookup cache hit */
++    WC_LOOKUP_HIT_SELF,     /* ... and the target is this block */
++    WC_N
++};
++
++/*
++ * The goto_ptr lookup cache: per vCPU, direct-mapped by guest pc, an
++ * entry names the compiled function of the block for (pc, flags) in
++ * 64-bit code (cs_base is 0 there). Filled by helper_lookup_tb_ptr on
++ * the miss path; every invalidation bumps the global epoch, which each
++ * entry carries, so a flush is one increment. Generated code probes it
++ * before calling the helper (tcg_wasm_out_lookup_probe).
++ */
++struct wasm_lookup_entry {
++    uint64_t pc;
++    uint32_t flags;
++    uint32_t epoch;
++    uint32_t fidx;
++    uint32_t hdr;
++    uint32_t pad[2];
++};
++#define WASM_LOOKUP_BITS 12
++#define WASM_LOOKUP_SIZE (1 << WASM_LOOKUP_BITS)
++#define WASM_LOOKUP_ENTRY_SHIFT 5
++#define WASM_LOOKUP_HASH(pc) ((((uint32_t)(pc)) ^ (((uint32_t)(pc)) >> WASM_LOOKUP_BITS)) & (WASM_LOOKUP_SIZE - 1))
++
++extern uint32_t wasm_lookup_epoch;
++/* helper_lookup_tb_ptr, and the CPUX86State offsets and masks the probe needs */
++extern const void *wasm_lookup_helper;
++extern const uint32_t wasm_lookup_off_eip;
++extern const uint32_t wasm_lookup_off_eflags;
++extern const uint32_t wasm_lookup_off_hflags;
++extern const uint32_t wasm_lookup_cs64_mask;
++extern const uint32_t wasm_lookup_flags_mask;
+ 
+ /*
+  * Every translated block starts with this header in the code buffer
+--- a/tcg/wasm32/tcg-target.c.inc	2026-09-13 08:20:29.681550710 -0700
++++ b/tcg/wasm32/tcg-target.c.inc	2026-09-13 10:32:37.012511979 -0700
+@@ -1977,12 +1977,30 @@
+     tcg_wasm_out8(s, 0x00); // table 0: the main module's function table
+ }
+ 
++/* ctx.census[idx] += 1, in census builds only (WASM32_CENSUS). */
++static void tcg_wasm_out_census(TCGContext *s, int idx)
++{
++#if WASM32_CENSUS
++    if (idx < 0) {
++        return;
++    }
++    tcg_wasm_out_op_local_get(s, CTX_IDX);
++    tcg_wasm_out_op_local_get(s, CTX_IDX);
++    tcg_wasm_out_op_i32_load(s, 0, CENSUS_OFF + idx * 4);
++    tcg_wasm_out_op_i32_const(s, 1);
++    tcg_wasm_out_op_i32_add(s);
++    tcg_wasm_out_op_i32_store(s, 0, CENSUS_OFF + idx * 4);
++#endif
++}
++
+ /*
+  * Tail-call the compiled function of the block ctx.tb_ptr names, with
+  * the given entry mode. Leaves the function if that block has none.
+- * TMP32_LOCAL_0 holds the block.
++ * TMP32_LOCAL_0 holds the block. The two census indices count the
++ * chained and the not-compiled outcome (-1 for neither).
+  */
+-static void tcg_wasm_out_chain_or_return(TCGContext *s, int mode)
++static void tcg_wasm_out_chain_or_return(TCGContext *s, int mode,
++                                         int census_chain, int census_miss)
+ {
+     if (!wasm_tail_calls_ok) {
+         // no tail calls here: the dispatcher runs the successor
+@@ -1996,17 +2014,121 @@
+     tcg_wasm_out_op_i32_load(s, 0, 0);
+     tcg_wasm_out_op_local_tee(s, TMP32_LOCAL_0_IDX);
+     tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, census_chain);
+     tcg_wasm_out_op_local_get(s, CTX_IDX);
+     tcg_wasm_out_op_i32_const(s, mode);
+     tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
+     tcg_wasm_out_op_return_call_indirect(s);
+     tcg_wasm_out_op_end(s);
++    tcg_wasm_out_census(s, census_miss);
+     tcg_wasm_out_op_i32_const(s, 0);
+     tcg_wasm_out_op_return(s);
+ }
+ 
++/*
++ * The goto_ptr lookup cache probe, emitted right before a call to
++ * helper_lookup_tb_ptr (WASM32_LOOKUP_CACHE). The block's globals are
++ * already synced to env at this point (the helper reads them), so the
++ * probe reads the same state the helper would: in 64-bit code the key is
++ * eip and flags = hflags | (eflags & mask). A hit that names this block
++ * loops to the top; any other hit sets ctx.tb_ptr and tail-calls the
++ * cached function. A miss falls through to the helper, which fills the
++ * entry (wasm32_lookup_fill). The probe sits inside the block's guard
++ * `if`, so a branch to the loop is depth 4 from the innermost `if`.
++ */
++static void tcg_wasm_out_lookup_probe(TCGContext *s)
++{
++    tcg_wasm_out_op_global_get_r_i32(s, TCG_AREG0);
++    tcg_wasm_out_op_i32_load(s, 0, wasm_lookup_off_hflags);
++    tcg_wasm_out_op_i32_const(s, wasm_lookup_cs64_mask);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_LOOKUP_PROBE);
++
++    // flags -> TMP32_1
++    tcg_wasm_out_op_global_get_r_i32(s, TCG_AREG0);
++    tcg_wasm_out_op_i32_load(s, 0, wasm_lookup_off_hflags);
++    tcg_wasm_out_op_global_get_r_i32(s, TCG_AREG0);
++    tcg_wasm_out_op_i32_load(s, 0, wasm_lookup_off_eflags);
++    tcg_wasm_out_op_i32_const(s, wasm_lookup_flags_mask);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_i32_or(s);
++    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_1_IDX);
++
++    // pc -> TMP64_0
++    tcg_wasm_out_op_global_get_r_i32(s, TCG_AREG0);
++    tcg_wasm_out_op_i64_load(s, 3, wasm_lookup_off_eip);
++    tcg_wasm_out_op_local_set(s, TMP64_0_IDX);
++
++    // the entry: lookup_base + hash(pc) << shift -> TMP32_0
++    tcg_wasm_out_op_local_get(s, TMP64_0_IDX);
++    tcg_wasm_out_op_i32_wrap_i64(s);
++    tcg_wasm_out_op_local_tee(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_const(s, WASM_LOOKUP_BITS);
++    tcg_wasm_out_op_i32_shr_u(s);
++    tcg_wasm_out8(s, 0x73); // i32.xor
++    tcg_wasm_out_op_i32_const(s, WASM_LOOKUP_SIZE - 1);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_i32_const(s, WASM_LOOKUP_ENTRY_SHIFT);
++    tcg_wasm_out_op_i32_shl(s);
++    tcg_wasm_out_ctx_i32_load(s, LOOKUP_BASE_OFF);
++    tcg_wasm_out_op_i32_add(s);
++    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_0_IDX);
++
++    // pc, flags and epoch match, and there is a function
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i64_load(s, 3, offsetof(struct wasm_lookup_entry, pc));
++    tcg_wasm_out_op_local_get(s, TMP64_0_IDX);
++    tcg_wasm_out_op_i64_eq(s);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_load(s, 0, offsetof(struct wasm_lookup_entry, flags));
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_1_IDX);
++    tcg_wasm_out_op_i32_eq(s);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_load(s, 0, offsetof(struct wasm_lookup_entry, epoch));
++    tcg_wasm_out_op_i32_const(s, (int32_t)(uintptr_t)&wasm_lookup_epoch);
++    tcg_wasm_out_op_i32_load(s, 0, 0);
++    tcg_wasm_out_op_i32_eq(s);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_load(s, 0, offsetof(struct wasm_lookup_entry, fidx));
++    tcg_wasm_out_op_local_tee(s, TMP32_LOCAL_1_IDX);
++    tcg_wasm_out_op_i32_eqz(s);
++    tcg_wasm_out_op_i32_eqz(s);
++    tcg_wasm_out_op_i32_and(s);
++    tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_LOOKUP_HIT);
++
++    // the target is this block: back to the top without leaving
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_load(s, 0, offsetof(struct wasm_lookup_entry, hdr));
++    tcg_wasm_out_op_local_tee(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);
++    tcg_wasm_out_op_i32_eq(s);
++    tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_LOOKUP_HIT_SELF);
++    tcg_wasm_out_op_i64_const(s, 0);
++    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);
++    tcg_wasm_out_op_br(s, 4); // if, if, if, guard if, loop
++    tcg_wasm_out_op_end(s);
++
++    // otherwise hand over and tail-call the cached function
++    tcg_wasm_out_op_local_get(s, CTX_IDX);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);
++    tcg_wasm_out_op_i32_store(s, 0, TB_PTR_OFF);
++    tcg_wasm_out_op_local_get(s, CTX_IDX);
++    tcg_wasm_out_op_i32_const(s, WASM_ENTRY_CHAIN);
++    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_1_IDX);
++    tcg_wasm_out_op_return_call_indirect(s);
++    tcg_wasm_out_op_end(s);
++    tcg_wasm_out_op_end(s);
++}
++
+ static void tcg_wasm_out_exit_tb(TCGContext *s, uintptr_t arg)
+ {
++    tcg_wasm_out_census(s, WC_EXIT_TB);
+     tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);
+     tcg_wasm_out_op_i32_const(s, (int32_t)arg);
+     tcg_wasm_out_op_return(s);
+@@ -2025,6 +2147,7 @@
+     tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);
+     tcg_wasm_out_op_i32_eq(s);
+     tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_GOTO_PTR_SELF);
+     tcg_wasm_out_op_i64_const(s, 0);
+     tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);
+     tcg_wasm_out_op_br(s, 2); // br to the top of loop
+@@ -2038,8 +2161,10 @@
+     tcg_wasm_out_op_i32_store(s, 0, TB_PTR_OFF);
+     // a found block that is compiled is entered directly
+     tcg_wasm_out_op_if_noret(s);
+-    tcg_wasm_out_chain_or_return(s, WASM_ENTRY_CHAIN);
++    tcg_wasm_out_chain_or_return(s, WASM_ENTRY_CHAIN,
++                                 WC_GOTO_PTR_CHAIN, WC_GOTO_PTR_UNCOMPILED);
+     tcg_wasm_out_op_end(s);
++    tcg_wasm_out_census(s, WC_GOTO_PTR_NULL);
+     tcg_wasm_out_op_i32_const(s, 0);
+     tcg_wasm_out_op_return(s);
+ }
+@@ -2084,6 +2209,7 @@
+     tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);
+     tcg_wasm_out_op_i32_eq(s);
+     tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_GOTO_TB_SELF);
+     tcg_wasm_out_op_i64_const(s, 0);
+     tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);
+     tcg_wasm_out_op_br(s, 3); // br to the top of loop
+@@ -2113,6 +2239,7 @@
+     tcg_wasm_out_sleb5(s, WASM_DIRECT_NEVER);
+     tcg_wasm_out_op_i32_eq(s);
+     tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_GOTO_TB_DIRECT);
+     tcg_wasm_out_op_local_get(s, CTX_IDX);
+     tcg_wasm_out_op_i32_const(s, WASM_ENTRY_CHAIN);
+     tcg_wasm_out8(s, 0x12); // return_call
+@@ -2125,6 +2252,7 @@
+     tcg_wasm_out_op_i32_load(s, 0, 0);
+     tcg_wasm_out_op_local_tee(s, TMP32_LOCAL_1_IDX);
+     tcg_wasm_out_op_if_noret(s);
++    tcg_wasm_out_census(s, WC_GOTO_TB_CACHED);
+     tcg_wasm_out_op_local_get(s, CTX_IDX);
+     tcg_wasm_out_op_i32_const(s, WASM_ENTRY_CHAIN);
+     tcg_wasm_out_op_local_get(s, TMP32_LOCAL_1_IDX);
+@@ -2132,11 +2260,14 @@
+     tcg_wasm_out_op_end(s);
+ 
+     // no index cached: the dispatcher runs the target and fills the slot
++    tcg_wasm_out_census(s, WC_GOTO_TB_MISS);
+     tcg_wasm_out_ctx_i32_store_const(s, MISS_TB_OFF, (int32_t)(uintptr_t)s->gen_tb);
+     tcg_wasm_out_ctx_i32_store_const(s, MISS_WHICH_OFF, which);
+     tcg_wasm_out_op_i32_const(s, 0);
+     tcg_wasm_out_op_return(s);
+     tcg_wasm_out_op_end(s);
++    // not linked: the exit_tb that follows returns to the dispatcher
++    tcg_wasm_out_census(s, WC_GOTO_TB_UNLINKED);
+ }
+ 
+ static void push_arg_i64(TCGContext *s, int *reg_idx, int *stack_offset) {
+@@ -2382,6 +2513,12 @@
+ static void tcg_wasm_out_call(TCGContext *s, const tcg_insn_unit *func,
+                          const TCGHelperInfo *info)
+ {
++#if WASM32_LOOKUP_CACHE
++    // a block lookup first tries the cache; a hit never comes back here
++    if (wasm_tail_calls_ok && (const void *)func == wasm_lookup_helper) {
++        tcg_wasm_out_lookup_probe(s);
++    }
++#endif
+     // set return position
+     tcg_wasm_out_ctx_i32_load(s, HELPER_RET_TB_PTR_OFF);
+     tcg_wasm_out_op_i32_const(s, (int32_t)s->code_ptr);
+@@ -4148,7 +4285,7 @@
+         tcg_wasm_out_op_i32_const(s, (int32_t)(uintptr_t)s->code_buf);
+         tcg_wasm_out_op_i32_ne(s);
+         tcg_wasm_out_op_if_noret(s);
+-        tcg_wasm_out_chain_or_return(s, WASM_ENTRY_DISPATCH);
++        tcg_wasm_out_chain_or_return(s, WASM_ENTRY_DISPATCH, -1, -1);
+         tcg_wasm_out_op_end(s);
+     }
+ 

@@ -1,0 +1,4443 @@
+{
+ "description": "Block-transition census and the goto_ptr lookup cache (patches/0009), September 13, 2026, leviathan, Chromium 151. census: per-workload counts of every transition kind from an instrumented engine (WASM32_CENSUS). ab: exec-bench runs for warm128 (the release engine as served), base (fork8 rebuilt in the investigation's container; wasm identical to the release) and jc (the cache), cores 28-31 then 84-87; the first set's control overlapped a game server. emu: emubench medians. prof: perf attribution of the vCPU thread by mechanism, release engine and cache engine.",
+ "census": {
+  "census-jujutsu-census-1.census.json": {
+   "name": "jujutsu",
+   "lines": 44,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 7292159,
+     "goto_tb_direct": 4328366,
+     "goto_tb_cached": 1000691,
+     "goto_tb_miss": 71969,
+     "goto_tb_unlinked": 5778,
+     "goto_ptr_self": 871,
+     "goto_ptr_chain": 2025676,
+     "goto_ptr_uncompiled": 96590,
+     "goto_ptr_null": 6232,
+     "exit_tb": 50069,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 93478,
+     "dispatch_call": 226800,
+     "tci_run": 209456,
+     "tci_goto_tb_stay": 688654,
+     "tci_goto_ptr_stay": 216443,
+     "tci_to_compiled": 174219,
+     "tci_exit": 34195,
+     "lookup_helper": 2054642,
+     "lookup_helper_tci": 413268,
+     "lookup_jc_hit": 2232543,
+     "lookup_htable": 285409,
+     "lookup_null": 43244,
+     "loop_lookup": 93487,
+     "tb_gen": 29744,
+     "tb_add_jump": 17587,
+     "exit_zero": 64282,
+     "exit_unlinked": 25419,
+     "exit_requested": 795,
+     "jc_flush": 25,
+     "tb_inval": 0,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 25
+    },
+    "warm": {
+     "goto_tb_self": 6878701,
+     "goto_tb_direct": 3160643,
+     "goto_tb_cached": 623059,
+     "goto_tb_miss": 18680,
+     "goto_tb_unlinked": 5659,
+     "goto_ptr_self": 1367,
+     "goto_ptr_chain": 1358526,
+     "goto_ptr_uncompiled": 43893,
+     "goto_ptr_null": 5,
+     "exit_tb": 29218,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 35299,
+     "dispatch_call": 93503,
+     "tci_run": 66756,
+     "tci_goto_tb_stay": 154013,
+     "tci_goto_ptr_stay": 46487,
+     "tci_to_compiled": 62387,
+     "tci_exit": 4031,
+     "lookup_helper": 1309487,
+     "lookup_helper_tci": 185628,
+     "lookup_jc_hit": 1392557,
+     "lookup_htable": 137608,
+     "lookup_null": 85,
+     "loop_lookup": 35305,
+     "tb_gen": 73,
+     "tb_add_jump": 80,
+     "exit_zero": 26369,
+     "exit_unlinked": 6440,
+     "exit_requested": 445,
+     "jc_flush": 19,
+     "tb_inval": 0,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 19
+    }
+   }
+  },
+  "census-jujutsu-census-1.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 5.87,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.99,
+    "status": 0,
+    "guest": {
+     "real": 1.46,
+     "user": 0.79,
+     "sys": 0.57
+    },
+    "browser_cpu_seconds": 5.17,
+    "browser_peak_rss_bytes": 2768433152
+   },
+   "warm": {
+    "wall_seconds": 1.34,
+    "status": 0,
+    "guest": {
+     "real": 0.47,
+     "user": 0.27,
+     "sys": 0.19
+    },
+    "browser_cpu_seconds": 1.9,
+    "browser_peak_rss_bytes": 2772803584
+   },
+   "events": [
+    {
+     "t": 1789321240.766385,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789321244.7782452,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789321246.1346877,
+     "what": "close"
+    }
+   ]
+  },
+  "census-opencode-census-1.census.json": {
+   "name": "opencode",
+   "lines": 44,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 308530300,
+     "goto_tb_direct": 568585678,
+     "goto_tb_cached": 162294643,
+     "goto_tb_miss": 2017725,
+     "goto_tb_unlinked": 1598007,
+     "goto_ptr_self": 80,
+     "goto_ptr_chain": 153214351,
+     "goto_ptr_uncompiled": 2508192,
+     "goto_ptr_null": 39606,
+     "exit_tb": 2426480,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 3120294,
+     "dispatch_call": 7046761,
+     "tci_run": 5133643,
+     "tci_goto_tb_stay": 18894406,
+     "tci_goto_ptr_stay": 2983863,
+     "tci_to_compiled": 4534193,
+     "tci_exit": 593047,
+     "lookup_helper": 154467721,
+     "lookup_helper_tci": 7145139,
+     "lookup_jc_hit": 150113171,
+     "lookup_htable": 14043896,
+     "lookup_null": 575395,
+     "loop_lookup": 3120310,
+     "tb_gen": 459733,
+     "tb_add_jump": 392208,
+     "exit_zero": 968761,
+     "exit_unlinked": 2074279,
+     "exit_requested": 16093,
+     "jc_flush": 1116,
+     "tb_inval": 910,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 1118
+    },
+    "warm": {
+     "goto_tb_self": 310467776,
+     "goto_tb_direct": 474153598,
+     "goto_tb_cached": 262928883,
+     "goto_tb_miss": 1744012,
+     "goto_tb_unlinked": 1602361,
+     "goto_ptr_self": 68,
+     "goto_ptr_chain": 149053278,
+     "goto_ptr_uncompiled": 2222798,
+     "goto_ptr_null": 36585,
+     "exit_tb": 2298027,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 2935955,
+     "dispatch_call": 6353289,
+     "tci_run": 4526420,
+     "tci_goto_tb_stay": 16896540,
+     "tci_goto_ptr_stay": 2727170,
+     "tci_to_compiled": 3976944,
+     "tci_exit": 543938,
+     "lookup_helper": 150497286,
+     "lookup_helper_tci": 6086097,
+     "lookup_jc_hit": 145601587,
+     "lookup_htable": 13384984,
+     "lookup_null": 532214,
+     "loop_lookup": 2935968,
+     "tb_gen": 423726,
+     "tb_add_jump": 358249,
+     "exit_zero": 827754,
+     "exit_unlinked": 2035783,
+     "exit_requested": 15013,
+     "jc_flush": 5590,
+     "tb_inval": 5375,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 5594
+    }
+   }
+  },
+  "census-opencode-census-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.62,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 159.63,
+    "status": 0,
+    "guest": {
+     "real": 65.1,
+     "user": 57.69,
+     "sys": 6.7
+    },
+    "browser_cpu_seconds": 208.51,
+    "browser_peak_rss_bytes": 3445411840
+   },
+   "warm": {
+    "wall_seconds": 151.92,
+    "status": 0,
+    "guest": {
+     "real": 61.96,
+     "user": 55.45,
+     "sys": 6.03
+    },
+    "browser_cpu_seconds": 195.04,
+    "browser_peak_rss_bytes": 4046200832
+   },
+   "events": [
+    {
+     "t": 1789323029.8628182,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789323189.5047834,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789323341.4332917,
+     "what": "close"
+    }
+   ]
+  },
+  "census-python-census-1.census.json": {
+   "name": "python",
+   "lines": 49,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 10882748,
+     "goto_tb_direct": 9977942,
+     "goto_tb_cached": 3262666,
+     "goto_tb_miss": 134076,
+     "goto_tb_unlinked": 33970,
+     "goto_ptr_self": 1169,
+     "goto_ptr_chain": 5467258,
+     "goto_ptr_uncompiled": 208230,
+     "goto_ptr_null": 3589,
+     "exit_tb": 72165,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 121533,
+     "dispatch_call": 421789,
+     "tci_run": 385671,
+     "tci_goto_tb_stay": 1191321,
+     "tci_goto_ptr_stay": 299398,
+     "tci_to_compiled": 343621,
+     "tci_exit": 41347,
+     "lookup_helper": 5575491,
+     "lookup_helper_tci": 649954,
+     "lookup_jc_hit": 5854691,
+     "lookup_htable": 448567,
+     "lookup_null": 43551,
+     "loop_lookup": 121538,
+     "tb_gen": 33017,
+     "tb_add_jump": 25342,
+     "exit_zero": 52895,
+     "exit_unlinked": 62909,
+     "exit_requested": 1297,
+     "jc_flush": 22,
+     "tb_inval": 0,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 22
+    },
+    "warm": {
+     "goto_tb_self": 10599812,
+     "goto_tb_direct": 9843096,
+     "goto_tb_cached": 3236077,
+     "goto_tb_miss": 46544,
+     "goto_tb_unlinked": 34353,
+     "goto_ptr_self": 1259,
+     "goto_ptr_chain": 5451636,
+     "goto_ptr_uncompiled": 74404,
+     "goto_ptr_null": 2,
+     "exit_tb": 62888,
+     "lookup_probe": 0,
+     "lookup_hit": 0,
+     "lookup_hit_self": 0,
+     "exec_entry": 70121,
+     "dispatch_call": 186851,
+     "tci_run": 124089,
+     "tci_goto_tb_stay": 306489,
+     "tci_goto_ptr_stay": 71468,
+     "tci_to_compiled": 119871,
+     "tci_exit": 3844,
+     "lookup_helper": 5441363,
+     "lookup_helper_tci": 241224,
+     "lookup_jc_hit": 5378214,
+     "lookup_htable": 374265,
+     "lookup_null": 90,
+     "loop_lookup": 70126,
+     "tb_gen": 77,
+     "tb_add_jump": 85,
+     "exit_zero": 29691,
+     "exit_unlinked": 36125,
+     "exit_requested": 918,
+     "jc_flush": 21,
+     "tb_inval": 0,
+     "fill_new": 0,
+     "fill_conflict": 0,
+     "fill_same": 0,
+     "fill_same_tci": 0,
+     "fill_uncompiled": 0,
+     "fill_not64": 0,
+     "epoch": 21
+    }
+   }
+  },
+  "census-python-census-1.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 7.99,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.55,
+    "status": 0,
+    "guest": {
+     "real": 2.15,
+     "user": 1.55,
+     "sys": 0.52
+    },
+    "browser_cpu_seconds": 7.18,
+    "browser_peak_rss_bytes": 2937008128
+   },
+   "warm": {
+    "wall_seconds": 3.45,
+    "status": 0,
+    "guest": {
+     "real": 1.24,
+     "user": 0.91,
+     "sys": 0.31
+    },
+    "browser_cpu_seconds": 4.38,
+    "browser_peak_rss_bytes": 2861039616
+   },
+   "events": [
+    {
+     "t": 1789321258.077058,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789321263.647616,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789321267.1050591,
+     "what": "close"
+    }
+   ]
+  },
+  "jc-census-jujutsu-census-1.census.json": {
+   "name": "jujutsu",
+   "lines": 45,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 7286181,
+     "goto_tb_direct": 4336454,
+     "goto_tb_cached": 979677,
+     "goto_tb_miss": 75842,
+     "goto_tb_unlinked": 5779,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 74818,
+     "goto_ptr_uncompiled": 96113,
+     "goto_ptr_null": 6060,
+     "exit_tb": 50011,
+     "lookup_probe": 2122927,
+     "lookup_hit": 1945935,
+     "lookup_hit_self": 838,
+     "exec_entry": 93101,
+     "dispatch_call": 229911,
+     "tci_run": 212640,
+     "tci_goto_tb_stay": 703337,
+     "tci_goto_ptr_stay": 225200,
+     "tci_to_compiled": 177495,
+     "tci_exit": 34084,
+     "lookup_helper": 171289,
+     "lookup_helper_tci": 353010,
+     "lookup_jc_hit": 450059,
+     "lookup_htable": 124264,
+     "lookup_null": 42884,
+     "loop_lookup": 93109,
+     "tb_gen": 29489,
+     "tb_add_jump": 17433,
+     "exit_zero": 64107,
+     "exit_unlinked": 25261,
+     "exit_requested": 787,
+     "jc_flush": 26,
+     "tb_inval": 0,
+     "fill_new": 11930,
+     "fill_conflict": 69447,
+     "fill_same": 0,
+     "fill_same_tci": 108002,
+     "fill_uncompiled": 321328,
+     "fill_not64": 0,
+     "epoch": 26
+    },
+    "warm": {
+     "goto_tb_self": 6886277,
+     "goto_tb_direct": 3119535,
+     "goto_tb_cached": 661341,
+     "goto_tb_miss": 18310,
+     "goto_tb_unlinked": 5678,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 38843,
+     "goto_ptr_uncompiled": 44078,
+     "goto_ptr_null": 4,
+     "exit_tb": 29138,
+     "lookup_probe": 1403217,
+     "lookup_hit": 1320289,
+     "lookup_hit_self": 1363,
+     "exec_entry": 35330,
+     "dispatch_call": 93225,
+     "tci_run": 66645,
+     "tci_goto_tb_stay": 156139,
+     "tci_goto_ptr_stay": 46691,
+     "tci_to_compiled": 62152,
+     "tci_exit": 4138,
+     "lookup_helper": 80199,
+     "lookup_helper_tci": 94446,
+     "lookup_jc_hit": 152104,
+     "lookup_htable": 57595,
+     "lookup_null": 114,
+     "loop_lookup": 35336,
+     "tb_gen": 97,
+     "tb_add_jump": 104,
+     "exit_zero": 26390,
+     "exit_unlinked": 6454,
+     "exit_requested": 436,
+     "jc_flush": 23,
+     "tb_inval": 0,
+     "fill_new": 10775,
+     "fill_conflict": 30530,
+     "fill_same": 0,
+     "fill_same_tci": 42390,
+     "fill_uncompiled": 90771,
+     "fill_not64": 0,
+     "epoch": 23
+    }
+   }
+  },
+  "jc-census-jujutsu-census-1.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 5.89,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.72,
+    "status": 0,
+    "guest": {
+     "real": 1.42,
+     "user": 0.83,
+     "sys": 0.49
+    },
+    "browser_cpu_seconds": 4.9,
+    "browser_peak_rss_bytes": 2768982016
+   },
+   "warm": {
+    "wall_seconds": 1.33,
+    "status": 0,
+    "guest": {
+     "real": 0.45,
+     "user": 0.25,
+     "sys": 0.19
+    },
+    "browser_cpu_seconds": 1.78,
+    "browser_peak_rss_bytes": 2778357760
+   },
+   "events": [
+    {
+     "t": 1789321275.1322775,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789321278.8673851,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789321280.2131276,
+     "what": "close"
+    }
+   ]
+  },
+  "jc-census-opencode-census-1.census.json": {
+   "name": "opencode",
+   "lines": 54,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 297508680,
+     "goto_tb_direct": 535833849,
+     "goto_tb_cached": 156443473,
+     "goto_tb_miss": 1961773,
+     "goto_tb_unlinked": 1593066,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 6336590,
+     "goto_ptr_uncompiled": 2482049,
+     "goto_ptr_null": 40618,
+     "exit_tb": 2400190,
+     "lookup_probe": 153548273,
+     "lookup_hit": 144688998,
+     "lookup_hit_self": 80,
+     "exec_entry": 3082846,
+     "dispatch_call": 6938261,
+     "tci_run": 5040852,
+     "tci_goto_tb_stay": 18357214,
+     "tci_goto_ptr_stay": 2924474,
+     "tci_to_compiled": 4452445,
+     "tci_exit": 581983,
+     "lookup_helper": 8741257,
+     "lookup_helper_tci": 5872976,
+     "lookup_jc_hit": 12072456,
+     "lookup_htable": 5055903,
+     "lookup_null": 568027,
+     "loop_lookup": 3082862,
+     "tb_gen": 453401,
+     "tb_add_jump": 385562,
+     "exit_zero": 947090,
+     "exit_unlinked": 2060501,
+     "exit_requested": 15200,
+     "jc_flush": 967,
+     "tb_inval": 768,
+     "fill_new": 630784,
+     "fill_conflict": 5904920,
+     "fill_same": 0,
+     "fill_same_tci": 2556472,
+     "fill_uncompiled": 5406727,
+     "fill_not64": 0,
+     "epoch": 969
+    },
+    "warm": {
+     "goto_tb_self": 295783641,
+     "goto_tb_direct": 535298983,
+     "goto_tb_cached": 151969723,
+     "goto_tb_miss": 1899771,
+     "goto_tb_unlinked": 1569771,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 6095273,
+     "goto_ptr_uncompiled": 2380832,
+     "goto_ptr_null": 39571,
+     "exit_tb": 2249158,
+     "lookup_probe": 148952773,
+     "lookup_hit": 140437079,
+     "lookup_hit_self": 82,
+     "exec_entry": 2940603,
+     "dispatch_call": 6620281,
+     "tci_run": 4891932,
+     "tci_goto_tb_stay": 18382834,
+     "tci_goto_ptr_stay": 2937460,
+     "tci_to_compiled": 4291007,
+     "tci_exit": 595227,
+     "lookup_helper": 8444627,
+     "lookup_helper_tci": 5731668,
+     "lookup_jc_hit": 11715304,
+     "lookup_htable": 4816577,
+     "lookup_null": 584468,
+     "loop_lookup": 2940617,
+     "tb_gen": 466442,
+     "tb_add_jump": 396969,
+     "exit_zero": 821866,
+     "exit_unlinked": 2047578,
+     "exit_requested": 14512,
+     "jc_flush": 4765,
+     "tb_inval": 4560,
+     "fill_new": 712698,
+     "fill_conflict": 5573150,
+     "fill_same": 0,
+     "fill_same_tci": 2453383,
+     "fill_uncompiled": 5318481,
+     "fill_not64": 0,
+     "epoch": 4769
+    }
+   }
+  },
+  "jc-census-opencode-census-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.48,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 150.22,
+    "status": 0,
+    "guest": {
+     "real": 61.24,
+     "user": 54.04,
+     "sys": 6.52
+    },
+    "browser_cpu_seconds": 199.64,
+    "browser_peak_rss_bytes": 3662602240
+   },
+   "warm": {
+    "wall_seconds": 147.23,
+    "status": 0,
+    "guest": {
+     "real": 59.97,
+     "user": 53.72,
+     "sys": 5.78
+    },
+    "browser_cpu_seconds": 192.35,
+    "browser_peak_rss_bytes": 3837890560
+   },
+   "events": [
+    {
+     "t": 1789323351.8913105,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789323502.1258385,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789323649.3660936,
+     "what": "close"
+    }
+   ]
+  },
+  "jc-census-python-census-1.census.json": {
+   "name": "python",
+   "lines": 50,
+   "phases": {
+    "cold": {
+     "goto_tb_self": 10877926,
+     "goto_tb_direct": 10421984,
+     "goto_tb_cached": 2751878,
+     "goto_tb_miss": 130941,
+     "goto_tb_unlinked": 33874,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 127502,
+     "goto_ptr_uncompiled": 211371,
+     "goto_ptr_null": 3606,
+     "exit_tb": 71770,
+     "lookup_probe": 5669713,
+     "lookup_hit": 5327224,
+     "lookup_hit_self": 1169,
+     "exec_entry": 121318,
+     "dispatch_call": 421391,
+     "tci_run": 385922,
+     "tci_goto_tb_stay": 1205621,
+     "tci_goto_ptr_stay": 300313,
+     "tci_to_compiled": 343683,
+     "tci_exit": 41543,
+     "lookup_helper": 335102,
+     "lookup_helper_tci": 555064,
+     "lookup_jc_hit": 764572,
+     "lookup_htable": 203079,
+     "lookup_null": 43662,
+     "loop_lookup": 121323,
+     "tb_gen": 33103,
+     "tb_add_jump": 25395,
+     "exit_zero": 52706,
+     "exit_unlinked": 62942,
+     "exit_requested": 1271,
+     "jc_flush": 21,
+     "tb_inval": 0,
+     "fill_new": 15743,
+     "fill_conflict": 122520,
+     "fill_same": 0,
+     "fill_same_tci": 229466,
+     "fill_uncompiled": 511706,
+     "fill_not64": 0,
+     "epoch": 21
+    },
+    "warm": {
+     "goto_tb_self": 10594091,
+     "goto_tb_direct": 10281135,
+     "goto_tb_cached": 2803880,
+     "goto_tb_miss": 47246,
+     "goto_tb_unlinked": 34298,
+     "goto_ptr_self": 0,
+     "goto_ptr_chain": 128041,
+     "goto_ptr_uncompiled": 74114,
+     "goto_ptr_null": 4,
+     "exit_tb": 62780,
+     "lookup_probe": 5525964,
+     "lookup_hit": 5323775,
+     "lookup_hit_self": 1259,
+     "exec_entry": 70017,
+     "dispatch_call": 187138,
+     "tci_run": 124491,
+     "tci_goto_tb_stay": 305201,
+     "tci_goto_ptr_stay": 70495,
+     "tci_to_compiled": 120252,
+     "tci_exit": 3865,
+     "lookup_helper": 197258,
+     "lookup_helper_tci": 158981,
+     "lookup_jc_hit": 308106,
+     "lookup_htable": 117855,
+     "lookup_null": 150,
+     "loop_lookup": 70021,
+     "tb_gen": 116,
+     "tb_add_jump": 94,
+     "exit_zero": 29671,
+     "exit_unlinked": 36103,
+     "exit_requested": 875,
+     "jc_flush": 19,
+     "tb_inval": 0,
+     "fill_new": 15805,
+     "fill_conflict": 118690,
+     "fill_same": 0,
+     "fill_same_tci": 76946,
+     "fill_uncompiled": 144619,
+     "fill_not64": 0,
+     "epoch": 19
+    }
+   }
+  },
+  "jc-census-python-census-1.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 7.98,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.32,
+    "status": 0,
+    "guest": {
+     "real": 2.08,
+     "user": 1.49,
+     "sys": 0.51
+    },
+    "browser_cpu_seconds": 7.06,
+    "browser_peak_rss_bytes": 2942619648
+   },
+   "warm": {
+    "wall_seconds": 3.18,
+    "status": 0,
+    "guest": {
+     "real": 1.15,
+     "user": 0.81,
+     "sys": 0.32
+    },
+    "browser_cpu_seconds": 4.2,
+    "browser_peak_rss_bytes": 2870398976
+   },
+   "events": [
+    {
+     "t": 1789321291.9611487,
+     "what": "'EXEC_BENCH_' '0'"
+    },
+    {
+     "t": 1789321297.3041162,
+     "what": "'EXEC_BENCH_' '1'"
+    },
+    {
+     "t": 1789321300.500668,
+     "what": "close"
+    }
+   ]
+  }
+ },
+ "ab": {
+  "base-jujutsu-exec-1.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.02,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.74,
+    "status": 0,
+    "guest": {
+     "real": 1.44,
+     "user": 0.8,
+     "sys": 0.54
+    },
+    "browser_cpu_seconds": 4.87,
+    "browser_peak_rss_bytes": 2764505088
+   },
+   "warm": {
+    "wall_seconds": 1.36,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.27,
+     "sys": 0.18
+    },
+    "browser_cpu_seconds": 1.79,
+    "browser_peak_rss_bytes": 2772070400
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 4030,
+      "turbofan": 30
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 14696,
+      "turbofan": 432
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17670,
+      "turbofan": 848
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 10666,
+    "turbofan": 402
+   },
+   "compiled_warm": {
+    "liftoff": 2974,
+    "turbofan": 416
+   }
+  },
+  "base-jujutsu-exec-2.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.08,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.98,
+    "status": 0,
+    "guest": {
+     "real": 1.45,
+     "user": 0.82,
+     "sys": 0.52
+    },
+    "browser_cpu_seconds": 4.91,
+    "browser_peak_rss_bytes": 2771607552
+   },
+   "warm": {
+    "wall_seconds": 1.35,
+    "status": 0,
+    "guest": {
+     "real": 0.47,
+     "user": 0.28,
+     "sys": 0.18
+    },
+    "browser_cpu_seconds": 1.81,
+    "browser_peak_rss_bytes": 2776817664
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2522,
+      "turbofan": 18
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7792,
+      "turbofan": 277
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9158,
+      "turbofan": 534
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5270,
+    "turbofan": 259
+   },
+   "compiled_warm": {
+    "liftoff": 1366,
+    "turbofan": 257
+   }
+  },
+  "base-jujutsu-exec-3.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.11,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.72,
+    "status": 0,
+    "guest": {
+     "real": 1.44,
+     "user": 0.83,
+     "sys": 0.51
+    },
+    "browser_cpu_seconds": 4.82,
+    "browser_peak_rss_bytes": 2769711104
+   },
+   "warm": {
+    "wall_seconds": 1.35,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.3,
+     "sys": 0.15
+    },
+    "browser_cpu_seconds": 1.79,
+    "browser_peak_rss_bytes": 2776203264
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2512,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7622,
+      "turbofan": 284
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9675,
+      "turbofan": 534
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5110,
+    "turbofan": 267
+   },
+   "compiled_warm": {
+    "liftoff": 2053,
+    "turbofan": 250
+   }
+  },
+  "base-opencode-opencode-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.62,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 155.47,
+    "status": 0,
+    "guest": {
+     "real": 63.42,
+     "user": 55.74,
+     "sys": 6.97
+    },
+    "browser_cpu_seconds": 201.14,
+    "browser_peak_rss_bytes": 3453886464
+   },
+   "warm": {
+    "wall_seconds": 143.51,
+    "status": 0,
+    "guest": {
+     "real": 58.43,
+     "user": 52.19,
+     "sys": 5.83
+    },
+    "browser_cpu_seconds": 183.77,
+    "browser_peak_rss_bytes": 3476893696
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 3179,
+      "turbofan": 20
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 199494,
+      "turbofan": 20350
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 404688,
+      "turbofan": 49063
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 196315,
+    "turbofan": 20330
+   },
+   "compiled_warm": {
+    "liftoff": 205194,
+    "turbofan": 28713
+   }
+  },
+  "base-python-exec-1.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.2,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.58,
+    "status": 0,
+    "guest": {
+     "real": 2.13,
+     "user": 1.49,
+     "sys": 0.56
+    },
+    "browser_cpu_seconds": 6.96,
+    "browser_peak_rss_bytes": 2930438144
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.22,
+     "user": 0.89,
+     "sys": 0.3
+    },
+    "browser_cpu_seconds": 4.24,
+    "browser_peak_rss_bytes": 2857709568
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5334,
+      "turbofan": 64
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13687,
+      "turbofan": 654
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17302,
+      "turbofan": 1185
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8353,
+    "turbofan": 590
+   },
+   "compiled_warm": {
+    "liftoff": 3615,
+    "turbofan": 531
+   }
+  },
+  "base-python-exec-2.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.12,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.58,
+    "status": 0,
+    "guest": {
+     "real": 2.13,
+     "user": 1.49,
+     "sys": 0.57
+    },
+    "browser_cpu_seconds": 7.03,
+    "browser_peak_rss_bytes": 2932609024
+   },
+   "warm": {
+    "wall_seconds": 3.21,
+    "status": 0,
+    "guest": {
+     "real": 1.22,
+     "user": 0.86,
+     "sys": 0.34
+    },
+    "browser_cpu_seconds": 4.3,
+    "browser_peak_rss_bytes": 2859290624
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5424,
+      "turbofan": 66
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 17162,
+      "turbofan": 679
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 34965,
+      "turbofan": 1778
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 11738,
+    "turbofan": 613
+   },
+   "compiled_warm": {
+    "liftoff": 17803,
+    "turbofan": 1099
+   }
+  },
+  "base-python-exec-3.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.27,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.59,
+    "status": 0,
+    "guest": {
+     "real": 2.16,
+     "user": 1.58,
+     "sys": 0.51
+    },
+    "browser_cpu_seconds": 7.06,
+    "browser_peak_rss_bytes": 2926305280
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.23,
+     "user": 0.87,
+     "sys": 0.34
+    },
+    "browser_cpu_seconds": 4.28,
+    "browser_peak_rss_bytes": 2859294720
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5548,
+      "turbofan": 63
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13635,
+      "turbofan": 652
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17259,
+      "turbofan": 1181
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8087,
+    "turbofan": 589
+   },
+   "compiled_warm": {
+    "liftoff": 3624,
+    "turbofan": 529
+   }
+  },
+  "jc-jujutsu-exec-1.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.18,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.73,
+    "status": 0,
+    "guest": {
+     "real": 1.41,
+     "user": 0.82,
+     "sys": 0.49
+    },
+    "browser_cpu_seconds": 4.83,
+    "browser_peak_rss_bytes": 2770468864
+   },
+   "warm": {
+    "wall_seconds": 1.34,
+    "status": 0,
+    "guest": {
+     "real": 0.44,
+     "user": 0.21,
+     "sys": 0.22
+    },
+    "browser_cpu_seconds": 1.78,
+    "browser_peak_rss_bytes": 2780405760
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2541,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7770,
+      "turbofan": 282
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9097,
+      "turbofan": 540
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5229,
+    "turbofan": 265
+   },
+   "compiled_warm": {
+    "liftoff": 1327,
+    "turbofan": 258
+   }
+  },
+  "jc-jujutsu-exec-2.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.03,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.72,
+    "status": 0,
+    "guest": {
+     "real": 1.4,
+     "user": 0.81,
+     "sys": 0.5
+    },
+    "browser_cpu_seconds": 4.78,
+    "browser_peak_rss_bytes": 2770644992
+   },
+   "warm": {
+    "wall_seconds": 1.35,
+    "status": 0,
+    "guest": {
+     "real": 0.45,
+     "user": 0.28,
+     "sys": 0.16
+    },
+    "browser_cpu_seconds": 1.79,
+    "browser_peak_rss_bytes": 2778861568
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2539,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7549,
+      "turbofan": 276
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9104,
+      "turbofan": 530
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5010,
+    "turbofan": 259
+   },
+   "compiled_warm": {
+    "liftoff": 1555,
+    "turbofan": 254
+   }
+  },
+  "jc-jujutsu-exec-3.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.08,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.73,
+    "status": 0,
+    "guest": {
+     "real": 1.41,
+     "user": 0.81,
+     "sys": 0.5
+    },
+    "browser_cpu_seconds": 4.81,
+    "browser_peak_rss_bytes": 2760790016
+   },
+   "warm": {
+    "wall_seconds": 1.35,
+    "status": 0,
+    "guest": {
+     "real": 0.45,
+     "user": 0.26,
+     "sys": 0.18
+    },
+    "browser_cpu_seconds": 1.79,
+    "browser_peak_rss_bytes": 2771447808
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2563,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7568,
+      "turbofan": 278
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9096,
+      "turbofan": 535
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5005,
+    "turbofan": 261
+   },
+   "compiled_warm": {
+    "liftoff": 1528,
+    "turbofan": 257
+   }
+  },
+  "jc-opencode-opencode-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.66,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 149.79,
+    "status": 0,
+    "guest": {
+     "real": 61.13,
+     "user": 54.22,
+     "sys": 6.23
+    },
+    "browser_cpu_seconds": 196.64,
+    "browser_peak_rss_bytes": 3599577088
+   },
+   "warm": {
+    "wall_seconds": 137.51,
+    "status": 0,
+    "guest": {
+     "real": 55.94,
+     "user": 50.2,
+     "sys": 5.34
+    },
+    "browser_cpu_seconds": 178.29,
+    "browser_peak_rss_bytes": 3690840064
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2593,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 286459,
+      "turbofan": 25724
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 527735,
+      "turbofan": 48874
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 283866,
+    "turbofan": 25707
+   },
+   "compiled_warm": {
+    "liftoff": 241276,
+    "turbofan": 23150
+   }
+  },
+  "jc-opencode-opencode-2.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.84,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 150.64,
+    "status": 0,
+    "guest": {
+     "real": 61.46,
+     "user": 54.22,
+     "sys": 6.56
+    },
+    "browser_cpu_seconds": 197.24,
+    "browser_peak_rss_bytes": 3597361152
+   },
+   "warm": {
+    "wall_seconds": 138.11,
+    "status": 0,
+    "guest": {
+     "real": 56.27,
+     "user": 50.09,
+     "sys": 5.79
+    },
+    "browser_cpu_seconds": 179.08,
+    "browser_peak_rss_bytes": 3523866624
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 3900,
+      "turbofan": 29
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 218533,
+      "turbofan": 21685
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 461772,
+      "turbofan": 45800
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 214633,
+    "turbofan": 21656
+   },
+   "compiled_warm": {
+    "liftoff": 243239,
+    "turbofan": 24115
+   }
+  },
+  "jc-opencode-opencode3-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 8.71,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 149.49,
+    "status": 0,
+    "guest": {
+     "real": 60.98,
+     "user": 54.0,
+     "sys": 6.29
+    },
+    "browser_cpu_seconds": 196.07,
+    "browser_peak_rss_bytes": 3476746240
+   },
+   "transcript_tail": "XEC_BENCH_' '1' $?\r\r\n============================================================\r\r\n\u001b[0m\u001b[2mBun v1.3.13 (bf2e2cec) Linux x64 (baseline)\r\r\nLinux Kernel v7.2.5 | glibc v2.42\r\r\nCPU: sse42 popcnt avx avx2\r\r\nArgs: \"opencode\" \"--user-agent=opencode/1.18.29\" \"--use-system-ca\" \"--\" \"--version\"\r\r\nFeatures: Bun.stderr(2) Bun.stdin(2) Bun.stdout(2) jsc standalone_executable \r\r\nBuiltins: \"bun:ffi\" \"bun:main\" \"bun:sqlite\" \"node:assert\" \"node:async_hooks\" \"node:buffer\" \"node:child_process\" \"node:crypto\" \"node:dns\" \"node:events\" \"node:fs\" \"node:fs/promises\" \"node:http\" \"node:https\" \"node:module\" \"node:net\" \"node:os\" \"node:path\" \"node:process\" \"node:querystring\" \"node:readline\" \"node:stream\" \"node:stream/consumers\" \"node:stream/promises\" \"node:string_decoder\" \"node:timers/promises\" \"node:tty\" \"node:url\" \"node:util\" \"ws\" \"node:v8\" \"node:http2\" \"node:diagnostics_channel\" \r\r\nElapsed: 52657ms | User: 47148ms | Sys: 5308ms\r\r\nRSS: 40.11MB | Peak: 0.18GB | Commit: 40.11MB | Faults: 0 | Machine: 0.52GB\r\r\n\u001b[0m\r\r\n\u001b[31mpanic\u001b[0m\u001b[2m(main thread): \u001b[0mSegmentation fault at address 0x8\r\r\noh no\u001b[0m\u001b[2m:\u001b[0m Bun has crashed. This indicates a bug in Bun, not your code.\r\r\n\r\r\nTo send a redacted crash report to Bun's team,\r\r\nplease file a GitHub issue using the link below:\r\r\n\r\r\n\u001b[36m https://bun.report/1.3.13/Ba1bf2e2ceEugggC4vyi7E+5wQ________mq87jEmsj0jEwgxqzF2uwm3F__msj0jEy14k3F8oxg8F4w+9nEA2AQ\r\r\n\u001b[0m\r\r\nCommand terminated by signal 4\r\r\nreal\t0m 53.08s\r\r\nuser\t0m 47.18s\r\r\nsys\t0m 5.52s\r\r\n\r\r\nEXEC_BENCH_1:4\r\r\n~ # ",
+   "warm": {
+    "wall_seconds": 130.3,
+    "status": 4,
+    "guest": {
+     "real": 53.08,
+     "user": 47.18,
+     "sys": 5.52
+    },
+    "browser_cpu_seconds": 169.09,
+    "browser_peak_rss_bytes": 3525111808,
+    "error": "command exited with status 4"
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2603,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 129506,
+      "turbofan": 16060
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 383365,
+      "turbofan": 54186
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 126903,
+    "turbofan": 16043
+   },
+   "compiled_warm": {
+    "liftoff": 253859,
+    "turbofan": 38126
+   }
+  },
+  "jc-python-exec-1.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.35,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.58,
+    "status": 0,
+    "guest": {
+     "real": 2.09,
+     "user": 1.49,
+     "sys": 0.53
+    },
+    "browser_cpu_seconds": 6.9,
+    "browser_peak_rss_bytes": 2936967168
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.15,
+     "user": 0.8,
+     "sys": 0.33
+    },
+    "browser_cpu_seconds": 4.12,
+    "browser_peak_rss_bytes": 2868879360
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5325,
+      "turbofan": 63
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13696,
+      "turbofan": 655
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17175,
+      "turbofan": 1185
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8371,
+    "turbofan": 592
+   },
+   "compiled_warm": {
+    "liftoff": 3479,
+    "turbofan": 530
+   }
+  },
+  "jc-python-exec-2.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.27,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.32,
+    "status": 0,
+    "guest": {
+     "real": 2.07,
+     "user": 1.48,
+     "sys": 0.51
+    },
+    "browser_cpu_seconds": 6.85,
+    "browser_peak_rss_bytes": 2938564608
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.14,
+     "user": 0.82,
+     "sys": 0.3
+    },
+    "browser_cpu_seconds": 4.1,
+    "browser_peak_rss_bytes": 2869284864
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5439,
+      "turbofan": 64
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13669,
+      "turbofan": 656
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17260,
+      "turbofan": 1188
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8230,
+    "turbofan": 592
+   },
+   "compiled_warm": {
+    "liftoff": 3591,
+    "turbofan": 532
+   }
+  },
+  "jc-python-exec-3.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 8.22,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.35,
+    "status": 0,
+    "guest": {
+     "real": 2.09,
+     "user": 1.48,
+     "sys": 0.52
+    },
+    "browser_cpu_seconds": 6.88,
+    "browser_peak_rss_bytes": 2936926208
+   },
+   "warm": {
+    "wall_seconds": 3.25,
+    "status": 0,
+    "guest": {
+     "real": 1.14,
+     "user": 0.82,
+     "sys": 0.3
+    },
+    "browser_cpu_seconds": 4.08,
+    "browser_peak_rss_bytes": 2867560448
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 27365,
+      "turbofan": 546
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 42583,
+      "turbofan": 2235
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 46694,
+      "turbofan": 2766
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 15218,
+    "turbofan": 1689
+   },
+   "compiled_warm": {
+    "liftoff": 4111,
+    "turbofan": 531
+   }
+  },
+  "warm128-jujutsu-exec-1.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 15.14,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.72,
+    "status": 0,
+    "guest": {
+     "real": 1.43,
+     "user": 0.8,
+     "sys": 0.53
+    },
+    "browser_cpu_seconds": 4.81,
+    "browser_peak_rss_bytes": 2662764544
+   },
+   "warm": {
+    "wall_seconds": 1.34,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.29,
+     "sys": 0.16
+    },
+    "browser_cpu_seconds": 1.78,
+    "browser_peak_rss_bytes": 2672332800
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2689,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7808,
+      "turbofan": 278
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9078,
+      "turbofan": 528
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5119,
+    "turbofan": 261
+   },
+   "compiled_warm": {
+    "liftoff": 1270,
+    "turbofan": 250
+   }
+  },
+  "warm128-jujutsu-exec-2.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 15.09,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.72,
+    "status": 0,
+    "guest": {
+     "real": 1.43,
+     "user": 0.77,
+     "sys": 0.56
+    },
+    "browser_cpu_seconds": 4.8,
+    "browser_peak_rss_bytes": 2658775040
+   },
+   "warm": {
+    "wall_seconds": 1.34,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.26,
+     "sys": 0.19
+    },
+    "browser_cpu_seconds": 1.78,
+    "browser_peak_rss_bytes": 2669166592
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2710,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7752,
+      "turbofan": 283
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9137,
+      "turbofan": 542
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 5042,
+    "turbofan": 266
+   },
+   "compiled_warm": {
+    "liftoff": 1385,
+    "turbofan": 259
+   }
+  },
+  "warm128-jujutsu-exec-3.json": {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 15.2,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 3.71,
+    "status": 0,
+    "guest": {
+     "real": 1.43,
+     "user": 0.79,
+     "sys": 0.54
+    },
+    "browser_cpu_seconds": 4.81,
+    "browser_peak_rss_bytes": 2660327424
+   },
+   "warm": {
+    "wall_seconds": 1.35,
+    "status": 0,
+    "guest": {
+     "real": 0.47,
+     "user": 0.28,
+     "sys": 0.18
+    },
+    "browser_cpu_seconds": 1.8,
+    "browser_peak_rss_bytes": 2671652864
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2709,
+      "turbofan": 17
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 7615,
+      "turbofan": 286
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 9088,
+      "turbofan": 539
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 4906,
+    "turbofan": 269
+   },
+   "compiled_warm": {
+    "liftoff": 1473,
+    "turbofan": 253
+   }
+  },
+  "warm128-opencode-opencode-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 18.13,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 162.99,
+    "status": 0,
+    "guest": {
+     "real": 66.52,
+     "user": 58.74,
+     "sys": 7.03
+    },
+    "browser_cpu_seconds": 214.86,
+    "browser_peak_rss_bytes": 3462582272
+   },
+   "warm": {
+    "wall_seconds": 144.94,
+    "status": 0,
+    "guest": {
+     "real": 59.04,
+     "user": 53.06,
+     "sys": 5.57
+    },
+    "browser_cpu_seconds": 185.12,
+    "browser_peak_rss_bytes": 3466227712
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 2837,
+      "turbofan": 21
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 207937,
+      "turbofan": 20953
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 311066,
+      "turbofan": 36008
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 205100,
+    "turbofan": 20932
+   },
+   "compiled_warm": {
+    "liftoff": 103129,
+    "turbofan": 15055
+   }
+  },
+  "warm128-opencode-opencode-2.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 17.81,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 156.86,
+    "status": 0,
+    "guest": {
+     "real": 63.97,
+     "user": 56.81,
+     "sys": 6.47
+    },
+    "browser_cpu_seconds": 201.73,
+    "browser_peak_rss_bytes": 3440025600
+   },
+   "warm": {
+    "wall_seconds": 144.68,
+    "status": 0,
+    "guest": {
+     "real": 58.91,
+     "user": 52.9,
+     "sys": 5.6
+    },
+    "browser_cpu_seconds": 184.54,
+    "browser_peak_rss_bytes": 3463983104
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 7259,
+      "turbofan": 67
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 208909,
+      "turbofan": 24570
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 406577,
+      "turbofan": 53146
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 201650,
+    "turbofan": 24503
+   },
+   "compiled_warm": {
+    "liftoff": 197668,
+    "turbofan": 28576
+   }
+  },
+  "warm128-opencode-opencode3-1.json": {
+   "name": "opencode",
+   "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "command": "opencode --version",
+   "shell_seconds": 17.75,
+   "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+   "cold": {
+    "wall_seconds": 158.64,
+    "status": 0,
+    "guest": {
+     "real": 64.71,
+     "user": 57.46,
+     "sys": 6.53
+    },
+    "browser_cpu_seconds": 204.19,
+    "browser_peak_rss_bytes": 3451289600
+   },
+   "warm": {
+    "wall_seconds": 144.24,
+    "status": 0,
+    "guest": {
+     "real": 58.75,
+     "user": 52.54,
+     "sys": 5.8
+    },
+    "browser_cpu_seconds": 183.96,
+    "browser_peak_rss_bytes": 3472728064
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 11902,
+      "turbofan": 554
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 128955,
+      "turbofan": 15861
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 286258,
+      "turbofan": 39818
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 117053,
+    "turbofan": 15307
+   },
+   "compiled_warm": {
+    "liftoff": 157303,
+    "turbofan": 23957
+   }
+  },
+  "warm128-python-exec-1.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 17.39,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.58,
+    "status": 0,
+    "guest": {
+     "real": 2.15,
+     "user": 1.55,
+     "sys": 0.52
+    },
+    "browser_cpu_seconds": 7.1,
+    "browser_peak_rss_bytes": 2832691200
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.23,
+     "user": 0.86,
+     "sys": 0.35
+    },
+    "browser_cpu_seconds": 4.24,
+    "browser_peak_rss_bytes": 2862129152
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5506,
+      "turbofan": 65
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13708,
+      "turbofan": 659
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17364,
+      "turbofan": 1186
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8202,
+    "turbofan": 594
+   },
+   "compiled_warm": {
+    "liftoff": 3656,
+    "turbofan": 527
+   }
+  },
+  "warm128-python-exec-2.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 17.32,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.58,
+    "status": 0,
+    "guest": {
+     "real": 2.16,
+     "user": 1.6,
+     "sys": 0.49
+    },
+    "browser_cpu_seconds": 7.06,
+    "browser_peak_rss_bytes": 2832666624
+   },
+   "warm": {
+    "wall_seconds": 3.2,
+    "status": 0,
+    "guest": {
+     "real": 1.23,
+     "user": 0.88,
+     "sys": 0.33
+    },
+    "browser_cpu_seconds": 4.23,
+    "browser_peak_rss_bytes": 2861248512
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 5426,
+      "turbofan": 63
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 13721,
+      "turbofan": 653
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 17317,
+      "turbofan": 1180
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 8295,
+    "turbofan": 590
+   },
+   "compiled_warm": {
+    "liftoff": 3596,
+    "turbofan": 527
+   }
+  },
+  "warm128-python-exec-3.json": {
+   "name": "python",
+   "spec": "pkg=python3",
+   "command": "python3 -c 'print(1)'",
+   "shell_seconds": 17.29,
+   "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+   "cold": {
+    "wall_seconds": 5.59,
+    "status": 0,
+    "guest": {
+     "real": 2.14,
+     "user": 1.5,
+     "sys": 0.56
+    },
+    "browser_cpu_seconds": 7.01,
+    "browser_peak_rss_bytes": 2830008320
+   },
+   "warm": {
+    "wall_seconds": 3.23,
+    "status": 0,
+    "guest": {
+     "real": 1.22,
+     "user": 0.9,
+     "sys": 0.3
+    },
+    "browser_cpu_seconds": 4.23,
+    "browser_peak_rss_bytes": 2858975232
+   },
+   "compiled_functions": [
+    [
+     "before",
+     {
+      "liftoff": 15119,
+      "turbofan": 434
+     }
+    ],
+    [
+     "before",
+     {
+      "liftoff": 24186,
+      "turbofan": 1182
+     }
+    ],
+    [
+     "end",
+     {
+      "liftoff": 27767,
+      "turbofan": 1717
+     }
+    ]
+   ],
+   "compiled_cold": {
+    "liftoff": 9067,
+    "turbofan": 748
+   },
+   "compiled_warm": {
+    "liftoff": 3581,
+    "turbofan": 535
+   }
+  }
+ },
+ "emu": {
+  "base-1.json": {
+   "host_seconds": 10.34,
+   "guest_seconds": 2.77,
+   "clock_ratio": 0.3556970095292528,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 31734904,
+     "ns_per_iter": 1.6,
+     "mips": 3151.1
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 108511266,
+     "ns_per_iter": 10.9,
+     "mips": 552.9
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 70636242,
+     "ns_per_iter": 14.1,
+     "mips": 566.3
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 148974839,
+     "ns_per_iter": 29.8,
+     "mips": 201.4
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 166192674,
+     "ns_per_iter": 33.2,
+     "mips": 300.9
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 55260583,
+     "ns_per_iter": 5.5,
+     "mips": 1085.8
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 432139489,
+     "ns_per_iter": 216.1,
+     "mips": 27.8
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 251018822,
+     "ns_per_iter": 1255.1,
+     "mips": 0.8
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 851205439,
+     "ns_per_iter": 51953.5,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 621164780,
+     "ns_per_iter": 12423.3,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 4804913,
+     "ns_per_iter": 96.1,
+     "mips": 83.2
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 5150445,
+     "ns_per_iter": 103.0,
+     "mips": 77.7
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23124838,
+     "ns_per_iter": 11562.4,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 243301,
+     "ns_per_iter": 121.7,
+     "mips": 65.8
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 130885,
+     "ns_per_iter": 65.4,
+     "mips": 122.2
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 128789,
+     "ns_per_iter": 64.4,
+     "mips": 124.2
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 116509,
+     "ns_per_iter": 58.3,
+     "mips": 137.3
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 108421,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 108323,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 108323,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    }
+   }
+  },
+  "base-2.json": {
+   "host_seconds": 10.2,
+   "guest_seconds": 2.72,
+   "clock_ratio": 0.3594113642375103,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 43481420,
+     "ns_per_iter": 2.2,
+     "mips": 2299.8
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 106685463,
+     "ns_per_iter": 10.7,
+     "mips": 562.4
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 70981774,
+     "ns_per_iter": 14.2,
+     "mips": 563.5
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 150140226,
+     "ns_per_iter": 30.0,
+     "mips": 199.8
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 165385100,
+     "ns_per_iter": 33.1,
+     "mips": 302.3
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 55305609,
+     "ns_per_iter": 5.5,
+     "mips": 1084.9
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 384938874,
+     "ns_per_iter": 192.5,
+     "mips": 31.2
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 254419039,
+     "ns_per_iter": 1272.1,
+     "mips": 0.8
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 847934110,
+     "ns_per_iter": 51753.8,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 607019900,
+     "ns_per_iter": 12140.4,
+     "mips": 0.7
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 4962354,
+     "ns_per_iter": 99.2,
+     "mips": 80.6
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4592262,
+     "ns_per_iter": 91.8,
+     "mips": 87.1
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 22752848,
+     "ns_per_iter": 11376.4,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 136975,
+     "ns_per_iter": 68.5,
+     "mips": 116.8
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 122598,
+     "ns_per_iter": 61.3,
+     "mips": 130.5
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 118506,
+     "ns_per_iter": 59.3,
+     "mips": 135.0
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 118606,
+     "ns_per_iter": 59.3,
+     "mips": 134.9
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 110418,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 120602,
+     "ns_per_iter": 60.3,
+     "mips": 132.7
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 656322,
+     "ns_per_iter": 328.2,
+     "mips": 24.4
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 128788,
+     "ns_per_iter": 64.4,
+     "mips": 124.2
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 124695,
+     "ns_per_iter": 62.3,
+     "mips": 128.3
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 128789,
+     "ns_per_iter": 64.4,
+     "mips": 124.2
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 108423,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 153348,
+     "ns_per_iter": 76.7,
+     "mips": 104.3
+    }
+   }
+  },
+  "base-3.json": {
+   "host_seconds": 10.4,
+   "guest_seconds": 2.79,
+   "clock_ratio": 0.35426829605008525,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 35306839,
+     "ns_per_iter": 1.8,
+     "mips": 2832.3
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 107828287,
+     "ns_per_iter": 10.8,
+     "mips": 556.4
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 70922472,
+     "ns_per_iter": 14.2,
+     "mips": 564.0
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 149072878,
+     "ns_per_iter": 29.8,
+     "mips": 201.2
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 162309948,
+     "ns_per_iter": 32.5,
+     "mips": 308.1
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 54708489,
+     "ns_per_iter": 5.5,
+     "mips": 1096.7
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 415485829,
+     "ns_per_iter": 207.7,
+     "mips": 28.9
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 253580716,
+     "ns_per_iter": 1267.9,
+     "mips": 0.8
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 851898702,
+     "ns_per_iter": 51995.8,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 654449439,
+     "ns_per_iter": 13089.0,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 4723146,
+     "ns_per_iter": 94.5,
+     "mips": 84.7
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4821285,
+     "ns_per_iter": 96.4,
+     "mips": 83.0
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 24772832,
+     "ns_per_iter": 12386.4,
+     "mips": 0.6
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 182002,
+     "ns_per_iter": 91.0,
+     "mips": 87.9
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 138972,
+     "ns_per_iter": 69.5,
+     "mips": 115.1
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 126692,
+     "ns_per_iter": 63.3,
+     "mips": 126.3
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 116509,
+     "ns_per_iter": 58.3,
+     "mips": 137.3
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 112416,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 108323,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    }
+   }
+  },
+  "jc-1.json": {
+   "host_seconds": 9.94,
+   "guest_seconds": 2.64,
+   "clock_ratio": 0.3652259564265776,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 30743331,
+     "ns_per_iter": 1.5,
+     "mips": 3252.7
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 108323074,
+     "ns_per_iter": 10.8,
+     "mips": 553.9
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 73807535,
+     "ns_per_iter": 14.8,
+     "mips": 542.0
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 109940419,
+     "ns_per_iter": 22.0,
+     "mips": 272.9
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 140687843,
+     "ns_per_iter": 28.1,
+     "mips": 355.4
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 56017041,
+     "ns_per_iter": 5.6,
+     "mips": 1071.1
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 424326915,
+     "ns_per_iter": 212.2,
+     "mips": 28.3
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 218406758,
+     "ns_per_iter": 1092.0,
+     "mips": 0.9
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 810163415,
+     "ns_per_iter": 49448.5,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 628713588,
+     "ns_per_iter": 12574.3,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 4749703,
+     "ns_per_iter": 95.0,
+     "mips": 84.2
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4665841,
+     "ns_per_iter": 93.3,
+     "mips": 85.7
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23967255,
+     "ns_per_iter": 11983.6,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 192184,
+     "ns_per_iter": 96.1,
+     "mips": 83.3
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 183998,
+     "ns_per_iter": 92.0,
+     "mips": 87.0
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 179905,
+     "ns_per_iter": 90.0,
+     "mips": 88.9
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 110418,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 106225,
+     "ns_per_iter": 53.1,
+     "mips": 150.6
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 110418,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 108423,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 114511,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 124695,
+     "ns_per_iter": 62.3,
+     "mips": 128.3
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    }
+   }
+  },
+  "jc-2.json": {
+   "host_seconds": 9.97,
+   "guest_seconds": 2.64,
+   "clock_ratio": 0.36625522082984857,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 31090860,
+     "ns_per_iter": 1.6,
+     "mips": 3216.4
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 107521690,
+     "ns_per_iter": 10.8,
+     "mips": 558.0
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 72552097,
+     "ns_per_iter": 14.5,
+     "mips": 551.3
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 110087777,
+     "ns_per_iter": 22.0,
+     "mips": 272.5
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 141659049,
+     "ns_per_iter": 28.3,
+     "mips": 353.0
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 54248444,
+     "ns_per_iter": 5.4,
+     "mips": 1106.0
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 414948111,
+     "ns_per_iter": 207.5,
+     "mips": 28.9
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 217842484,
+     "ns_per_iter": 1089.2,
+     "mips": 0.9
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 819560589,
+     "ns_per_iter": 50022.0,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 632461435,
+     "ns_per_iter": 12649.2,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 5074769,
+     "ns_per_iter": 101.5,
+     "mips": 78.8
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4727139,
+     "ns_per_iter": 94.5,
+     "mips": 84.6
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23969352,
+     "ns_per_iter": 11984.7,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 190188,
+     "ns_per_iter": 95.1,
+     "mips": 84.1
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 182001,
+     "ns_per_iter": 91.0,
+     "mips": 87.9
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 182002,
+     "ns_per_iter": 91.0,
+     "mips": 87.9
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 126692,
+     "ns_per_iter": 63.3,
+     "mips": 126.3
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 112416,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 104328,
+     "ns_per_iter": 52.2,
+     "mips": 153.4
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 136975,
+     "ns_per_iter": 68.5,
+     "mips": 116.8
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 484604,
+     "ns_per_iter": 242.3,
+     "mips": 33.0
+    }
+   }
+  },
+  "jc-3.json": {
+   "host_seconds": 10.24,
+   "guest_seconds": 2.75,
+   "clock_ratio": 0.3580372335681833,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 37811627,
+     "ns_per_iter": 1.9,
+     "mips": 2644.7
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 122214470,
+     "ns_per_iter": 12.2,
+     "mips": 490.9
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 86386186,
+     "ns_per_iter": 17.3,
+     "mips": 463.0
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 123122280,
+     "ns_per_iter": 24.6,
+     "mips": 243.7
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 167123046,
+     "ns_per_iter": 33.4,
+     "mips": 299.2
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 89952032,
+     "ns_per_iter": 9.0,
+     "mips": 667.0
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 414467599,
+     "ns_per_iter": 207.2,
+     "mips": 29.0
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 224986457,
+     "ns_per_iter": 1124.9,
+     "mips": 0.9
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 821132908,
+     "ns_per_iter": 50118.0,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 630018046,
+     "ns_per_iter": 12600.4,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 4890772,
+     "ns_per_iter": 97.8,
+     "mips": 81.8
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 5888533,
+     "ns_per_iter": 117.8,
+     "mips": 67.9
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 24014377,
+     "ns_per_iter": 12007.2,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 181901,
+     "ns_per_iter": 91.0,
+     "mips": 88.0
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 163631,
+     "ns_per_iter": 81.8,
+     "mips": 97.8
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 136975,
+     "ns_per_iter": 68.5,
+     "mips": 116.8
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 112515,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 233118,
+     "ns_per_iter": 116.6,
+     "mips": 68.6
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 214648,
+     "ns_per_iter": 107.3,
+     "mips": 74.5
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 108421,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 116508,
+     "ns_per_iter": 58.3,
+     "mips": 137.3
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 116509,
+     "ns_per_iter": 58.3,
+     "mips": 137.3
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    }
+   }
+  },
+  "warm128-1.json": {
+   "host_seconds": 10.6,
+   "guest_seconds": 2.82,
+   "clock_ratio": 0.3585674492791943,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 40980825,
+     "ns_per_iter": 2.0,
+     "mips": 2440.2
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 107227273,
+     "ns_per_iter": 10.7,
+     "mips": 559.6
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 71621824,
+     "ns_per_iter": 14.3,
+     "mips": 558.5
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 150855851,
+     "ns_per_iter": 30.2,
+     "mips": 198.9
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 167282484,
+     "ns_per_iter": 33.5,
+     "mips": 298.9
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 55839233,
+     "ns_per_iter": 5.6,
+     "mips": 1074.5
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 432417533,
+     "ns_per_iter": 216.2,
+     "mips": 27.8
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 270792560,
+     "ns_per_iter": 1354.0,
+     "mips": 0.7
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 863375262,
+     "ns_per_iter": 52696.2,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 622943561,
+     "ns_per_iter": 12458.9,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 5029843,
+     "ns_per_iter": 100.6,
+     "mips": 79.5
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4770170,
+     "ns_per_iter": 95.4,
+     "mips": 83.9
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23595166,
+     "ns_per_iter": 11797.6,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 192185,
+     "ns_per_iter": 96.1,
+     "mips": 83.3
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 177808,
+     "ns_per_iter": 88.9,
+     "mips": 90.0
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 163631,
+     "ns_per_iter": 81.8,
+     "mips": 97.8
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 112416,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 114412,
+     "ns_per_iter": 57.2,
+     "mips": 139.8
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 108421,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 112415,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 112415,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    }
+   }
+  },
+  "warm128-2.json": {
+   "host_seconds": 10.69,
+   "guest_seconds": 2.85,
+   "clock_ratio": 0.36160119312697675,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 36190189,
+     "ns_per_iter": 1.8,
+     "mips": 2763.2
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 107527780,
+     "ns_per_iter": 10.8,
+     "mips": 558.0
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 73206422,
+     "ns_per_iter": 14.6,
+     "mips": 546.4
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 147923864,
+     "ns_per_iter": 29.6,
+     "mips": 202.8
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 171864563,
+     "ns_per_iter": 34.4,
+     "mips": 290.9
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 57900249,
+     "ns_per_iter": 5.8,
+     "mips": 1036.3
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 464021550,
+     "ns_per_iter": 232.0,
+     "mips": 25.9
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 261558919,
+     "ns_per_iter": 1307.8,
+     "mips": 0.8
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 863230100,
+     "ns_per_iter": 52687.4,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 627235215,
+     "ns_per_iter": 12544.7,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 5025750,
+     "ns_per_iter": 100.5,
+     "mips": 79.6
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 5563467,
+     "ns_per_iter": 111.3,
+     "mips": 71.9
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23916239,
+     "ns_per_iter": 11958.1,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 163532,
+     "ns_per_iter": 81.8,
+     "mips": 97.8
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 122698,
+     "ns_per_iter": 61.3,
+     "mips": 130.4
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 130886,
+     "ns_per_iter": 65.4,
+     "mips": 122.2
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 118605,
+     "ns_per_iter": 59.3,
+     "mips": 134.9
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 108323,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 112516,
+     "ns_per_iter": 56.3,
+     "mips": 142.2
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 717622,
+     "ns_per_iter": 358.8,
+     "mips": 22.3
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 106325,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 112415,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 124796,
+     "ns_per_iter": 62.4,
+     "mips": 128.2
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    }
+   }
+  },
+  "warm128-3.json": {
+   "host_seconds": 10.69,
+   "guest_seconds": 2.8,
+   "clock_ratio": 0.31329976073018106,
+   "rows": {
+    "alu": {
+     "iters": 20000000,
+     "ns": 30655375,
+     "ns_per_iter": 1.5,
+     "mips": 3262.1
+    },
+    "alu2": {
+     "iters": 10000000,
+     "ns": 108372193,
+     "ns_per_iter": 10.8,
+     "mips": 553.6
+    },
+    "alu4": {
+     "iters": 5000000,
+     "ns": 72104331,
+     "ns_per_iter": 14.4,
+     "mips": 554.8
+    },
+    "call": {
+     "iters": 5000000,
+     "ns": 147036421,
+     "ns_per_iter": 29.4,
+     "mips": 204.0
+    },
+    "indirect": {
+     "iters": 5000000,
+     "ns": 185422606,
+     "ns_per_iter": 37.1,
+     "mips": 269.7
+    },
+    "mem": {
+     "iters": 10000000,
+     "ns": 55681791,
+     "ns_per_iter": 5.6,
+     "mips": 1077.6
+    },
+    "memstride": {
+     "iters": 2000000,
+     "ns": 412533375,
+     "ns_per_iter": 206.3,
+     "mips": 29.1
+    },
+    "syscall": {
+     "iters": 200000,
+     "ns": 259510182,
+     "ns_per_iter": 1297.6,
+     "mips": 0.8
+    },
+    "pagefault": {
+     "iters": 16384,
+     "ns": 869008214,
+     "ns_per_iter": 53040.1,
+     "mips": 0.0
+    },
+    "cold50k/p1": {
+     "iters": 50000,
+     "ns": 621195430,
+     "ns_per_iter": 12423.9,
+     "mips": 0.6
+    },
+    "cold50k/p2": {
+     "iters": 50000,
+     "ns": 8967879,
+     "ns_per_iter": 179.4,
+     "mips": 44.6
+    },
+    "cold50k/p3": {
+     "iters": 50000,
+     "ns": 4802815,
+     "ns_per_iter": 96.1,
+     "mips": 83.3
+    },
+    "cold2k/p1": {
+     "iters": 2000,
+     "ns": 23777167,
+     "ns_per_iter": 11888.6,
+     "mips": 0.7
+    },
+    "cold2k/p2": {
+     "iters": 2000,
+     "ns": 173815,
+     "ns_per_iter": 86.9,
+     "mips": 92.1
+    },
+    "cold2k/p3": {
+     "iters": 2000,
+     "ns": 145162,
+     "ns_per_iter": 72.6,
+     "mips": 110.2
+    },
+    "cold2k/p4": {
+     "iters": 2000,
+     "ns": 134978,
+     "ns_per_iter": 67.5,
+     "mips": 118.5
+    },
+    "cold2k/p100": {
+     "iters": 2000,
+     "ns": 116609,
+     "ns_per_iter": 58.3,
+     "mips": 137.2
+    },
+    "cold2k/p200": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p300": {
+     "iters": 2000,
+     "ns": 110418,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p400": {
+     "iters": 2000,
+     "ns": 153349,
+     "ns_per_iter": 76.7,
+     "mips": 104.3
+    },
+    "cold2k/p500": {
+     "iters": 2000,
+     "ns": 106326,
+     "ns_per_iter": 53.2,
+     "mips": 150.5
+    },
+    "cold2k/p600": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p700": {
+     "iters": 2000,
+     "ns": 112416,
+     "ns_per_iter": 56.2,
+     "mips": 142.3
+    },
+    "cold2k/p800": {
+     "iters": 2000,
+     "ns": 147258,
+     "ns_per_iter": 73.6,
+     "mips": 108.7
+    },
+    "cold2k/p900": {
+     "iters": 2000,
+     "ns": 239207,
+     "ns_per_iter": 119.6,
+     "mips": 66.9
+    },
+    "cold2k/p1000": {
+     "iters": 2000,
+     "ns": 114512,
+     "ns_per_iter": 57.3,
+     "mips": 139.7
+    },
+    "cold2k/p1100": {
+     "iters": 2000,
+     "ns": 110419,
+     "ns_per_iter": 55.2,
+     "mips": 144.9
+    },
+    "cold2k/p1200": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1300": {
+     "iters": 2000,
+     "ns": 108422,
+     "ns_per_iter": 54.2,
+     "mips": 147.6
+    },
+    "cold2k/p1400": {
+     "iters": 2000,
+     "ns": 108322,
+     "ns_per_iter": 54.2,
+     "mips": 147.7
+    },
+    "cold2k/p1500": {
+     "iters": 2000,
+     "ns": 120602,
+     "ns_per_iter": 60.3,
+     "mips": 132.7
+    },
+    "cold2k/p1600": {
+     "iters": 2000,
+     "ns": 124695,
+     "ns_per_iter": 62.3,
+     "mips": 128.3
+    }
+   }
+  }
+ },
+ "prof": {
+  "jc-attrib.json": {
+   "cold": {
+    "samples": 5456,
+    "vcpu_share": 0.7065615835777126,
+    "vcpu_seconds": 3.536340725806452,
+    "rows": [
+     {
+      "part": "generated code (batch functions)",
+      "share": 0.27263294422827494,
+      "seconds": 0.9641229838709677,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "translation and compile",
+      "share": 0.2648508430609598,
+      "seconds": 0.9366028225806452,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "everything else",
+      "share": 0.22204928664072632,
+      "seconds": 0.785241935483871,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "dispatcher tcg_qemu_tb_exec (interpreter inlined)",
+      "share": 0.1245136186770428,
+      "seconds": 0.44032258064516133,
+      "events": 442551,
+      "ns_per_event": 994.9646044075403
+     },
+     {
+      "part": "softmmu, TLB, helpers",
+      "share": 0.04539559014267185,
+      "seconds": 0.1605342741935484,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "Builtins_WasmLiftoffFrameSetup",
+      "share": 0.03631647211413749,
+      "seconds": 0.12842741935483873,
+      "events": 7566795,
+      "ns_per_event": 16.972498839315552
+     },
+     {
+      "part": "hash-table lookup (qht, tb_lookup_cmp, tb_htable, page addr)",
+      "share": 0.014785992217898832,
+      "seconds": 0.052288306451612906,
+      "events": 167148,
+      "ns_per_event": 312.8263960778047
+     },
+     {
+      "part": "helper_lookup_tb_ptr",
+      "share": 0.007522697795071336,
+      "seconds": 0.026602822580645162,
+      "events": 524299,
+      "ns_per_event": 50.73979271493015
+     },
+     {
+      "part": "other V8 wasm call builtins",
+      "share": 0.004409857328145266,
+      "seconds": 0.01559475806451613,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "cpu_exec loop, cpu_tb_exec, interrupts",
+      "share": 0.004150453955901427,
+      "seconds": 0.014677419354838711,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "Builtins_CallIndirectIC",
+      "share": 0.0033722438391699094,
+      "seconds": 0.011925403225806453,
+      "events": 3230341,
+      "ns_per_event": 3.691685560690482
+     }
+    ]
+   },
+   "warm": {
+    "samples": 2107,
+    "vcpu_share": 0.6103464641670622,
+    "vcpu_seconds": 1.168813478879924,
+    "rows": [
+     {
+      "part": "generated code (batch functions)",
+      "share": 0.5256609642301711,
+      "seconds": 0.6143996203132416,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "everything else",
+      "share": 0.12208398133748057,
+      "seconds": 0.14269340294257238,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "softmmu, TLB, helpers",
+      "share": 0.10497667185069985,
+      "seconds": 0.12269814902705269,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "dispatcher tcg_qemu_tb_exec (interpreter inlined)",
+      "share": 0.104199066874028,
+      "seconds": 0.12178927384907451,
+      "events": 159870,
+      "ns_per_event": 761.801925621283
+     },
+     {
+      "part": "translation and compile",
+      "share": 0.05287713841368585,
+      "seconds": 0.061803512102515425,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "Builtins_WasmLiftoffFrameSetup",
+      "share": 0.04432348367029549,
+      "seconds": 0.05180588514475558,
+      "events": 5233233,
+      "ns_per_event": 9.899403513039756
+     },
+     {
+      "part": "hash-table lookup (qht, tb_lookup_cmp, tb_htable, page addr)",
+      "share": 0.017107309486780714,
+      "seconds": 0.019995253915519696,
+      "events": 57709,
+      "ns_per_event": 346.48415178775747
+     },
+     {
+      "part": "Builtins_CallIndirectIC",
+      "share": 0.00933125972006221,
+      "seconds": 0.010906502135738017,
+      "events": 2113698,
+      "ns_per_event": 5.159915056804716
+     },
+     {
+      "part": "helper_lookup_tb_ptr",
+      "share": 0.00933125972006221,
+      "seconds": 0.010906502135738017,
+      "events": 174645,
+      "ns_per_event": 62.449552725460315
+     },
+     {
+      "part": "cpu_exec loop, cpu_tb_exec, interrupts",
+      "share": 0.006998444790046656,
+      "seconds": 0.008179876601803512,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "other V8 wasm call builtins",
+      "share": 0.003110419906687403,
+      "seconds": 0.003635500711912672,
+      "events": null,
+      "ns_per_event": null
+     }
+    ]
+   }
+  },
+  "warm128-attrib.json": {
+   "cold": {
+    "samples": 5508,
+    "vcpu_share": 0.7080610021786492,
+    "vcpu_seconds": 3.5615468409586057,
+    "rows": [
+     {
+      "part": "generated code (batch functions)",
+      "share": 0.2592307692307692,
+      "seconds": 0.9232625272331154,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "translation and compile",
+      "share": 0.24615384615384617,
+      "seconds": 0.8766884531590414,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "everything else",
+      "share": 0.22666666666666666,
+      "seconds": 0.807283950617284,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "dispatcher tcg_qemu_tb_exec (interpreter inlined)",
+      "share": 0.12538461538461537,
+      "seconds": 0.44656318082788665,
+      "events": 436256,
+      "ns_per_event": 1023.6264505883853
+     },
+     {
+      "part": "softmmu, TLB, helpers",
+      "share": 0.045641025641025644,
+      "seconds": 0.1625526506899056,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "Builtins_WasmLiftoffFrameSetup",
+      "share": 0.03564102564102564,
+      "seconds": 0.12693718228031955,
+      "events": 7581533,
+      "ns_per_event": 16.742943977203495
+     },
+     {
+      "part": "helper_lookup_tb_ptr",
+      "share": 0.03128205128205128,
+      "seconds": 0.11141249092229485,
+      "events": 2467910,
+      "ns_per_event": 45.14447079605612
+     },
+     {
+      "part": "hash-table lookup (qht, tb_lookup_cmp, tb_htable, page addr)",
+      "share": 0.018461538461538463,
+      "seconds": 0.06575163398692811,
+      "events": 328653,
+      "ns_per_event": 200.06400059311224
+     },
+     {
+      "part": "cpu_exec loop, cpu_tb_exec, interrupts",
+      "share": 0.005128205128205128,
+      "seconds": 0.018264342774146698,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "Builtins_CallIndirectIC",
+      "share": 0.0041025641025641026,
+      "seconds": 0.014611474219317357,
+      "events": 3253167,
+      "ns_per_event": 4.491461464879411
+     },
+     {
+      "part": "other V8 wasm call builtins",
+      "share": 0.002307692307692308,
+      "seconds": 0.008218954248366014,
+      "events": null,
+      "ns_per_event": null
+     }
+    ]
+   },
+   "warm": {
+    "samples": 2154,
+    "vcpu_share": 0.6392757660167131,
+    "vcpu_seconds": 1.2561768802228412,
+    "rows": [
+     {
+      "part": "generated code (batch functions)",
+      "share": 0.4538852578068264,
+      "seconds": 0.5701601671309192,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "everything else",
+      "share": 0.11474219317356572,
+      "seconds": 0.1441364902506964,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "softmmu, TLB, helpers",
+      "share": 0.11474219317356572,
+      "seconds": 0.1441364902506964,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "dispatcher tcg_qemu_tb_exec (interpreter inlined)",
+      "share": 0.10530137981118373,
+      "seconds": 0.13227715877437327,
+      "events": 160259,
+      "ns_per_event": 825.3961323505904
+     },
+     {
+      "part": "Builtins_WasmLiftoffFrameSetup",
+      "share": 0.058823529411764705,
+      "seconds": 0.07389275766016713,
+      "events": 5235731,
+      "ns_per_event": 14.113169232752243
+     },
+     {
+      "part": "helper_lookup_tb_ptr",
+      "share": 0.05664488017429194,
+      "seconds": 0.07115598885793872,
+      "events": 1495115,
+      "ns_per_event": 47.59231822163427
+     },
+     {
+      "part": "translation and compile",
+      "share": 0.054466230936819175,
+      "seconds": 0.06841922005571031,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "hash-table lookup (qht, tb_lookup_cmp, tb_htable, page addr)",
+      "share": 0.023238925199709513,
+      "seconds": 0.029192200557103063,
+      "events": 137693,
+      "ns_per_event": 212.00932913875843
+     },
+     {
+      "part": "Builtins_CallIndirectIC",
+      "share": 0.00944081336238199,
+      "seconds": 0.01185933147632312,
+      "events": 2075088,
+      "ns_per_event": 5.715098095272644
+     },
+     {
+      "part": "cpu_exec loop, cpu_tb_exec, interrupts",
+      "share": 0.005809731299927378,
+      "seconds": 0.007298050139275766,
+      "events": null,
+      "ns_per_event": null
+     },
+     {
+      "part": "other V8 wasm call builtins",
+      "share": 0.002904865649963689,
+      "seconds": 0.003649025069637883,
+      "events": null,
+      "ns_per_event": null
+     }
+    ]
+   }
+  }
+ },
+ "census_tables_md": "\n### jujutsu\n\n| transition | base cold | base warm | jc cold | jc warm |\n| --- | ---: | ---: | ---: | ---: |\n| goto_tb: same block (loop, no call) | 7,292,159 | 6,878,701 | 7,286,181 | 6,886,277 |\n| goto_tb: direct in-batch return_call | 4,328,366 | 3,160,643 | 4,336,454 | 3,119,535 |\n| goto_tb: cached fidx, return_call_indirect | 1,000,691 | 623,059 | 979,677 | 661,341 |\n| goto_tb: slot empty, back to dispatcher | 71,969 | 18,680 | 75,842 | 18,310 |\n| goto_tb: unlinked, exit_tb to dispatcher | 5,778 | 5,659 | 5,779 | 5,678 |\n| goto_ptr: lookup-cache hit, tail call | 0 | 0 | 1,945,935 | 1,320,289 |\n| goto_ptr: helper, target compiled, tail call | 2,025,676 | 1,358,526 | 74,818 | 38,843 |\n| goto_ptr: helper, target not compiled, dispatcher | 96,590 | 43,893 | 96,113 | 44,078 |\n| goto_ptr: helper found nothing, dispatcher | 6,232 | 5 | 6,060 | 4 |\n| goto_ptr: same block | 871 | 1,367 | 838 | 1,363 |\n| exit_tb (other than unlinked goto_tb) | 44,291 | 23,559 | 44,232 | 23,460 |\n| dispatcher: compiled function calls | 226,800 | 93,503 | 229,911 | 93,225 |\n| dispatcher: interpreter runs | 209,456 | 66,756 | 212,640 | 66,645 |\n| interpreter: blocks followed in place | 905,097 | 200,500 | 928,537 | 202,830 |\n| interpreter: handed a compiled successor over | 174,219 | 62,387 | 177,495 | 62,152 |\n| cpu_exec loop iterations (tcg_qemu_tb_exec calls) | 93,478 | 35,299 | 93,101 | 35,330 |\n| blocks translated | 29,744 | 73 | 29,489 | 97 |\n| helper_lookup_tb_ptr from compiled code | 2,054,642 | 1,309,487 | 171,289 | 80,199 |\n| helper_lookup_tb_ptr from the interpreter | 413,268 | 185,628 | 353,010 | 94,446 |\n| tb_lookup: QEMU jump-cache hit | 2,232,543 | 1,392,557 | 450,059 | 152,104 |\n| tb_lookup: hash-table lookup | 285,409 | 137,608 | 124,264 | 57,595 |\n| tb_lookup: nothing (translate) | 43,244 | 85 | 42,884 | 114 |\n| jump-cache flushes (epoch bumps) | 25 | 19 | 26 | 23 |\n| lookup cache: probes | 0 | 0 | 2,122,927 | 1,403,217 |\n| lookup cache: fills, empty or stale entry | 0 | 0 | 11,930 | 10,775 |\n| lookup cache: fills over a live entry (conflict) | 0 | 0 | 69,447 | 30,530 |\n| lookup cache: not filled, target uncompiled | 0 | 0 | 321,328 | 90,771 |\n\n- census cold: compiled-code transitions that enter another function 7,354,733 (direct 59%, cached goto_tb 14%, goto_ptr 28%); returns to the dispatcher 224,860; function entries 7,581,533\n- census warm: compiled-code transitions that enter another function 5,142,228 (direct 61%, cached goto_tb 12%, goto_ptr 26%); returns to the dispatcher 91,796; function entries 5,235,731\n- jc-census cold: compiled-code transitions that enter another function 7,336,884 (direct 59%, cached goto_tb 13%, goto_ptr 28%); returns to the dispatcher 228,026; function entries 7,566,795; lookup cache hit rate 91.7% (1,945,935 of 2,122,927)\n- jc-census warm: compiled-code transitions that enter another function 5,140,008 (direct 61%, cached goto_tb 13%, goto_ptr 26%); returns to the dispatcher 91,530; function entries 5,233,233; lookup cache hit rate 94.1% (1,320,289 of 1,403,217)\n\n### python\n\n| transition | base cold | base warm | jc cold | jc warm |\n| --- | ---: | ---: | ---: | ---: |\n| goto_tb: same block (loop, no call) | 10,882,748 | 10,599,812 | 10,877,926 | 10,594,091 |\n| goto_tb: direct in-batch return_call | 9,977,942 | 9,843,096 | 10,421,984 | 10,281,135 |\n| goto_tb: cached fidx, return_call_indirect | 3,262,666 | 3,236,077 | 2,751,878 | 2,803,880 |\n| goto_tb: slot empty, back to dispatcher | 134,076 | 46,544 | 130,941 | 47,246 |\n| goto_tb: unlinked, exit_tb to dispatcher | 33,970 | 34,353 | 33,874 | 34,298 |\n| goto_ptr: lookup-cache hit, tail call | 0 | 0 | 5,327,224 | 5,323,775 |\n| goto_ptr: helper, target compiled, tail call | 5,467,258 | 5,451,636 | 127,502 | 128,041 |\n| goto_ptr: helper, target not compiled, dispatcher | 208,230 | 74,404 | 211,371 | 74,114 |\n| goto_ptr: helper found nothing, dispatcher | 3,589 | 2 | 3,606 | 4 |\n| goto_ptr: same block | 1,169 | 1,259 | 1,169 | 1,259 |\n| exit_tb (other than unlinked goto_tb) | 38,195 | 28,535 | 37,896 | 28,482 |\n| dispatcher: compiled function calls | 421,789 | 186,851 | 421,391 | 187,138 |\n| dispatcher: interpreter runs | 385,671 | 124,089 | 385,922 | 124,491 |\n| interpreter: blocks followed in place | 1,490,719 | 377,957 | 1,505,934 | 375,696 |\n| interpreter: handed a compiled successor over | 343,621 | 119,871 | 343,683 | 120,252 |\n| cpu_exec loop iterations (tcg_qemu_tb_exec calls) | 121,533 | 70,121 | 121,318 | 70,017 |\n| blocks translated | 33,017 | 77 | 33,103 | 116 |\n| helper_lookup_tb_ptr from compiled code | 5,575,491 | 5,441,363 | 335,102 | 197,258 |\n| helper_lookup_tb_ptr from the interpreter | 649,954 | 241,224 | 555,064 | 158,981 |\n| tb_lookup: QEMU jump-cache hit | 5,854,691 | 5,378,214 | 764,572 | 308,106 |\n| tb_lookup: hash-table lookup | 448,567 | 374,265 | 203,079 | 117,855 |\n| tb_lookup: nothing (translate) | 43,551 | 90 | 43,662 | 150 |\n| jump-cache flushes (epoch bumps) | 22 | 21 | 21 | 19 |\n| lookup cache: probes | 0 | 0 | 5,669,713 | 5,525,964 |\n| lookup cache: fills, empty or stale entry | 0 | 0 | 15,743 | 15,805 |\n| lookup cache: fills over a live entry (conflict) | 0 | 0 | 122,520 | 118,690 |\n| lookup cache: not filled, target uncompiled | 0 | 0 | 511,706 | 144,619 |\n\n- census cold: compiled-code transitions that enter another function 18,707,866 (direct 53%, cached goto_tb 17%, goto_ptr 29%); returns to the dispatcher 418,060; function entries 19,129,655\n- census warm: compiled-code transitions that enter another function 18,530,809 (direct 53%, cached goto_tb 17%, goto_ptr 29%); returns to the dispatcher 183,838; function entries 18,717,660\n- jc-census cold: compiled-code transitions that enter another function 18,628,588 (direct 56%, cached goto_tb 15%, goto_ptr 29%); returns to the dispatcher 417,688; function entries 19,049,979; lookup cache hit rate 94.0% (5,327,224 of 5,669,713)\n- jc-census warm: compiled-code transitions that enter another function 18,536,831 (direct 55%, cached goto_tb 15%, goto_ptr 29%); returns to the dispatcher 184,144; function entries 18,723,969; lookup cache hit rate 96.3% (5,323,775 of 5,525,964)\n\n### opencode\n\n| transition | base cold | base warm | jc cold | jc warm |\n| --- | ---: | ---: | ---: | ---: |\n| goto_tb: same block (loop, no call) | 308,530,300 | 310,467,776 | 297,508,680 | 295,783,641 |\n| goto_tb: direct in-batch return_call | 568,585,678 | 474,153,598 | 535,833,849 | 535,298,983 |\n| goto_tb: cached fidx, return_call_indirect | 162,294,643 | 262,928,883 | 156,443,473 | 151,969,723 |\n| goto_tb: slot empty, back to dispatcher | 2,017,725 | 1,744,012 | 1,961,773 | 1,899,771 |\n| goto_tb: unlinked, exit_tb to dispatcher | 1,598,007 | 1,602,361 | 1,593,066 | 1,569,771 |\n| goto_ptr: lookup-cache hit, tail call | 0 | 0 | 144,688,998 | 140,437,079 |\n| goto_ptr: helper, target compiled, tail call | 153,214,351 | 149,053,278 | 6,336,590 | 6,095,273 |\n| goto_ptr: helper, target not compiled, dispatcher | 2,508,192 | 2,222,798 | 2,482,049 | 2,380,832 |\n| goto_ptr: helper found nothing, dispatcher | 39,606 | 36,585 | 40,618 | 39,571 |\n| goto_ptr: same block | 80 | 68 | 80 | 82 |\n| exit_tb (other than unlinked goto_tb) | 828,473 | 695,666 | 807,124 | 679,387 |\n| dispatcher: compiled function calls | 7,046,761 | 6,353,289 | 6,938,261 | 6,620,281 |\n| dispatcher: interpreter runs | 5,133,643 | 4,526,420 | 5,040,852 | 4,891,932 |\n| interpreter: blocks followed in place | 21,878,269 | 19,623,710 | 21,281,688 | 21,320,294 |\n| interpreter: handed a compiled successor over | 4,534,193 | 3,976,944 | 4,452,445 | 4,291,007 |\n| cpu_exec loop iterations (tcg_qemu_tb_exec calls) | 3,120,294 | 2,935,955 | 3,082,846 | 2,940,603 |\n| blocks translated | 459,733 | 423,726 | 453,401 | 466,442 |\n| helper_lookup_tb_ptr from compiled code | 154,467,721 | 150,497,286 | 8,741,257 | 8,444,627 |\n| helper_lookup_tb_ptr from the interpreter | 7,145,139 | 6,086,097 | 5,872,976 | 5,731,668 |\n| tb_lookup: QEMU jump-cache hit | 150,113,171 | 145,601,587 | 12,072,456 | 11,715,304 |\n| tb_lookup: hash-table lookup | 14,043,896 | 13,384,984 | 5,055,903 | 4,816,577 |\n| tb_lookup: nothing (translate) | 575,395 | 532,214 | 568,027 | 584,468 |\n| jump-cache flushes (epoch bumps) | 1,116 | 5,590 | 967 | 4,765 |\n| lookup cache: probes | 0 | 0 | 153,548,273 | 148,952,773 |\n| lookup cache: fills, empty or stale entry | 0 | 0 | 630,784 | 712,698 |\n| lookup cache: fills over a live entry (conflict) | 0 | 0 | 5,904,920 | 5,573,150 |\n| lookup cache: not filled, target uncompiled | 0 | 0 | 5,406,727 | 5,318,481 |\n\n- census cold: compiled-code transitions that enter another function 884,094,672 (direct 64%, cached goto_tb 18%, goto_ptr 17%); returns to the dispatcher 6,992,003; function entries 891,141,433\n- census warm: compiled-code transitions that enter another function 886,135,759 (direct 54%, cached goto_tb 30%, goto_ptr 17%); returns to the dispatcher 6,301,422; function entries 892,489,048\n- jc-census cold: compiled-code transitions that enter another function 843,302,910 (direct 64%, cached goto_tb 19%, goto_ptr 18%); returns to the dispatcher 6,884,630; function entries 850,241,171; lookup cache hit rate 94.2% (144,688,998 of 153,548,273)\n- jc-census warm: compiled-code transitions that enter another function 833,801,058 (direct 64%, cached goto_tb 18%, goto_ptr 18%); returns to the dispatcher 6,569,332; function entries 840,421,339; lookup cache hit rate 94.3% (140,437,079 of 148,952,773)\n"
+}

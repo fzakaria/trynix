@@ -881,6 +881,113 @@ not allow today. That, and a cheaper translation for blocks that
 never compile, are the next two steps if the cold start is to move
 by more than a few percent.
 
+### A lookup cache for goto_ptr
+
+The transition rows of the cold-path profile, dispatcher, lookup and
+entry stubs, are 22% of the vCPU thread cold and 26% warm. A census
+of every transition kind, from an instrumented engine, says what
+each is made of. A cold jj makes 7.35 million transitions that enter
+another function: 59% direct in-batch calls, 14% cached `goto_tb`
+jumps and 28% `goto_ptr` (returns, indirect calls and jumps), plus
+7.3 million self-loops that cost nothing; returns to the dispatcher
+are 1.5% of exits. Opencode makes 884 million per run, 17% of them
+`goto_ptr`. Priced by perf against those counts:
+
+| Mechanism                                        |  cold |  warm | Per event                          |
+| ------------------------------------------------ | ----: | ----: | ---------------------------------- |
+| `helper_lookup_tb_ptr`                           |  3.1% |  5.7% | 45 ns per call                     |
+| its jump-cache miss into the hash table          |  1.8% |  2.3% | 200 ns per miss                    |
+| V8's Liftoff frame setup at every function entry |  3.6% |  5.9% | 17 ns per entry                    |
+| V8's indirect-call stub                          |  0.6% |  1.2% | 4 to 6 ns per call                 |
+| dispatcher, with the interpreter inlined         | 12.5% | 10.5% | about 350 ns per interpreted block |
+
+So the dispatcher row is mostly interpreting, the entry stub is V8's
+and out of reach, and the one piece a change in the engine can take
+is the lookup: 5% cold and 8% warm. [Patch 0009](../patches/0009-wasm32-lookup-cache.patch)
+puts a 4096-entry direct-mapped cache per vCPU in front of
+`helper_lookup_tb_ptr`, keyed on the guest's eip and flags, probed by
+about sixty wasm instructions in generated code before the helper
+call, filled by the helper on a miss, and invalidated by one epoch
+that every jump-cache flush, eviction and `tb_flush` bumps. The
+"cheaper last-target cache" that lost before patch 0007 filled from
+generated code with three stores per miss and keyed on the block
+header; this one does neither. It answers 92 to 94% of probes and
+removes 92 to 95% of the helper calls from compiled code on every
+workload, and passes the CPU probe and the boot test.
+
+What that buys, browser CPU, medians of three against the release
+engine on the same snapshot:
+
+| Workload             |       Release |         Cache |      Change |
+| -------------------- | ------------: | ------------: | ----------: |
+| jujutsu cold / warm  | 4.81 / 1.78 s | 4.81 / 1.79 s |        none |
+| python cold / warm   | 7.06 / 4.23 s | 6.88 / 4.10 s | -2.5% / -3% |
+| opencode cold / warm |   204 / 185 s |   197 / 179 s | -3.7% / -3% |
+
+On emubench the `call` row is 1.34x, `indirect` 1.2x and `syscall`
+1.2x (the return from the kernel is a `goto_ptr`); single-block and
+memory rows do not move. The gain is smaller than the 5 to 8% of
+lookup time because a hit still costs the probe, so on jj the lookup
+rows fall from 5.0% to 2.2% cold while generated code rises 1.4
+points, a net 2.8% of the vCPU thread that the harness cannot resolve
+on a four-second command. Python and opencode run far more `goto_ptr`
+per second of wall time and show it. The remaining misses are targets
+with no compiled function yet, which the warm-up gate guarantees, and
+conflicts in the 4096-entry table, which a larger table would take at
+under 1% of run time. The [census, A/B and profile data](../experiments/goto-ptr-lookup-cache.json)
+carry the counts.
+
+### Reading the first command's files before it asks
+
+Prefetching every byte of the closure before the timer starts was the
+diagnostic that put a third of the cold penalty in file loading. The
+product version of that is a background read started by init right
+after the 9p mount, so it overlaps whatever time the visitor spends
+looking at the prompt. Three variants were measured on leviathan with
+the release engine, cold `jj --version` typed 0, 3 and 8 seconds after
+the welcome line, medians of three:
+
+| Variant, what init reads          | T = 0 wall / CPU | T = 3 wall / CPU | T = 8 wall / CPU | Read's own cost                    |
+| --------------------------------- | ---------------: | ---------------: | ---------------: | ---------------------------------- |
+| Control, nothing                  |  4.06 s / 5.79 s |  3.95 s / 5.07 s |  3.95 s / 5.17 s |                                    |
+| elf: binaries, interpreter, libs  |  4.26 s / 5.82 s |  2.84 s / 3.71 s |  2.94 s / 3.84 s | 5 files, 35 MB, 2.4 s, 1.6 CPU-s   |
+| binlib: every file under bin, lib |  4.06 s / 5.67 s |  3.75 s / 4.99 s |  2.94 s / 3.94 s | ~150 files, 57 MB, 11 s, 8.5 CPU-s |
+| blind: the whole closure          |  4.27 s / 6.07 s |  3.45 s / 4.60 s |  3.45 s / 4.65 s | 1123 files, 80 MB, 17 s, 13 CPU-s  |
+
+The cost is per file, not per byte: the blind read moves twice the
+bytes of the elf read for eight times the CPU. The elf variant is what
+ships. A 190-line static tool, `elfdeps`, lists each binary in
+`/share/bin` with its interpreter and every library the loader would
+map, resolved through the objects' own run paths; init pipes that into
+`cat` under `nice -n 19` and moves on to the welcome line, which is
+not delayed. For jj that is the binary, ld-linux, libc, libm and
+libgcc_s: 1.6 times the bytes jj's own start faults in, since the
+binary is read whole.
+
+Under exec-bench, which types the command about a second after the
+prompt, the shipped variant against the stock guest on the same
+engine, medians of three:
+
+| Package  | Control cold    | Prefetch cold   |
+| -------- | --------------- | --------------- |
+| jujutsu  | 4.04 s / 5.04 s | 3.24 s / 4.33 s |
+| python   | 5.94 s / 7.56 s | 6.17 s / 7.90 s |
+| opencode | 185 s / 233 s   | 187 s / 235 s   |
+
+jj gains 14% of CPU and a bench bucket of wall at that timing and 27%
+with three seconds of think time. Python loses 4% at the benchmark's
+timing: its listed files are 11 MB in ten, its start reads mostly
+stdlib sources the list does not cover, and the read is still under
+way when the command lands. Opencode's `/share/bin` entry is a wrapper
+script, so its list is glibc alone and nothing changes. With the
+browser's CPU throttled 12x (which slowed this guest about 1.5x) the
+same shape holds: a 5% loss typed at once, a 40% gain after five
+seconds. That is the trade: a visitor who types within a second of the
+prompt pays up to a few percent on a package whose libraries are
+small, and everyone else gets the first command a second sooner on a
+package whose binary is large. The [raw runs](../experiments/prefetch-after-mount.json)
+hold every sample, the read's own timing, and the throttled runs.
+
 ### The code cache and the shim
 
 Chrome keeps a compiled-code cache for WebAssembly modules, keyed on
