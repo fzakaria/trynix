@@ -814,11 +814,12 @@ interpreting is inside the dispatcher's 6% cold and 4.5% warm, still
 small. And the TurboFan work on the background threads is not the
 batch modules, which tier up rarely (about 270 functions in a cold
 jj); it is V8 tiering up the 13 MB engine module itself, function by
-function, on every page load. A returning visitor does not skip it:
-the same benchmark in a browser profile that had already loaded the
-page and run jj measured 4.99 and 4.90 s of cold browser CPU against
-4.86 s in a fresh profile, so Chrome's wasm code cache is not holding
-the tiered code. That 16% is out of the engine's hands.
+function, on every page load. Whether a returning visitor skips it is
+a question about the browser's code cache and how the site is served,
+and the answer took its own investigation (below, "The code cache and
+the shim"). The short form: on GitHub Pages today, never; served with
+real headers, or with a one-line change to the shim, the boot gets
+faster but this command does not.
 
 ### What the warm-up threshold is worth
 
@@ -865,3 +866,65 @@ returning to its event loop, which the engine's threading model does
 not allow today. That, and a cheaper translation for blocks that
 never compile, are the next two steps if the cold start is to move
 by more than a few percent.
+
+### The code cache and the shim
+
+Chrome keeps a compiled-code cache for WebAssembly modules, keyed on
+the HTTP cache entry of the `.wasm` response. If it held the engine's
+tiered code, a returning visitor would skip most of the TurboFan work
+above. An earlier test in this document said it did not; that test
+was wrong twice over. It served the site through `tools/cpu-test.py`'s
+server, which sends `Cache-Control: no-store`, so there was no HTTP
+cache entry to key on; and it reused a profile directory that the
+benchmark's browser class deletes on close, so every "revisit" was a
+fresh profile. The [proper test](../experiments/engine-code-cache.json)
+serves one built site under one header policy per variant, keeps the
+profile across visits, and reads V8's trace for the serialise and
+deserialise events that say whether the cache was written and read.
+
+| Served as                                          | Second visit reads the cache | Prompt, visit 1 | Prompt, visit 2 | Boot CPU, visit 2 |
+| -------------------------------------------------- | ---------------------------- | --------------: | --------------: | ----------------: |
+| GitHub Pages today: shim, `max-age=600`            | never                        |           6.0 s |           5.6 s |            10.8 s |
+| Real headers, `max-age=600`, revisit within 10 min | yes                          |           6.1 s |           5.1 s |             8.4 s |
+| Real headers, `immutable` (Cloudflare Pages)       | yes                          |           6.0 s |           5.0 s |             8.1 s |
+| Real headers, revalidated (a 304)                  | no                           |           6.0 s |           5.5 s |            10.2 s |
+| Shim with the `.wasm` fetch left alone             | yes                          |           6.4 s |           5.0 s |             8.3 s |
+
+Two samples per row, within 0.3 s of CPU. On GitHub Pages the cache is
+written on every visit and never read: the `coi-serviceworker` shim
+answers each fetch with a Response it constructs, so it can add the
+isolation headers GitHub Pages cannot send, and Chrome refuses cached
+code for a response a service worker constructed
+(`ShouldUseIsolatedCodeCache` wants a pass-through response, and a
+constructed one is also stamped with the time it was built, so its key
+never matches). A second, independent blocker is revalidation: after
+`max-age` expires the 304 also misses in Chromium 151, so GitHub Pages'
+ten-minute lifetime caps the benefit to quick revisits even when the
+shim is out of the way. `site/_headers` already asks for both real
+isolation headers and `immutable` on the engine files; a host that
+reads it gets the full effect with no code change.
+
+A hit is worth about one second at the prompt (6.1 to 5.0 s) and
+three seconds of browser CPU during boot, of which 2.3 s is compiled
+code and the rest the warm HTTP cache. The cold `jj --version` after
+the prompt does not change in any variant, 4.9 to 5.4 s of CPU, hit or
+miss. V8 serialises the module once per page load, when a megabyte of
+new top-tier code has accumulated, which happens during boot; the
+functions jj first touches tier up after that point, and the guest
+never gives V8 the two quiet seconds that would trigger a second
+serialisation. So the cache cuts boot, not the command. That is V8
+policy, with no page-side control.
+
+The page-side fix that keeps GitHub Pages is one line in the shim's
+fetch handler: return without `respondWith` for a same-origin `.wasm`
+request. The wasm is same-origin, so it needs no resource policy
+header under `require-corp`, and a request the handler declines falls
+back to the network loader and reaches the page as a plain response.
+The exemption must stay that narrow: skipping every same-origin
+request left the engine's pthread workers without cross-origin
+isolation, since a dedicated worker's own script response has to carry
+the embedder policy, and the boot never finished. The patched shim
+measured the same as real headers, and again from the site as nix
+builds it. The change is a patch under `patches/coi-serviceworker/`
+applied to the readable build of the vendored worker, the way the
+xzwasm patch is carried.

@@ -64,8 +64,14 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/crabz2.js unpack/package/crabz2_bg.wasm $out/
   rm -r unpack/package
 
+  # The readable build, patched: patches/coi-serviceworker/ keeps the
+  # worker from intercepting the engine's own .wasm, so the browser's
+  # compiled-code cache works for returning visitors.
   tar -xzf ${coi} -C unpack
-  cp unpack/package/coi-serviceworker.min.js $out/coi-serviceworker.js
+  cp unpack/package/coi-serviceworker.js $out/coi-serviceworker.js
+  for patch in ${../patches/coi-serviceworker}/*.patch; do
+    patch -d $out -p1 < "$patch"
+  done
   rm -r unpack/package
 
   # libghostty-vt compiled to wasm, with xterm.js-shaped bindings. The

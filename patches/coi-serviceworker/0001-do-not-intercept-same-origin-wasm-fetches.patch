@@ -1,0 +1,34 @@
+Subject: [PATCH] Do not intercept same-origin .wasm fetches
+
+Chrome refuses its compiled-code cache for a response a service
+worker constructed, and this worker constructs one for every fetch
+so it can add the isolation headers. Left to the network, the
+engine's .wasm reaches the page as a plain response and a returning
+visitor reuses the tiered code: the prompt comes about a second
+sooner (docs/engine-execution.md, "The code cache and the shim").
+
+Only the same-origin .wasm. It needs no resource policy header, while
+a worker script's response must carry the embedder policy or the
+engine's pthread workers lose cross-origin isolation.
+
+---
+--- a/coi-serviceworker.js
++++ b/coi-serviceworker.js
+@@ -27,6 +27,17 @@
+             return;
+         }
+ 
++        // Do not intercept our own .wasm files. Chrome will not use its
++        // compiled-code cache for a response a service worker built, so
++        // intercepting them makes every visit recompile the engine.
++        // Same-origin files need no CORP header, so the network response
++        // is fine as is. Worker scripts are not exempt: they must carry
++        // COEP or the worker is not cross-origin isolated.
++        const url = new URL(r.url);
++        if (r.mode !== "navigate" && url.origin === self.location.origin && url.pathname.endsWith(".wasm")) {
++            return;
++        }
++
+         const request = (coepCredentialless && r.mode === "no-cors")
+             ? new Request(r, {
+                 credentials: "omit",

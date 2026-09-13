@@ -2057,7 +2057,7 @@
   }
  },
  "returning_visitor": {
-  "note": "Stock engine, jj: exec-bench in a fresh profile, then in a profile that had already loaded the page and run jj once or twice, to see whether the browser code cache skips TurboFan tier-up of the engine module. It does not.",
+  "note": "INVALID as a returning-visitor test: tools/cpu-test.py's server sends Cache-Control: no-store, so there was no HTTP cache entry for the code cache to key on, and the Browser class deletes the profile directory on close, so each 'revisit' started from an empty profile. Kept for the record; see experiments/engine-code-cache.json for the proper test.",
   "samples": [
    {
     "label": "fresh",
