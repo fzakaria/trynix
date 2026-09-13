@@ -1,0 +1,768 @@
+{
+ "description": "Guest kernel tick rate, September 13, 2026, leviathan cores 92-95, release engine, guests differing only in CONFIG_HZ (25 and 50 added by kernel-hz-low.patch, a Kconfig choice), each with its own snapshot. hz: HZ=250 against 100 (control2), opencode one round then jujutsu/python two rounds; the jujutsu/python legs of that run overlapped two kernel builds on the same host and are not usable. hzlow: 100, 50 and 25 Hz, jujutsu/python three rounds then opencode one round; this run overlapped a bench-history run on cores 88-91. The per-run JSON files of the opencode legs were overwritten by the jujutsu/python rounds that reused their names, so the harness logs (hz_log, hzlow_log) carry every printed sample and are the record for opencode.",
+ "runs": {
+  "control2-hz-1.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.39,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.22,
+      "status": 0,
+      "guest": {
+       "real": 2.99,
+       "user": 2.0,
+       "sys": 0.83
+      },
+      "browser_cpu_seconds": 4.34,
+      "browser_peak_rss_bytes": 2781483008
+     },
+     "warm": {
+      "wall_seconds": 1.35,
+      "status": 0,
+      "guest": {
+       "real": 1.16,
+       "user": 0.66,
+       "sys": 0.46
+      },
+      "browser_cpu_seconds": 1.88,
+      "browser_peak_rss_bytes": 2786496512
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.37,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.9,
+      "status": 0,
+      "guest": {
+       "real": 5.58,
+       "user": 3.8,
+       "sys": 1.47
+      },
+      "browser_cpu_seconds": 7.5,
+      "browser_peak_rss_bytes": 2945994752
+     },
+     "warm": {
+      "wall_seconds": 3.49,
+      "status": 0,
+      "guest": {
+       "real": 3.22,
+       "user": 2.2,
+       "sys": 0.91
+      },
+      "browser_cpu_seconds": 4.54,
+      "browser_peak_rss_bytes": 2868752384
+     }
+    }
+   ]
+  },
+  "control2-hz-2.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.03,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.2,
+      "status": 0,
+      "guest": {
+       "real": 2.85,
+       "user": 1.97,
+       "sys": 0.74
+      },
+      "browser_cpu_seconds": 4.19,
+      "browser_peak_rss_bytes": 2783694848
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.08,
+       "user": 0.65,
+       "sys": 0.41
+      },
+      "browser_cpu_seconds": 1.7,
+      "browser_peak_rss_bytes": 2787205120
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.33,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.57,
+      "status": 0,
+      "guest": {
+       "real": 5.29,
+       "user": 3.66,
+       "sys": 1.29
+      },
+      "browser_cpu_seconds": 7.22,
+      "browser_peak_rss_bytes": 2952491008
+     },
+     "warm": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.95,
+       "user": 2.09,
+       "sys": 0.77
+      },
+      "browser_cpu_seconds": 4.23,
+      "browser_peak_rss_bytes": 2870607872
+     }
+    }
+   ]
+  },
+  "hz250-hz-1.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.13,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.83,
+       "user": 1.98,
+       "sys": 0.72
+      },
+      "browser_cpu_seconds": 4.0,
+      "browser_peak_rss_bytes": 2780233728
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.1,
+       "user": 0.69,
+       "sys": 0.39
+      },
+      "browser_cpu_seconds": 1.72,
+      "browser_peak_rss_bytes": 2783961088
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.25,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.57,
+      "status": 0,
+      "guest": {
+       "real": 5.32,
+       "user": 3.68,
+       "sys": 1.3
+      },
+      "browser_cpu_seconds": 7.22,
+      "browser_peak_rss_bytes": 2952704000
+     },
+     "warm": {
+      "wall_seconds": 3.45,
+      "status": 0,
+      "guest": {
+       "real": 3.17,
+       "user": 2.25,
+       "sys": 0.79
+      },
+      "browser_cpu_seconds": 4.59,
+      "browser_peak_rss_bytes": 2871074816
+     }
+    }
+   ]
+  },
+  "hz250-hz-2.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.06,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.86,
+       "user": 1.92,
+       "sys": 0.79
+      },
+      "browser_cpu_seconds": 4.04,
+      "browser_peak_rss_bytes": 2780086272
+     },
+     "warm": {
+      "wall_seconds": 1.34,
+      "status": 0,
+      "guest": {
+       "real": 1.09,
+       "user": 0.59,
+       "sys": 0.48
+      },
+      "browser_cpu_seconds": 1.7,
+      "browser_peak_rss_bytes": 2784018432
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.14,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 13.56,
+      "status": 0,
+      "guest": {
+       "real": 13.16,
+       "user": 8.04,
+       "sys": 4.04
+      },
+      "browser_cpu_seconds": 20.57,
+      "browser_peak_rss_bytes": 2915397632
+     },
+     "warm": {
+      "wall_seconds": 3.45,
+      "status": 0,
+      "guest": {
+       "real": 3.08,
+       "user": 2.15,
+       "sys": 0.83
+      },
+      "browser_cpu_seconds": 4.58,
+      "browser_peak_rss_bytes": 2874531840
+     }
+    }
+   ]
+  },
+  "control2-hzlow-1.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.1,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.8,
+       "user": 1.91,
+       "sys": 0.79
+      },
+      "browser_cpu_seconds": 4.02,
+      "browser_peak_rss_bytes": 2783199232
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.08,
+       "user": 0.63,
+       "sys": 0.43
+      },
+      "browser_cpu_seconds": 1.7,
+      "browser_peak_rss_bytes": 2785763328
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.38,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.6,
+      "status": 0,
+      "guest": {
+       "real": 5.39,
+       "user": 3.68,
+       "sys": 1.35
+      },
+      "browser_cpu_seconds": 7.19,
+      "browser_peak_rss_bytes": 2950688768
+     },
+     "warm": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 3.02,
+       "user": 2.1,
+       "sys": 0.81
+      },
+      "browser_cpu_seconds": 4.27,
+      "browser_peak_rss_bytes": 2868678656
+     }
+    }
+   ]
+  },
+  "control2-hzlow-2.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.94,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.2,
+      "status": 0,
+      "guest": {
+       "real": 2.86,
+       "user": 1.97,
+       "sys": 0.77
+      },
+      "browser_cpu_seconds": 4.15,
+      "browser_peak_rss_bytes": 2775257088
+     },
+     "warm": {
+      "wall_seconds": 1.34,
+      "status": 0,
+      "guest": {
+       "real": 1.11,
+       "user": 0.56,
+       "sys": 0.51
+      },
+      "browser_cpu_seconds": 1.74,
+      "browser_peak_rss_bytes": 2777567232
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.12,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.6,
+      "status": 0,
+      "guest": {
+       "real": 5.4,
+       "user": 3.61,
+       "sys": 1.43
+      },
+      "browser_cpu_seconds": 7.24,
+      "browser_peak_rss_bytes": 2953842688
+     },
+     "warm": {
+      "wall_seconds": 3.2,
+      "status": 0,
+      "guest": {
+       "real": 3.04,
+       "user": 2.15,
+       "sys": 0.78
+      },
+      "browser_cpu_seconds": 4.22,
+      "browser_peak_rss_bytes": 2868793344
+     }
+    }
+   ]
+  },
+  "control2-hzlow-3.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.05,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.83,
+       "user": 1.92,
+       "sys": 0.77
+      },
+      "browser_cpu_seconds": 4.11,
+      "browser_peak_rss_bytes": 2783014912
+     },
+     "warm": {
+      "wall_seconds": 1.34,
+      "status": 0,
+      "guest": {
+       "real": 1.09,
+       "user": 0.59,
+       "sys": 0.48
+      },
+      "browser_cpu_seconds": 1.69,
+      "browser_peak_rss_bytes": 2785304576
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.16,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.58,
+      "status": 0,
+      "guest": {
+       "real": 5.31,
+       "user": 3.77,
+       "sys": 1.26
+      },
+      "browser_cpu_seconds": 7.24,
+      "browser_peak_rss_bytes": 2954694656
+     },
+     "warm": {
+      "wall_seconds": 3.46,
+      "status": 0,
+      "guest": {
+       "real": 3.08,
+       "user": 2.11,
+       "sys": 0.85
+      },
+      "browser_cpu_seconds": 4.61,
+      "browser_peak_rss_bytes": 2872328192
+     }
+    }
+   ]
+  },
+  "hz25-hzlow-1.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "opencode",
+     "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+     "command": "opencode --version",
+     "shell_seconds": 8.54,
+     "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+     "cold": {
+      "wall_seconds": 189.8,
+      "status": 0,
+      "guest": {
+       "real": 189.52,
+       "user": 168.2,
+       "sys": 18.61
+      },
+      "browser_cpu_seconds": 244.26,
+      "browser_peak_rss_bytes": 3529441280
+     },
+     "warm": {
+      "wall_seconds": 179.16,
+      "status": 0,
+      "guest": {
+       "real": 178.85,
+       "user": 159.92000000000002,
+       "sys": 16.96
+      },
+      "browser_cpu_seconds": 228.41,
+      "browser_peak_rss_bytes": 3411431424
+     }
+    }
+   ]
+  },
+  "hz25-hzlow-2.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.81,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 2.93,
+      "status": 0,
+      "guest": {
+       "real": 2.72,
+       "user": 1.79,
+       "sys": 0.82
+      },
+      "browser_cpu_seconds": 3.84,
+      "browser_peak_rss_bytes": 2772131840
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.07,
+       "user": 0.51,
+       "sys": 0.51
+      },
+      "browser_cpu_seconds": 1.71,
+      "browser_peak_rss_bytes": 2778808320
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 7.91,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.31,
+      "status": 0,
+      "guest": {
+       "real": 5.1,
+       "user": 3.78,
+       "sys": 1.04
+      },
+      "browser_cpu_seconds": 6.96,
+      "browser_peak_rss_bytes": 2952179712
+     },
+     "warm": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.94,
+       "user": 2.18,
+       "sys": 0.66
+      },
+      "browser_cpu_seconds": 4.22,
+      "browser_peak_rss_bytes": 2955714560
+     }
+    }
+   ]
+  },
+  "hz25-hzlow-3.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.98,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 2.93,
+      "status": 0,
+      "guest": {
+       "real": 2.62,
+       "user": 1.89,
+       "sys": 0.62
+      },
+      "browser_cpu_seconds": 3.75,
+      "browser_peak_rss_bytes": 2779000832
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.07,
+       "user": 0.65,
+       "sys": 0.38
+      },
+      "browser_cpu_seconds": 1.67,
+      "browser_peak_rss_bytes": 2784333824
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.01,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.6,
+      "status": 0,
+      "guest": {
+       "real": 5.42,
+       "user": 3.59,
+       "sys": 1.47
+      },
+      "browser_cpu_seconds": 7.42,
+      "browser_peak_rss_bytes": 2950111232
+     },
+     "warm": {
+      "wall_seconds": 3.22,
+      "status": 0,
+      "guest": {
+       "real": 3.0,
+       "user": 1.99,
+       "sys": 0.93
+      },
+      "browser_cpu_seconds": 4.33,
+      "browser_peak_rss_bytes": 2950914048
+     }
+    }
+   ]
+  },
+  "hz50-hzlow-1.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "opencode",
+     "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+     "command": "opencode --version",
+     "shell_seconds": 8.56,
+     "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+     "cold": {
+      "wall_seconds": 188.87,
+      "status": 0,
+      "guest": {
+       "real": 188.47,
+       "user": 168.14,
+       "sys": 17.62
+      },
+      "browser_cpu_seconds": 241.29,
+      "browser_peak_rss_bytes": 3386146816
+     },
+     "warm": {
+      "wall_seconds": 168.61,
+      "status": 0,
+      "guest": {
+       "real": 168.25,
+       "user": 152.27,
+       "sys": 14.23
+      },
+      "browser_cpu_seconds": 208.98,
+      "browser_peak_rss_bytes": 3408154624
+     }
+    }
+   ]
+  },
+  "hz50-hzlow-2.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.91,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.2,
+      "status": 0,
+      "guest": {
+       "real": 2.8,
+       "user": 2.03,
+       "sys": 0.68
+      },
+      "browser_cpu_seconds": 4.1,
+      "browser_peak_rss_bytes": 2780688384
+     },
+     "warm": {
+      "wall_seconds": 1.34,
+      "status": 0,
+      "guest": {
+       "real": 1.08,
+       "user": 0.67,
+       "sys": 0.39
+      },
+      "browser_cpu_seconds": 1.71,
+      "browser_peak_rss_bytes": 2783903744
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.22,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.58,
+      "status": 0,
+      "guest": {
+       "real": 5.31,
+       "user": 3.58,
+       "sys": 1.39
+      },
+      "browser_cpu_seconds": 7.19,
+      "browser_peak_rss_bytes": 2948718592
+     },
+     "warm": {
+      "wall_seconds": 3.2,
+      "status": 0,
+      "guest": {
+       "real": 2.95,
+       "user": 2.23,
+       "sys": 0.62
+      },
+      "browser_cpu_seconds": 4.31,
+      "browser_peak_rss_bytes": 2865868800
+     }
+    }
+   ]
+  },
+  "hz50-hzlow-3.json": {
+   "engine": "site",
+   "results": [
+    {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.98,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.19,
+      "status": 0,
+      "guest": {
+       "real": 2.81,
+       "user": 1.85,
+       "sys": 0.83
+      },
+      "browser_cpu_seconds": 4.0,
+      "browser_peak_rss_bytes": 2782851072
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 1.07,
+       "user": 0.58,
+       "sys": 0.46
+      },
+      "browser_cpu_seconds": 1.67,
+      "browser_peak_rss_bytes": 2786381824
+     }
+    },
+    {
+     "name": "python",
+     "spec": "pkg=python3",
+     "command": "python3 -c 'print(1)'",
+     "shell_seconds": 8.03,
+     "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+     "cold": {
+      "wall_seconds": 5.57,
+      "status": 0,
+      "guest": {
+       "real": 5.23,
+       "user": 3.71,
+       "sys": 1.21
+      },
+      "browser_cpu_seconds": 7.28,
+      "browser_peak_rss_bytes": 2956079104
+     },
+     "warm": {
+      "wall_seconds": 3.17,
+      "status": 0,
+      "guest": {
+       "real": 3.02,
+       "user": 2.01,
+       "sys": 0.91
+      },
+      "browser_cpu_seconds": 4.19,
+      "browser_peak_rss_bytes": 2956021760
+     }
+    }
+   ]
+  }
+ },
+ "hz_log": "Round 1: control2\n  opencode  cold wall   201.56s guest user  177.22s browser cpu  258.62s rss   3406 MiB status 0\n  opencode  warm wall   184.48s guest user  164.88s browser cpu  229.12s rss   3310 MiB status 0\nRound 1: hz250\n  opencode  cold wall   218.77s guest user  189.46s browser cpu  272.41s rss   3244 MiB status 0\n  opencode  warm wall   208.29s guest user  181.60s browser cpu  255.55s rss   3265 MiB status 0\nRound 1: control2\n  jujutsu   cold wall     3.22s guest user    2.00s browser cpu    4.34s rss   2653 MiB status 0\n  jujutsu   warm wall     1.35s guest user    0.66s browser cpu    1.88s rss   2657 MiB status 0\n  python    cold wall     5.90s guest user    3.80s browser cpu    7.50s rss   2810 MiB status 0\n  python    warm wall     3.49s guest user    2.20s browser cpu    4.54s rss   2736 MiB status 0\nRound 1: hz250\n  jujutsu   cold wall     3.19s guest user    1.98s browser cpu    4.00s rss   2651 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.69s browser cpu    1.72s rss   2655 MiB status 0\n  python    cold wall     5.57s guest user    3.68s browser cpu    7.22s rss   2816 MiB status 0\n  python    warm wall     3.45s guest user    2.25s browser cpu    4.59s rss   2738 MiB status 0\nRound 2: hz250\n  jujutsu   cold wall     3.19s guest user    1.92s browser cpu    4.04s rss   2651 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.59s browser cpu    1.70s rss   2655 MiB status 0\n  python    cold wall    13.56s guest user    8.04s browser cpu   20.57s rss   2780 MiB status 0\n  python    warm wall     3.45s guest user    2.15s browser cpu    4.58s rss   2741 MiB status 0\nRound 2: control2\n  jujutsu   cold wall     3.20s guest user    1.97s browser cpu    4.19s rss   2655 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.65s browser cpu    1.70s rss   2658 MiB status 0\n  python    cold wall     5.57s guest user    3.66s browser cpu    7.22s rss   2816 MiB status 0\n  python    warm wall     3.19s guest user    2.09s browser cpu    4.23s rss   2738 MiB status 0\nCHAIN8_DONE",
+ "hzlow_log": "Round 1: control2\n  jujutsu   cold wall     3.19s guest user    1.91s browser cpu    4.02s rss   2654 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.63s browser cpu    1.70s rss   2657 MiB status 0\n  python    cold wall     5.60s guest user    3.68s browser cpu    7.19s rss   2814 MiB status 0\n  python    warm wall     3.19s guest user    2.10s browser cpu    4.27s rss   2736 MiB status 0\nRound 1: hz50\n  jujutsu   cold wall     3.45s guest user    2.06s browser cpu    4.27s rss   2648 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.58s browser cpu    1.67s rss   2652 MiB status 0\n  python    cold wall     5.57s guest user    3.79s browser cpu    7.24s rss   2817 MiB status 0\n  python    warm wall     3.19s guest user    2.11s browser cpu    4.25s rss   2818 MiB status 0\nRound 1: hz25\n  jujutsu   cold wall     2.92s guest user    1.79s browser cpu    3.81s rss   2648 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.51s browser cpu    1.71s rss   2656 MiB status 0\n  python    cold wall     5.58s guest user    3.61s browser cpu    7.25s rss   2817 MiB status 0\n  python    warm wall     3.20s guest user    2.12s browser cpu    4.25s rss   2818 MiB status 0\nRound 2: hz25\n  jujutsu   cold wall     2.93s guest user    1.79s browser cpu    3.84s rss   2644 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.51s browser cpu    1.71s rss   2650 MiB status 0\n  python    cold wall     5.31s guest user    3.78s browser cpu    6.96s rss   2815 MiB status 0\n  python    warm wall     3.19s guest user    2.18s browser cpu    4.22s rss   2819 MiB status 0\nRound 2: hz50\n  jujutsu   cold wall     3.20s guest user    2.03s browser cpu    4.10s rss   2652 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.67s browser cpu    1.71s rss   2655 MiB status 0\n  python    cold wall     5.58s guest user    3.58s browser cpu    7.19s rss   2812 MiB status 0\n  python    warm wall     3.20s guest user    2.23s browser cpu    4.31s rss   2733 MiB status 0\nRound 2: control2\n  jujutsu   cold wall     3.20s guest user    1.97s browser cpu    4.15s rss   2647 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.56s browser cpu    1.74s rss   2649 MiB status 0\n  python    cold wall     5.60s guest user    3.61s browser cpu    7.24s rss   2817 MiB status 0\n  python    warm wall     3.20s guest user    2.15s browser cpu    4.22s rss   2736 MiB status 0\nRound 3: control2\n  jujutsu   cold wall     3.19s guest user    1.92s browser cpu    4.11s rss   2654 MiB status 0\n  jujutsu   warm wall     1.34s guest user    0.59s browser cpu    1.69s rss   2656 MiB status 0\n  python    cold wall     5.58s guest user    3.77s browser cpu    7.24s rss   2818 MiB status 0\n  python    warm wall     3.46s guest user    2.11s browser cpu    4.61s rss   2739 MiB status 0\nRound 3: hz50\n  jujutsu   cold wall     3.19s guest user    1.85s browser cpu    4.00s rss   2654 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.58s browser cpu    1.67s rss   2657 MiB status 0\n  python    cold wall     5.57s guest user    3.71s browser cpu    7.28s rss   2819 MiB status 0\n  python    warm wall     3.17s guest user    2.01s browser cpu    4.19s rss   2819 MiB status 0\nRound 3: hz25\n  jujutsu   cold wall     2.93s guest user    1.89s browser cpu    3.75s rss   2650 MiB status 0\n  jujutsu   warm wall     1.33s guest user    0.65s browser cpu    1.67s rss   2655 MiB status 0\n  python    cold wall     5.60s guest user    3.59s browser cpu    7.42s rss   2813 MiB status 0\n  python    warm wall     3.22s guest user    1.99s browser cpu    4.33s rss   2814 MiB status 0\nRound 1: hz25\n  opencode  cold wall   189.80s guest user  168.20s browser cpu  244.26s rss   3366 MiB status 0\n  opencode  warm wall   179.16s guest user  159.92s browser cpu  228.41s rss   3253 MiB status 0\nRound 1: hz50\n  opencode  cold wall   188.87s guest user  168.14s browser cpu  241.29s rss   3229 MiB status 0\n  opencode  warm wall   168.61s guest user  152.27s browser cpu  208.98s rss   3250 MiB status 0\nRound 1: control2\n  opencode  cold wall   189.02s guest user  167.72s browser cpu  237.56s rss   3218 MiB status 0"
+}

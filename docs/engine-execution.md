@@ -749,9 +749,22 @@ match the bench page's records for the same engines within noise. The
 opencode figures do not: a three-minute run under a slow clock takes a
 third as many timer ticks, and reads about 15% below the bench page's
 188 s cold wall for the same engine. Take the opencode columns as
-relative, and note the size of that gap: a hundred timer interrupts a
-second cost this emulator on the order of a tenth of its throughput,
-which is a lead of its own.
+relative.
+
+That gap looked like the price of the timer tick, since a guest whose
+clock runs three times slow takes a third as many ticks per real
+second. Measured directly, it is not. Guests differing only in
+`CONFIG_HZ` (25 and 50 added to the Kconfig choice), each with its own
+snapshot, on the release engine: at 250 Hz opencode ran 8.5% slower
+cold and 13% slower warm than at 100, but 100, 50 and 25 Hz are
+indistinguishable on it (189 s cold wall, 238 to 244 s of CPU, one
+round each), and python does not move either. jj alone reads 5 to 7%
+better at 25 Hz across three rounds and nothing at 50, a shape that
+does not fit a per-tick cost and is not acted on. So the tick costs a
+few percent at most at 100 Hz, and whatever a slow clock did for
+opencode's three minutes happened inside the program, which is
+time-aware, rather than in the kernel. The [samples](../experiments/guest-tick-rate.json)
+are kept.
 
 ## The cold path in the engine
 
