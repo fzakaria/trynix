@@ -4,8 +4,8 @@
 model. It applies after production patches 0001 through 0005 to the
 pinned fork commit `0ef7b4e2`, builds with `tools/build-engine.sh`
 unchanged, boots the pinned snapshot, and passes `nix run .#cpu-test`.
-It is not yet wired into the engine pins; publishing it is a
-`nix run .#publish-engine` away.
+It shipped as `engine-20260909-1605`, and the follow-up patch 0007 as
+`engine-20260909-1943`; every pin since carries that engine.
 
 Measured against the pinned engine: `opencode --version` 408 s to 171 s
 (2.4x); emubench 1.5x to 3.3x by instruction class. Full analysis in
