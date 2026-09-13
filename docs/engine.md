@@ -122,6 +122,18 @@ initramfs or machine definition. The snapshot holds the kernel and
 initramfs in its RAM, and `checks.snapshot` fails when the guest the
 tree builds is not the one the pins say the snapshot came from.
 
+Rebuild the native qemu whenever the patches change, before taking a
+snapshot. The binary is not tracked and nothing rebuilds it for you.
+It matters because of patches/0003: a native qemu built without it
+calibrates the guest's clock against a real TSC, and the snapshot then
+runs on the browser's counter with every guest second taking about
+three real ones. Two releases shipped that way on 2026-09-13 from a
+binary built nine days earlier; `make-snapshot` only checks that the
+guest settled on the TSC, not what it counts. `boot-test`, which CI
+runs, now times a `sleep 2` in the guest from the host and fails when
+it takes more than 4.5 s, and the bench page's `clock_ratio` for a
+release should sit near 0.9, not 0.3.
+
 ## Publishing
 
 ```console

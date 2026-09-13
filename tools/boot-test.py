@@ -76,6 +76,18 @@ MAX_PROMPTS = 3
 # going to print has printed by the end of this.
 DRAIN_SECONDS = 3
 
+# The guest's clock, checked once per run from the host. A snapshot
+# taken on a native qemu built without patches/0003 calibrates the
+# guest's TSC against a real one and then runs on the browser's
+# counter, and every guest second takes about three real ones: sleep
+# 2 measured 6.7 s of wall time on such a snapshot and 2.1 s on a good
+# one. Two releases shipped that way before anything checked. The
+# limit leaves room for a slow runner's typing round trip and is still
+# well under what the broken snapshot takes.
+CLOCK_SLEEP_SECONDS = 2
+CLOCK_LIMIT_SECONDS = 4.5
+CLOCK_MARKER = "BOOT_TEST_CLOCK"
+
 
 def free_port():
     """A port nothing is listening on, for the server or the debugger."""
@@ -216,8 +228,28 @@ def read_transcript(browser):
     )
 
 
-def boot_once(binary, url, limit, workdir, index):
-    """Time one cold boot; returns (seconds, prompts), or None if it hung."""
+def clock_seconds(browser):
+    """Host wall time for a `sleep CLOCK_SLEEP_SECONDS` in the guest, or
+    None if the guest never answered. The marker is typed in two pieces
+    so the console's echo of the command line cannot match it."""
+    mark = len(read_transcript(browser))
+    started = time.monotonic()
+    browser.evaluate(
+        "window.trynix.type("
+        + json.dumps(f"sleep {CLOCK_SLEEP_SECONDS}; echo {CLOCK_MARKER[:-1]}'{CLOCK_MARKER[-1]}'\n")
+        + ")"
+    )
+    while time.monotonic() - started < CLOCK_LIMIT_SECONDS * 3:
+        if CLOCK_MARKER + "\r" in read_transcript(browser)[mark:]:
+            return time.monotonic() - started
+        time.sleep(POLL_SECONDS)
+    return None
+
+
+def boot_once(binary, url, limit, workdir, index, check_clock):
+    """Time one cold boot; returns (seconds, prompts, clock), or None if
+    it hung. clock is the guest sleep's host wall time when asked for,
+    else None."""
     browser = Browser(binary, os.path.join(workdir, f"profile-{index}"))
     try:
         started = time.monotonic()
@@ -228,7 +260,8 @@ def boot_once(binary, url, limit, workdir, index):
                 taken = time.monotonic() - started
                 time.sleep(DRAIN_SECONDS)
                 tail = read_transcript(browser).split(READY_MARKER, 1)[-1]
-                return taken, tail.count(PROMPT)
+                clock = clock_seconds(browser) if check_clock else None
+                return taken, tail.count(PROMPT), clock
             time.sleep(POLL_SECONDS)
         return None
     finally:
@@ -265,17 +298,26 @@ def main():
     times = []
     stalls = 0
     noisy = 0
+    slow_clock = None
     with tempfile.TemporaryDirectory() as workdir:
         try:
             for index in range(args.runs):
-                result = boot_once(args.browser, url, args.limit, workdir, index)
+                # The clock is checked on the first boot that reaches a shell.
+                result = boot_once(args.browser, url, args.limit, workdir, index, not times)
                 if result is None:
                     stalls += 1
                     print(f"  boot {index + 1}: NO SHELL within {args.limit:g}s", flush=True)
                     continue
 
-                taken, prompts = result
+                taken, prompts, clock = result
                 times.append(taken)
+                if clock is not None:
+                    print(
+                        f"  guest sleep {CLOCK_SLEEP_SECONDS}: {clock:.1f}s of wall time",
+                        flush=True,
+                    )
+                    if clock > CLOCK_LIMIT_SECONDS:
+                        slow_clock = clock
                 if prompts > MAX_PROMPTS:
                     noisy += 1
                     print(
@@ -299,6 +341,13 @@ def main():
         sys.exit(f"{stalls} of {args.runs} boots never reached a shell")
     if noisy:
         sys.exit(f"{noisy} of {args.runs} boots left spare prompts on the console")
+    if slow_clock is not None:
+        sys.exit(
+            f"the guest's clock runs slow: sleep {CLOCK_SLEEP_SECONDS} took "
+            f"{slow_clock:.1f}s (limit {CLOCK_LIMIT_SECONDS:g}s). The snapshot was "
+            "taken on a native qemu built without the current patches; rebuild it "
+            "with tools/build-native-qemu.sh and retake the snapshot (docs/engine.md)"
+        )
     print("every boot reached a shell")
 
 
