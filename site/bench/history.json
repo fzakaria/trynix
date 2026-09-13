@@ -4806,6 +4806,379 @@
         ]
       },
       "notes": "Pinned to CPUs 88-91 and NUMA memory node 5. Patch 0009 (goto_ptr lookup cache) and a guest whose init reads the first command's binary and libraries in the background after the mount, so the cold column now includes whatever of that read lands during the runner's second between prompt and command."
+    },
+    {
+      "commit": "6ec553870c105a96e8d5e7b1c55e467de966d7f2",
+      "date": "2026-09-13T13:56:42-07:00",
+      "subject": "Read only the binaries ahead of the first command",
+      "tag": "engine-20260913-2056",
+      "runner": {
+        "host": "leviathan",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
+        "cores": 256,
+        "memory_gib": 251,
+        "kernel": "6.18.44",
+        "browser": "Chromium 152.0.7977.75",
+        "cpu_affinity": [
+          88,
+          89,
+          90,
+          91
+        ],
+        "memory_node": 5
+      },
+      "probe": "/nix/store/wbsxcp5j5qxv9fhmiw47vp8san370682-trynix-emubench-static-x86_64-unknown-linux-musl-1",
+      "measured": "2026-09-13T21:16:43+00:00",
+      "emubench": {
+        "runs": 3,
+        "failed_runs": 0,
+        "clock_ratio": 0.797,
+        "host_seconds": 10.2,
+        "rows": {
+          "alu": {
+            "mips": 1178.5,
+            "ns_per_iter": 4.2,
+            "mips_host": 999.9101379728448,
+            "runs": 3
+          },
+          "alu2": {
+            "mips": 231.4,
+            "ns_per_iter": 25.9,
+            "mips_host": 184.45408635755444,
+            "runs": 3
+          },
+          "alu4": {
+            "mips": 222.3,
+            "ns_per_iter": 36.0,
+            "mips_host": 177.20027397270678,
+            "runs": 3
+          },
+          "call": {
+            "mips": 105.2,
+            "ns_per_iter": 57.0,
+            "mips_host": 86.61638278817927,
+            "runs": 3
+          },
+          "indirect": {
+            "mips": 156.7,
+            "ns_per_iter": 63.8,
+            "mips_host": 120.12632158203738,
+            "runs": 3
+          },
+          "mem": {
+            "mips": 431.6,
+            "ns_per_iter": 13.9,
+            "mips_host": 327.6391832723766,
+            "runs": 3
+          },
+          "memstride": {
+            "mips": 12.5,
+            "ns_per_iter": 481.0,
+            "mips_host": 9.640912019367892,
+            "runs": 3
+          },
+          "syscall": {
+            "mips": 0.4,
+            "ns_per_iter": 2718.1,
+            "mips_host": 0.30365077226355575,
+            "runs": 3
+          },
+          "pagefault": {
+            "mips": 0.0,
+            "ns_per_iter": 125723.0,
+            "mips_host": 0.0,
+            "runs": 3
+          },
+          "cold50k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 31067.2,
+            "mips_host": 0.23913667202794436,
+            "runs": 3
+          },
+          "cold50k/p2": {
+            "mips": 35.3,
+            "ns_per_iter": 226.8,
+            "mips_host": 28.13841507528812,
+            "runs": 3
+          },
+          "cold50k/p3": {
+            "mips": 35.8,
+            "ns_per_iter": 223.3,
+            "mips_host": 29.150474137301345,
+            "runs": 3
+          },
+          "cold2k/p1": {
+            "mips": 0.3,
+            "ns_per_iter": 28943.0,
+            "mips_host": 0.23913667202794436,
+            "runs": 3
+          },
+          "cold2k/p2": {
+            "mips": 41.6,
+            "ns_per_iter": 192.5,
+            "mips_host": 31.579680315409796,
+            "runs": 3
+          },
+          "cold2k/p3": {
+            "mips": 45.7,
+            "ns_per_iter": 175.1,
+            "mips_host": 36.42848637225686,
+            "runs": 3
+          },
+          "cold2k/p4": {
+            "mips": 53.3,
+            "ns_per_iter": 150.0,
+            "mips_host": 42.58702080996369,
+            "runs": 3
+          },
+          "cold2k/p100": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 47.26934883752367,
+            "runs": 3
+          },
+          "cold2k/p200": {
+            "mips": 51.6,
+            "ns_per_iter": 155.0,
+            "mips_host": 44.18118736434736,
+            "runs": 3
+          },
+          "cold2k/p300": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p400": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 47.26934883752367,
+            "runs": 3
+          },
+          "cold2k/p500": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p600": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p700": {
+            "mips": 58.1,
+            "ns_per_iter": 137.6,
+            "mips_host": 46.68630623552169,
+            "runs": 3
+          },
+          "cold2k/p800": {
+            "mips": 60.3,
+            "ns_per_iter": 132.6,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p900": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p1000": {
+            "mips": 58.2,
+            "ns_per_iter": 137.5,
+            "mips_host": 46.68630623552169,
+            "runs": 3
+          },
+          "cold2k/p1100": {
+            "mips": 59.3,
+            "ns_per_iter": 135.0,
+            "mips_host": 46.68630623552169,
+            "runs": 3
+          },
+          "cold2k/p1200": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 49.023017765728596,
+            "runs": 3
+          },
+          "cold2k/p1300": {
+            "mips": 59.3,
+            "ns_per_iter": 134.9,
+            "mips_host": 45.016226988072134,
+            "runs": 3
+          },
+          "cold2k/p1400": {
+            "mips": 56.2,
+            "ns_per_iter": 142.5,
+            "mips_host": 42.66293350302958,
+            "runs": 3
+          },
+          "cold2k/p1500": {
+            "mips": 60.3,
+            "ns_per_iter": 132.6,
+            "mips_host": 48.06647107761682,
+            "runs": 3
+          },
+          "cold2k/p1600": {
+            "mips": 61.5,
+            "ns_per_iter": 130.0,
+            "mips_host": 48.06647107761682,
+            "runs": 3
+          }
+        }
+      },
+      "exec": {
+        "results": [
+          {
+            "name": "hello",
+            "spec": "pkg=hello",
+            "command": "hello",
+            "shell_seconds": 5.43,
+            "resolved": "/nix/store/xl1h9i29pgq2q5cszjhm5wpfxfbbqwyi-hello-2.12.3",
+            "cold": {
+              "wall_seconds": 1.34,
+              "status": 0,
+              "guest": {
+                "real": 0.98,
+                "user": 0.37,
+                "sys": 0.53
+              },
+              "browser_cpu_seconds": 1.5,
+              "browser_peak_rss_bytes": 2732044288
+            },
+            "warm": {
+              "wall_seconds": 0.54,
+              "status": 0,
+              "guest": {
+                "real": 0.35,
+                "user": 0.14,
+                "sys": 0.19
+              },
+              "browser_cpu_seconds": 0.65,
+              "browser_peak_rss_bytes": 2735304704
+            }
+          },
+          {
+            "name": "ripgrep",
+            "spec": "pkg=ripgrep",
+            "command": "rg --version",
+            "shell_seconds": 5.71,
+            "resolved": "/nix/store/hkclq7d0j10l7gk1v2hpif398dvnq6lz-ripgrep-15.2.0",
+            "cold": {
+              "wall_seconds": 1.07,
+              "status": 0,
+              "guest": {
+                "real": 0.74,
+                "user": 0.27,
+                "sys": 0.4
+              },
+              "browser_cpu_seconds": 1.23,
+              "browser_peak_rss_bytes": 2749632512
+            },
+            "warm": {
+              "wall_seconds": 0.54,
+              "status": 0,
+              "guest": {
+                "real": 0.25,
+                "user": 0.03,
+                "sys": 0.19
+              },
+              "browser_cpu_seconds": 0.54,
+              "browser_peak_rss_bytes": 2752327680
+            }
+          },
+          {
+            "name": "jujutsu",
+            "spec": "pkg=jujutsu",
+            "command": "jj --version",
+            "shell_seconds": 6.02,
+            "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+            "cold": {
+              "wall_seconds": 3.19,
+              "status": 0,
+              "guest": {
+                "real": 2.8,
+                "user": 1.93,
+                "sys": 0.77
+              },
+              "browser_cpu_seconds": 3.9,
+              "browser_peak_rss_bytes": 2788610048
+            },
+            "warm": {
+              "wall_seconds": 1.33,
+              "status": 0,
+              "guest": {
+                "real": 1.06,
+                "user": 0.59,
+                "sys": 0.44
+              },
+              "browser_cpu_seconds": 1.73,
+              "browser_peak_rss_bytes": 2794385408
+            }
+          },
+          {
+            "name": "python",
+            "spec": "pkg=python3",
+            "command": "python3 -c 'print(1)'",
+            "shell_seconds": 8.67,
+            "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+            "cold": {
+              "wall_seconds": 5.31,
+              "status": 0,
+              "guest": {
+                "real": 5.11,
+                "user": 3.6,
+                "sys": 1.24
+              },
+              "browser_cpu_seconds": 6.93,
+              "browser_peak_rss_bytes": 2962890752
+            },
+            "warm": {
+              "wall_seconds": 3.19,
+              "status": 0,
+              "guest": {
+                "real": 2.85,
+                "user": 1.92,
+                "sys": 0.83
+              },
+              "browser_cpu_seconds": 4.3,
+              "browser_peak_rss_bytes": 2884333568
+            }
+          },
+          {
+            "name": "opencode",
+            "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+            "command": "opencode --version",
+            "shell_seconds": 8.67,
+            "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+            "cold": {
+              "wall_seconds": 178.07,
+              "status": 0,
+              "guest": {
+                "real": 177.71,
+                "user": 157.86,
+                "sys": 17.34
+              },
+              "browser_cpu_seconds": 226.39,
+              "browser_peak_rss_bytes": 3412840448
+            },
+            "warm": {
+              "wall_seconds": 160.63,
+              "status": 0,
+              "guest": {
+                "real": 160.35,
+                "user": 144.3,
+                "sys": 14.31
+              },
+              "browser_cpu_seconds": 200.76,
+              "browser_peak_rss_bytes": 3489705984
+            }
+          }
+        ]
+      },
+      "notes": "Pinned to CPUs 88-91 and NUMA memory node 5, with nothing else running on the host. Same engine as engine-20260913-2024; the guest reads only what /share/bin links to ahead of the first command. A first measurement overlapped another benchmark on cores sharing this L3 and read 7 to 10% slower across the board; this one replaced it."
     }
   ]
 }
