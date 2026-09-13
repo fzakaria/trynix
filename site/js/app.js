@@ -374,7 +374,9 @@ rangesForm.addEventListener("submit", async (event) => {
     outcome:
       problems.length === 0
         ? ResolutionOutcome.SUCCESS
-        : (resolved.length === 0 ? ResolutionOutcome.FAILED : ResolutionOutcome.PARTIAL),
+        : resolved.length === 0
+          ? ResolutionOutcome.FAILED
+          : ResolutionOutcome.PARTIAL,
     duration_ms: Math.round(performance.now() - started),
     package_count: resolved.length,
   });

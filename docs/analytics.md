@@ -5,16 +5,16 @@ interrupt package loads. Package names and versions come from explicitly
 selected index entries; raw store paths and reverse-identified paths do
 not produce named package events.
 
-| Event | Meaning | Parameters |
-| --- | --- | --- |
-| `package_requested` | A selected package enters a boot or addition | `package_name`, `package_version`, `selection_method`, `operation` |
-| `boot_started` | A boot is attempted, including isolation failures | `package_count` |
-| `boot_ready` / `boot_failed` | The guest reaches its prompt, or boot throws | `duration_ms`, `package_count`, `boot_mode`, `stage` |
-| `packages_add_started` | An addition to a running guest is attempted | `package_count` |
-| `packages_add_ready` / `packages_add_failed` | The addition finishes or throws | `duration_ms`, `package_count`, `boot_mode`, `stage` |
-| `cache_summary` | A boot or addition finishes | `operation`, `cache_hits`, `cache_misses`, `cache_bytes`, `fetched_bytes` |
-| `range_resolved` | The range form finishes parsing and resolving | `outcome`, `duration_ms`, `package_count` on resolution |
-| `grail_opened` | The generated Grail link is clicked | None |
+| Event                                        | Meaning                                           | Parameters                                                                |
+| -------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------- |
+| `package_requested`                          | A selected package enters a boot or addition      | `package_name`, `package_version`, `selection_method`, `operation`        |
+| `boot_started`                               | A boot is attempted, including isolation failures | `package_count`                                                           |
+| `boot_ready` / `boot_failed`                 | The guest reaches its prompt, or boot throws      | `duration_ms`, `package_count`, `boot_mode`, `stage`                      |
+| `packages_add_started`                       | An addition to a running guest is attempted       | `package_count`                                                           |
+| `packages_add_ready` / `packages_add_failed` | The addition finishes or throws                   | `duration_ms`, `package_count`, `boot_mode`, `stage`                      |
+| `cache_summary`                              | A boot or addition finishes                       | `operation`, `cache_hits`, `cache_misses`, `cache_bytes`, `fetched_bytes` |
+| `range_resolved`                             | The range form finishes parsing and resolving     | `outcome`, `duration_ms`, `package_count` on resolution                   |
+| `grail_opened`                               | The generated Grail link is clicked               | None                                                                      |
 
 Selection methods are `picker`, `range`, `url`, and `agent`. Operations
 are `boot` and `add`. Boot mode is `snapshot`, `cold`, or `unknown` when
