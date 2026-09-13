@@ -88,13 +88,14 @@ async function verifyUnpacked(info, nar) {
 }
 
 // One NAR: fetch, verify, decompress, verify again, parse. onBytes
-// hears compressed chunk sizes as they arrive.
+// hears compressed chunk sizes as they arrive. onCacheRead reports
+// completed compressed reads for the caller's cache summary.
 //
 // An archive that unpacks wrong is decoded once more from a fresh
 // download — the compressed copy is dropped from the cache first —
 // before the boot gives up with a message that names the path and
 // the reason.
-export async function fetchNar(info, onBytes) {
+export async function fetchNar(info, onBytes, onCacheRead) {
   if (!["bzip2", "xz", "zstd", "none"].includes(info.compression)) {
     // Named, like every other refusal here, because the message is
     // the whole of what a reader can report: the one that brought
@@ -111,7 +112,7 @@ export async function fetchNar(info, onBytes) {
   const url = `${info.substituter ?? CACHE_URL}/${info.url}`;
 
   for (let attempt = 1; ; attempt += 1) {
-    const compressed = await fetchWithProgress(url, { onBytes });
+    const compressed = await fetchWithProgress(url, { onBytes, onCacheRead });
 
     const drift = compressedDrift(info, compressed);
     if (drift !== null) {

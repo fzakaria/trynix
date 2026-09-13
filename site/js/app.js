@@ -5,6 +5,16 @@
 // virtio-9p, and the serial console lands in the terminal.
 // docs/design.md holds the architecture.
 
+import {
+  AnalyticsEvent,
+  BootMode,
+  LoadOperation,
+  LoadStage,
+  ResolutionOutcome,
+  SelectionMethod,
+  createLoadTelemetry,
+  track,
+} from "./analytics.js";
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { startVM } from "./boot.js";
@@ -308,7 +318,8 @@ onLog((lines) => {
   debugLog.scrollTop = debugLog.scrollHeight;
 });
 
-const entryOf = (version) => ({
+const entryOf = (version, selectionMethod = SelectionMethod.PICKER) => ({
+  selectionMethod,
   digest: version.digest,
   label: `${version.attr} ${version.version}`,
   attr: version.attr,
@@ -333,17 +344,42 @@ rangesForm.addEventListener("submit", async (event) => {
   rangesResults.replaceChildren();
   notes = [];
 
+  // Measure the time spent parsing and resolving package ranges.
+  const started = performance.now();
   let specs;
   try {
     specs = parseSpecs(rangesInput.value);
   } catch (err) {
+    track(AnalyticsEvent.RANGE, {
+      outcome: ResolutionOutcome.FAILED,
+      duration_ms: Math.round(performance.now() - started),
+    });
     rangesResults.textContent = String(err);
     return;
   }
 
-  const { resolved, problems } = await resolveSpecs(specs);
+  let resolution;
+  try {
+    resolution = await resolveSpecs(specs);
+  } catch (err) {
+    track(AnalyticsEvent.RANGE, {
+      outcome: ResolutionOutcome.FAILED,
+      duration_ms: Math.round(performance.now() - started),
+    });
+    rangesResults.textContent = String(err);
+    return;
+  }
+  const { resolved, problems } = resolution;
+  track(AnalyticsEvent.RANGE, {
+    outcome:
+      problems.length === 0
+        ? ResolutionOutcome.SUCCESS
+        : (resolved.length === 0 ? ResolutionOutcome.FAILED : ResolutionOutcome.PARTIAL),
+    duration_ms: Math.round(performance.now() - started),
+    package_count: resolved.length,
+  });
   for (const version of resolved) {
-    select(entryOf(version));
+    select(entryOf(version, SelectionMethod.RANGE));
   }
 
   const lines = [
@@ -358,6 +394,11 @@ rangesForm.addEventListener("submit", async (event) => {
 // in nixpkgs history satisfied every spec at once, so the versions were
 // built against each other.
 const grailLink = document.getElementById("grail-link");
+grailLink.addEventListener("click", (event) => {
+  if (event.target.closest("a") !== null) {
+    track(AnalyticsEvent.GRAIL);
+  }
+});
 const GRAIL_URL = "https://fzakaria.github.io/grail/";
 
 function renderGrailLink() {
@@ -577,12 +618,19 @@ function reboot() {
 // their way. When the last one is in, QEMU is released and the
 // terminal goes live.
 async function boot() {
+  // Capture the requested selection before asynchronous work can change it.
+  const entries = [...selection.values()];
+  const telemetry = createLoadTelemetry(entries, LoadOperation.BOOT);
+  let stage = LoadStage.CLOSURE;
+  let mode = BootMode.UNKNOWN;
+
   // The engine is threaded, and its threads need SharedArrayBuffer,
   // which a browser only hands to a cross-origin isolated page. Say so
   // before anything downloads: without this the closure is fetched and
   // the engine instantiated, and the run dies seconds later on a
   // missing global, with nothing on the page to say why.
   if (!globalThis.crossOriginIsolated) {
+    telemetry.finish(LoadStage.ISOLATION);
     log("not cross-origin isolated: SharedArrayBuffer is unavailable");
     status.textContent =
       "not cross-origin isolated, so SharedArrayBuffer is missing and the engine cannot start — reload once, and if that does not help the browser is blocking the service worker that sets the headers";
@@ -605,7 +653,7 @@ async function boot() {
   const vmRow = panel.row("virtual machine");
 
   try {
-    const roots = await rootsOf([...selection.keys()]);
+    const roots = await rootsOf(entries.map((entry) => entry.digest));
     const rootDigests = digestsOf(roots);
     const closure = await walkRoots(rootDigests, (n) =>
       walkRow.note(`${n} narinfos`),
@@ -633,6 +681,7 @@ async function boot() {
       signatureRow.done(`${closure.size} verified`);
     }
 
+    stage = LoadStage.DOWNLOAD;
     const engineUrls = await assets([QEMU_MAIN, QEMU_WASM, QEMU_WORKER]);
     const engine = {
       main: engineUrls.get(QEMU_MAIN),
@@ -661,6 +710,7 @@ async function boot() {
         name,
         await fetchWithProgress(await asset(`guest/${name}`), {
           onBytes: (n) => guestRow.add(n),
+          onCacheRead: telemetry.cacheRead,
         }),
       ]),
     ).then((entries) => {
@@ -672,6 +722,7 @@ async function boot() {
     // is already up; absent, the same arguments cold-boot.
     const snapshotPromise = fetchWithProgress(await asset(SNAPSHOT_URL), {
       onTotal: (n) => snapshotRow.setTotal(n),
+      onCacheRead: telemetry.cacheRead,
       onBytes: (n) => snapshotRow.add(n),
     }).then(
       (bytes) => {
@@ -695,6 +746,7 @@ async function boot() {
       snapshotPromise,
     ]).then(([, guestFiles, machine, snapshot]) => {
       resuming = snapshot !== null;
+      mode = resuming ? BootMode.SNAPSHOT : BootMode.COLD;
       bootMode = resuming ? "resumed from the snapshot" : "cold booted";
       log(
         snapshot === null
@@ -720,7 +772,11 @@ async function boot() {
       infos,
       NAR_CONCURRENCY,
       async (info) => {
-        const entries = await fetchNar(info, (n) => closureRow.add(n));
+        const entries = await fetchNar(
+          info,
+          (n) => closureRow.add(n),
+          telemetry.cacheRead,
+        );
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);
       },
@@ -738,6 +794,7 @@ async function boot() {
     vmStarted = true;
     mounted = closure;
 
+    stage = LoadStage.GUEST;
     const ready = vm.run(basenamesOf(closure, rootDigests));
     log("virtual machine running");
     reportSilent(vm, closure, roots);
@@ -747,10 +804,12 @@ async function boot() {
     bootButton.disabled = false;
 
     await ready;
+    telemetry.finish(LoadStage.READY, mode);
     log("guest at its prompt");
     vmRow.done("running");
     consoleVeil.hidden = true;
   } catch (err) {
+    telemetry.finish(stage, mode);
     log(`boot failed: ${err.message}`);
     vmRow.fail(String(err));
     // The error is on the progress row. The status line goes back to
@@ -786,6 +845,13 @@ rebootLink.addEventListener("click", (event) => {
 // the one directory the guest already has on PATH. Only paths it does
 // not already have are fetched.
 async function addToRunningVM() {
+  // Count only new selected roots when extending an existing guest.
+  const entries = [...selection.values()].filter(
+    (entry) => !mounted.has(entry.digest),
+  );
+  const telemetry = createLoadTelemetry(entries, LoadOperation.ADD);
+  let stage = LoadStage.CLOSURE;
+
   bootButton.disabled = true;
   const panel = new ProgressPanel(bootProgress);
   const row = panel.row("adding");
@@ -799,11 +865,13 @@ async function addToRunningVM() {
       mounted,
     );
     if (fresh.size === 0) {
+      telemetry.finish(LoadStage.READY);
       row.done("already there");
       refreshBootButton();
       return;
     }
 
+    stage = LoadStage.DOWNLOAD;
     const infos = [...fresh.values()];
     row.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
     const unpacked = await mapConcurrent(
@@ -811,7 +879,7 @@ async function addToRunningVM() {
       NAR_CONCURRENCY,
       async (info) => ({
         basename: basenameOf(info),
-        entries: await fetchNar(info, (n) => row.add(n)),
+        entries: await fetchNar(info, (n) => row.add(n), telemetry.cacheRead),
       }),
     );
 
@@ -820,9 +888,11 @@ async function addToRunningVM() {
     }
     vm.add(unpacked, basenamesOf(mounted, rootDigests));
     reportSilent(vm, mounted, roots);
+    telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
   } catch (err) {
+    telemetry.finish(stage);
     row.fail(String(err));
   } finally {
     refreshBootButton();
@@ -856,7 +926,7 @@ document.getElementById("copy-report").addEventListener("click", async () => {
 
 // A package named without a version means "whatever the index has
 // newest", which is what makes ?pkg=ripgrep a durable link.
-async function restore({ pkgs, paths }) {
+async function restore({ pkgs, paths }, selectionMethod = SelectionMethod.URL) {
   const said = [];
 
   for (const path of paths) {
@@ -904,7 +974,7 @@ async function restore({ pkgs, paths }) {
       continue;
     }
 
-    select(entryOf(hit));
+    select(entryOf(hit, selectionMethod));
   }
 
   if (said.length > 0) {
@@ -1014,10 +1084,13 @@ const page = {
   // can boot, which is what restore() reads a missing version as, but
   // only when it is null rather than absent.
   select: ({ packages, storePaths }) =>
-    restore({
-      pkgs: packages.map(({ attr, version = null }) => ({ attr, version })),
-      paths: storePaths,
-    }),
+    restore(
+      {
+        pkgs: packages.map(({ attr, version = null }) => ({ attr, version })),
+        paths: storePaths,
+      },
+      SelectionMethod.AGENT,
+    ),
 
   // A guest that is already running takes the new paths without a
   // reboot, which is the same thing the button does once it is up.

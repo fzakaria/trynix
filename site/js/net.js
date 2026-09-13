@@ -1,6 +1,7 @@
 // Fetch helpers shared by the boot flow.
 
 import { cachedResponse, evictFromCache, storeInCache } from "./cache.js";
+import { CacheResult } from "./analytics.js";
 import { log } from "./log.js";
 
 // A fetch can simply fail: a connection reset, a CDN hiccup, a browser
@@ -43,6 +44,7 @@ async function drain(res, { onBytes, onTotal } = {}) {
 // Fetch a URL into bytes, through the persistent cache. A hit is read
 // from storage (and still reports its size, so a progress row fills);
 // a miss is fetched, returned, and stored once it is complete.
+// onCacheRead reports the source and size of each completed byte read.
 //
 // `verify(bytes)` resolves to null for good bytes and to a reason for
 // bad ones. A body can arrive short without the fetch failing — a
@@ -58,6 +60,7 @@ export async function fetchWithProgress(url, options = {}) {
     const bytes = await drain(hit, options);
     const problem = await verify(bytes);
     if (problem === null) {
+      options.onCacheRead?.(CacheResult.HIT, bytes.byteLength);
       return bytes;
     }
     log(`cached copy of ${url} is bad (${problem}); fetching again`);
@@ -87,6 +90,7 @@ export async function fetchWithProgress(url, options = {}) {
       }
 
       await storeInCache(url, bytes);
+      options.onCacheRead?.(CacheResult.MISS, bytes.byteLength);
       return bytes;
     } catch (err) {
       options.onBytes?.(-downloaded);
