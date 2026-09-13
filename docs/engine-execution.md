@@ -955,38 +955,42 @@ the welcome line, medians of three:
 | blind: the whole closure          |  4.27 s / 6.07 s |  3.45 s / 4.60 s |  3.45 s / 4.65 s | 1123 files, 80 MB, 17 s, 13 CPU-s  |
 
 The cost is per file, not per byte: the blind read moves twice the
-bytes of the elf read for eight times the CPU. The elf variant is what
-ships. A 190-line static tool, `elfdeps`, lists each binary in
-`/share/bin` with its interpreter and every library the loader would
-map, resolved through the objects' own run paths; init pipes that into
-`cat` under `nice -n 19` and moves on to the welcome line, which is
-not delayed. For jj that is the binary, ld-linux, libc, libm and
-libgcc_s: 1.6 times the bytes jj's own start faults in, since the
-binary is read whole.
+bytes of the elf read for eight times the CPU. The elf variant was the
+first to ship: a 190-line static tool, `elfdeps`, listed each binary
+in `/share/bin` with its interpreter and every library the loader
+would map, and init piped that into `cat` under `nice -n 19`. Under
+exec-bench, which types the command about a second after the prompt,
+it read against the stock guest on the same engine, medians of three:
 
-Under exec-bench, which types the command about a second after the
-prompt, the shipped variant against the stock guest on the same
-engine, medians of three:
-
-| Package  | Control cold    | Prefetch cold   |
+| Package  | Control cold    | elfdeps cold    |
 | -------- | --------------- | --------------- |
 | jujutsu  | 4.04 s / 5.04 s | 3.24 s / 4.33 s |
 | python   | 5.94 s / 7.56 s | 6.17 s / 7.90 s |
 | opencode | 185 s / 233 s   | 187 s / 235 s   |
 
-jj gains 14% of CPU and a bench bucket of wall at that timing and 27%
-with three seconds of think time. Python loses 4% at the benchmark's
-timing: its listed files are 11 MB in ten, its start reads mostly
-stdlib sources the list does not cover, and the read is still under
-way when the command lands. Opencode's `/share/bin` entry is a wrapper
-script, so its list is glibc alone and nothing changes. With the
-browser's CPU throttled 12x (which slowed this guest about 1.5x) the
-same shape holds: a 5% loss typed at once, a 40% gain after five
-seconds. That is the trade: a visitor who types within a second of the
-prompt pays up to a few percent on a package whose libraries are
-small, and everyone else gets the first command a second sooner on a
-package whose binary is large. The [raw runs](../experiments/prefetch-after-mount.json)
-hold every sample, the read's own timing, and the throttled runs.
+jj gained 14% of CPU at that timing and 27% with three seconds of
+think time. Python lost 4%: its listed files are 11 MB in ten, its
+start reads mostly stdlib sources the list does not cover, and the
+read was still under way when the command landed. Opencode's
+`/share/bin` entry is a wrapper script, so its list was glibc alone.
+
+The libraries turned out not to be worth the tool. Reading only what
+`/share/bin` links to, `cat /share/bin/*` in the background, against
+the elfdeps guest, medians of three at the benchmark's timing and two
+samples with three seconds of think time:
+
+| Variant            | jj cold, 1 s    | python cold, 1 s | jj cold, 3 s think          |
+| ------------------ | --------------- | ---------------- | --------------------------- |
+| elfdeps            | 3.19 s / 4.12 s | 5.86 s / 7.60 s  | 3.02 s / 3.6 to 3.8 s       |
+| `cat /share/bin/*` | 3.21 s / 4.09 s | 5.61 s / 7.29 s  | 3.0 to 3.3 s / 3.9 to 4.0 s |
+
+The same jj gain, python back to where it was with no prefetch at all,
+and about 0.2 s of CPU given up on jj after a pause, which is glibc
+being faulted in by the command instead of read ahead. The one line is
+what ships. With the browser's CPU throttled 12x (which slowed this
+guest about 1.5x) the shape was the same for the elfdeps variant: a 5%
+loss typed at once, a 40% gain after five seconds. The [raw runs](../experiments/prefetch-after-mount.json)
+hold every sample, the reads' own timing, and the throttled runs.
 
 ### The code cache and the shim
 

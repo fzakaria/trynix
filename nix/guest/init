@@ -71,20 +71,21 @@ if [ -f /share/manifest ]; then
   . /share/manifest
 fi
 
-# Read the first command's files before the visitor asks for them. A
-# cold exec spends most of its time faulting the binary and its
-# libraries in over 9p; the store is immutable and mounted cache=loose,
-# so whatever is read here stays cached for the exec that follows.
-# elfdeps names the binaries in /share/bin, their interpreter and every
-# library the loader would map, and nothing else: for jujutsu that is
-# 35 MB in five files and takes about two seconds, so a visitor who
-# pauses before typing gets a first command a second faster, and one
-# who types at once loses nothing measurable (docs/engine-execution.md).
-# Backgrounded and at the lowest priority, so it yields the one vCPU
-# to the keystroke. /tmp/prefetch.log says when it ran, for diagnosis.
+# Read the first command's binaries before the visitor asks for them.
+# A cold exec spends most of its time faulting the binary in over 9p;
+# the store is immutable and mounted cache=loose, so whatever is read
+# here stays cached for the exec that follows. /share/bin holds links
+# to the package's binaries, and cat follows them: for jujutsu that is
+# one 30 MB file and about two seconds, and a visitor who pauses
+# before typing gets a first command a second faster. Listing the
+# libraries too was measured and not worth a tool: glibc is 4 MB and
+# shared, and reading it early cost python a few percent when the
+# read was still running as the command arrived. Backgrounded and at
+# the lowest priority, so it yields the one vCPU to the keystroke.
+# /tmp/prefetch.log says when it ran, for diagnosis.
 (
   echo "start $(cut -d' ' -f1 /proc/uptime)"
-  nice -n 19 sh -c 'elfdeps /share/bin/* | xargs cat > /dev/null'
+  nice -n 19 sh -c 'cat /share/bin/* > /dev/null'
   echo "end $(cut -d' ' -f1 /proc/uptime)"
 ) > /tmp/prefetch.log 2>&1 &
 

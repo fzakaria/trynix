@@ -99,13 +99,6 @@ let
     $CC -O2 -static -o $out/bin/reseed ${./guest/reseed.c}
   '';
 
-  # Names the files the dynamic loader maps for a binary, so init can
-  # read them ahead of the first command (nix/guest/elfdeps.c).
-  elfdeps = pkgs.pkgsStatic.runCommandCC "trynix-guest-elfdeps" { } ''
-    mkdir -p $out/bin
-    $CC -O2 -static -o $out/bin/elfdeps ${./guest/elfdeps.c}
-  '';
-
   # The initramfs: static busybox, the init script, and the mount points
   # init expects. Compressed with gzip because the kernel fragment
   # enables RD_GZIP.
@@ -121,7 +114,6 @@ let
         cp -a ${pkgs.pkgsStatic.busybox}/bin/. root/bin/
         chmod -R u+w root/bin
         install -m755 ${reseed}/bin/reseed root/bin/reseed
-        install -m755 ${elfdeps}/bin/elfdeps root/bin/elfdeps
         install -m755 ${./guest/init} root/init
 
         # Every step below exists to make the archive byte-identical on
