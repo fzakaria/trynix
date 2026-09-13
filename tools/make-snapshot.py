@@ -115,7 +115,13 @@ def main():
     parser.add_argument("--out", required=True, help="where to write vm.state")
     args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory() as work:
+    with tempfile.TemporaryDirectory() as work, socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ethernet:
+        # The browser intercepts this backend in-page. The native snapshot
+        # needs a connected TCP peer instead; keep a private, idle listener
+        # alive until migration completes. Backend addresses aren't VM state.
+        ethernet.bind(("127.0.0.1", 0))
+        ethernet.listen(1)
+        ethernet_address = f"127.0.0.1:{ethernet.getsockname()[1]}"
         # The share is empty on purpose: the snapshot must not depend on
         # any particular package selection.
         share = os.path.join(work, "share")
@@ -133,7 +139,10 @@ def main():
         command = [
             args.qemu,
             *(
-                arg.format(pack=args.guest, share=share, ram=machine["ram"])
+                arg.format(pack=args.guest, share=share, ram=machine["ram"]).replace(
+                    "socket,id=trynixnet,connect=localhost:8888",
+                    f"socket,id=trynixnet,connect={ethernet_address}",
+                )
                 for arg in machine["args"]
             ),
             "-qmp", f"unix:{monitor},server,nowait",

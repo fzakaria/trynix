@@ -29,7 +29,7 @@ import { log } from "./log.js";
 import {
   networkEnabled,
   startNetwork,
-  networkArgs,
+  disableNetwork,
   networkManifest,
 } from "./network.js";
 
@@ -83,6 +83,8 @@ const GUEST_STORE_DIR = "/nix/store";
 // so.
 function manifest({ rows, cols }) {
   return [
+    // A snapshot freezes wall time too; refresh it before TLS clients run.
+    `/bin/date -u -s @${Math.floor(Date.now() / 1000)} >/dev/null`,
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
@@ -246,7 +248,7 @@ export async function startVM({
   engine,
 }) {
   const network = networkEnabled() ? await startNetwork() : null;
-  if (network) snapshot = null; // Published snapshot has no NIC.
+  if (!network) disableNetwork();
   const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
   ui.attach(master);
@@ -257,7 +259,7 @@ export async function startVM({
   // Resuming a snapshot skips the whole boot — BIOS, kernel, device
   // probe — and lands in a guest already spinning for the store share,
   // which by then is full. Without one, the same arguments cold-boot.
-  let args =
+  const args =
     snapshot === null
       ? qemuArgs(machine)
       : [
@@ -267,8 +269,6 @@ export async function startVM({
           `enable=${RESUMED_TRACE_EVENT}`,
           ...qemuArgs(machine),
         ];
-
-  if (network) args = networkArgs(args, network.mac);
 
   // preRun hands the module out once its filesystem exists.
   let onFilesystem;
@@ -359,7 +359,7 @@ export async function startVM({
       mod.FS.writeFile(
         `${SHARE_DIR}/manifest`,
         manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }) +
-          (network ? networkManifest(network.ip) : ""),
+          (network ? networkManifest(network.ip, network.mac) : ""),
       );
       mod.removeRunDependency(STORE_DEPENDENCY);
 

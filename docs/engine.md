@@ -117,6 +117,13 @@ handshake, and migrates the running VM to a file. QEMU's arguments
 come from the guest image's `machine.json`, which the page starts QEMU
 from as well; that file is the one description of the machine.
 
+The saved machine includes a virtio Ethernet NIC with a fixed initial MAC.
+After resume, the page configures the guest's leased MAC and IPv4 address
+before bringing the interface up. The snapshot tool connects the Ethernet
+backend to a private local listener in place of the browser's frame bridge.
+The page also resets the guest wall clock to browser time so TLS certificate
+validation does not use the snapshot's capture date.
+
 Retake the snapshot whenever the guest image changes — a new kernel,
 initramfs or machine definition. The snapshot holds the kernel and
 initramfs in its RAM, and `checks.snapshot` fails when the guest the

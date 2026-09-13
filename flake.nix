@@ -102,6 +102,7 @@
           build-native-qemu = tool "build-native-qemu" ./tools/build-native-qemu.sh [
             pkgs.docker
             pkgs.rsync
+            pkgs.gnupatch
           ];
 
           # take the migration snapshot: --qemu, --guest, --out

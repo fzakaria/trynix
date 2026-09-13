@@ -15,6 +15,57 @@ import (
 	"github.com/coder/websocket"
 )
 
+func TestAllowedOrigin(t *testing.T) {
+	for _, input := range []string{"", "http://localhost:8137", "http://127.0.0.1:9000", "https://[::1]:8137"} {
+		got, err := allowedOrigin(input)
+		want := input
+		if want == "" {
+			want = deployedOrigin
+		}
+		if err != nil || got != want {
+			t.Errorf("allowedOrigin(%q) = %q, %v", input, got, err)
+		}
+	}
+	for _, input := range []string{"*", "null", "https://trynix.dev", "http://localhost.evil:8137", "http://192.168.1.2:8137", "http://localhost:8137/", "http://user@localhost:8137", "http://localhost:8137?", "http://localhost:8137#", "ws://localhost:8137", "http://localhost:bad"} {
+		if _, err := allowedOrigin(input); err == nil {
+			t.Errorf("accepted invalid development origin %q", input)
+		}
+	}
+}
+
+func TestWebSocketOrigins(t *testing.T) {
+	for _, allowed := range []string{deployedOrigin, "http://127.0.0.1:8137"} {
+		t.Run(allowed, func(t *testing.T) {
+			host := httptest.NewServer(proxyHandler(allowed))
+			defer host.Close()
+			for _, origins := range [][]string{
+				{allowed}, {deployedOrigin}, {"http://127.0.0.1:8137"},
+				{"https://evil.example"}, {"https://trynix.dev.evil.example"},
+				{"http://trynix.dev"}, {"https://trynix.dev:444"},
+				{"http://127.0.0.1:8138"}, {"http://localhost:8137"},
+				{host.URL}, {"null"}, nil, {allowed, allowed},
+				{allowed + ", https://evil.example"},
+			} {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ws, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(host.URL, "http"), &websocket.DialOptions{
+					HTTPHeader: http.Header{"Origin": origins},
+				})
+				if ws != nil {
+					ws.CloseNow()
+				}
+				cancel()
+				if len(origins) == 1 && origins[0] == allowed {
+					if err != nil {
+						t.Errorf("allowed origin %v: %v", origins, err)
+					}
+				} else if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
+					t.Errorf("origin %v: expected HTTP 403, got response=%v err=%v", origins, response, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSOCKSOverWebSocket(t *testing.T) {
 	upstream, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -29,7 +80,7 @@ func TestSOCKSOverWebSocket(t *testing.T) {
 		defer c.Close()
 		io.Copy(c, c)
 	}()
-	host := httptest.NewServer(proxyHandler())
+	host := httptest.NewServer(proxyHandler(deployedOrigin))
 	defer host.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

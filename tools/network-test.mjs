@@ -86,7 +86,12 @@ try {
   await new Promise((resolve) => reservation.close(resolve));
   host = spawn(
     process.env.TRYNIX_SPROXY || "trynixsproxy",
-    ["-listen", `127.0.0.1:${socksPort}`],
+    [
+      "-listen",
+      `127.0.0.1:${socksPort}`,
+      "-dev-origin",
+      `http://127.0.0.1:${port}`,
+    ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
   host.on("error", (err) => console.error(err));
@@ -186,16 +191,28 @@ try {
     if (i % 60 === 0) console.log("Waiting for guest boot…");
   }
   assert.match(transcript, /welcome to the multiverse/, "guest did not boot");
+  assert.match(
+    transcript,
+    /vm_state_notify running 1/,
+    "guest must resume the snapshot",
+  );
   await delay(1000);
   const command = [
-    "ip -4 addr show eth0",
+    "ip addr show eth0",
     "ip route",
     "echo PROXY=$https_proxy",
+    'test -s "$SSL_CERT_FILE" && echo CA_BUNDLE_PRESENT',
+    `curl -sS --max-time 25 https://localhost:${tlsPort}/fixture -o /dev/null; echo UNTRUSTED_TLS_STATUS=$?`,
     `curl -fsS --max-time 25 http://localhost:${port}/fixture`,
     "echo",
     `curl -fsS --max-time 25 http://localhost:${port}/fixture-ca.pem -o /tmp/test-ca.pem`,
     `curl -fsS --max-time 25 --cacert /tmp/test-ca.pem https://localhost:${tlsPort}/fixture`,
     "echo",
+    ...(process.env.TRYNIX_TEST_PUBLIC_HTTPS
+      ? [
+          "curl -fsS --max-time 30 https://google.com/ -o /dev/null && echo PUBLIC_HTTPS_OK",
+        ]
+      : []),
     "echo NETWORK_TEST_DONE\n",
   ].join("; ");
   await evaluate(
@@ -216,11 +233,52 @@ try {
     "HTTP and HTTPS must both succeed",
   );
   assert.match(transcript, /inet 192\.168\.2\.(?!3\/)[0-9]+\/24/);
+  assert.match(transcript, /link\/ether 02:00:00:00:02:01/);
   assert.match(transcript, /192\.168\.2\.0\/24 dev eth0/);
   assert.doesNotMatch(transcript, /default via/);
   assert.match(transcript, /PROXY=http:\/\/192\.168\.2\.3:8080/);
+  assert.match(transcript, /\nCA_BUNDLE_PRESENT\n/);
+  assert.match(transcript, /\nUNTRUSTED_TLS_STATUS=60\n/);
+  if (process.env.TRYNIX_TEST_PUBLIC_HTTPS)
+    assert.match(transcript, /\nPUBLIC_HTTPS_OK\n/);
   console.log(
     "PASS: QEMU → browser Wasm HTTP/CONNECT → WebSocket SOCKS → host HTTP/TLS fixtures",
+  );
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${port}/?pkg=curl&boot=1&network=off`,
+  });
+  for (let i = 0; i < 600; i++) {
+    await delay(500);
+    transcript = await evaluate('window.trynix?.transcript() || ""');
+    if (transcript.includes("welcome to the multiverse")) break;
+  }
+  assert.match(
+    transcript,
+    /welcome to the multiverse/,
+    "offline guest did not boot",
+  );
+  assert.match(
+    transcript,
+    /vm_state_notify running 1/,
+    "offline guest must resume",
+  );
+  await delay(1000);
+  await evaluate(
+    `window.trynix.master.ldisc.writeFromLower(Array.from(new TextEncoder().encode("ip -4 addr show eth0; ip route; echo PROXY=$https_proxy; echo OFFLINE_TEST_DONE\\n")))`,
+  );
+  for (let i = 0; i < 100; i++) {
+    await delay(500);
+    transcript = (await evaluate("window.trynix.transcript()")).replaceAll(
+      "\r",
+      "",
+    );
+    if (transcript.includes("\nOFFLINE_TEST_DONE\n")) break;
+  }
+  assert.match(transcript, /\nOFFLINE_TEST_DONE\n/);
+  assert.match(transcript, /\nPROXY=\n/);
+  assert.doesNotMatch(transcript, /inet 192\.168\.2\.|default via/);
+  console.log(
+    "PASS: network=off resumes with no guest IP, proxy, or default route",
   );
 } catch (err) {
   console.error(transcript.slice(-6000));

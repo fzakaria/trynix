@@ -115,6 +115,9 @@ let
         chmod -R u+w root/bin
         install -m755 ${reseed}/bin/reseed root/bin/reseed
         install -m755 ${./guest/init} root/init
+        mkdir -p root/etc/ssl/certs
+        install -m644 ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
+          root/etc/ssl/certs/ca-certificates.crt
 
         # Every step below exists to make the archive byte-identical on
         # any machine, which matters more here than it usually would:

@@ -39,28 +39,13 @@ export async function allocateAddress(locks = navigator.locks) {
   throw new Error("All VM addresses in 192.168.2.0/24 are in use");
 }
 
-export function networkArgs(args, mac) {
-  const result = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "-nic" && args[i + 1] === "none") {
-      i++;
-      continue;
-    }
-    result.push(args[i]);
-  }
-  return [
-    ...result,
-    "-netdev",
-    "socket,id=trynixnet,connect=localhost:8888",
-    "-device",
-    `virtio-net-pci,netdev=trynixnet,mac=${mac},romfile=`,
-  ];
-}
-
-export function networkManifest(ip) {
+export function networkManifest(ip, mac) {
   return (
     [
       "ip link set lo up",
+      // The snapshot has one fixed NIC identity; set this VM's MAC only
+      // after resume, while eth0 is still down and has no address.
+      `ip link set eth0 address ${mac}`,
       `ip addr replace ${ip}/24 dev eth0`,
       "ip link set eth0 up",
       // Only the connected /24 route is needed. No DNS or gateway is installed.
@@ -70,6 +55,14 @@ export function networkManifest(ip) {
       `export HTTPS_PROXY=${PROXY_URL}`,
     ].join("\n") + "\n"
   );
+}
+
+// Preserve the snapshot's NIC when networking is disabled, with an in-page
+// sink for its socket backend. No worker or host connection is created.
+export function disableNetwork() {
+  const sink = new EventTarget();
+  sink.postMessage = () => {};
+  return installEthernetSocket(sink);
 }
 
 // QEMU uses its length-prefixed socket netdev. Emscripten implements that

@@ -21,7 +21,7 @@ ordinary destination CA certificates to validate HTTPS servers.
 From the repository root, start the host service and site in separate terminals:
 
 ```sh
-nix run path:./trynixsproxy
+nix run path:./trynixsproxy -- -dev-origin http://127.0.0.1:8137
 nix run path:.#serve
 ```
 
@@ -34,12 +34,16 @@ curl https://example.com/
 ip route  # only 192.168.2.0/24, no default route
 ```
 
+The guest includes the Mozilla CA bundle from `cacert` at
+`/etc/ssl/certs/ca-certificates.crt`, with `SSL_CERT_FILE` and
+`NIX_SSL_CERT_FILE` configured for all commands. Public HTTPS certificates
+validate without adding a package or passing curl a CA path.
+
 The default host endpoint is `ws://127.0.0.1:1080/socks5`. Override it with
-an encoded `socks` query parameter. `?network=off` disables the NIC and
-browser stack and uses the original migration snapshot. Network-enabled
-VMs cold-boot: the published snapshot has no NIC and cannot safely resume
-with one added. The existing snapshot pins and baseline machine definition
-remain valid for the non-networked mode.
+an encoded `socks` query parameter. The migration snapshot includes the NIC;
+each VM configures its leased MAC and IP after resume, before bringing the
+interface up. `?network=off` skips the browser stack and guest network
+configuration while retaining the same saved device layout.
 
 VMs receive unique addresses from `.1` through `.254`, excluding `.3`.
 Web Locks reserve the IP and corresponding MAC across tabs of the same
@@ -79,3 +83,7 @@ address allocation and the QEMU transport adapter.
 and HTTPS fixtures. It downloads the curl closure for the VM, checks its
 address and route table, and fetches both fixtures from the guest. HTTPS
 is verified against the fixture's test CA, supplied explicitly to curl.
+The test also checks that the shared CA bundle exists and rejects that
+untrusted fixture without an override. Set `TRYNIX_TEST_PUBLIC_HTTPS=1` to
+add a live request to `https://google.com` using the guest's default trust
+store.

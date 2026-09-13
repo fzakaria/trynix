@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   allocateAddress,
-  networkArgs,
   networkManifest,
   installEthernetSocket,
 } from "../../site/js/network.js";
@@ -35,13 +34,14 @@ test("VMs reserve distinct IPs and skip the proxy; release permits reuse", async
 });
 
 test("VM has a connected subnet and explicit proxy, with no default route", () => {
-  const script = networkManifest("192.168.2.4");
+  const script = networkManifest("192.168.2.4", "02:00:00:00:02:04");
   assert.match(script, /192\.168\.2\.4\/24 dev eth0/);
   assert.match(script, /https_proxy=http:\/\/192\.168\.2\.3:8080/);
   assert.doesNotMatch(script, /default|gateway|resolv/);
-  const args = networkArgs(["-nic", "none", "-m", "512M"], "02:00:00:00:02:04");
-  assert.ok(!args.includes("none"));
-  assert.ok(args.includes("socket,id=trynixnet,connect=localhost:8888"));
+  assert.match(script, /ip link set eth0 address 02:00:00:00:02:04/);
+  assert.ok(
+    script.indexOf("address 02:") < script.indexOf("ip link set eth0 up"),
+  );
 });
 
 test("only QEMU Ethernet is intercepted; host WebSockets remain native", async () => {

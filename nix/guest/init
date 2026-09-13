@@ -15,6 +15,9 @@
 # is. Mounting anywhere else leaves those links dangling and the
 # packages that need them failing to load their own libraries.
 export PATH=/bin
+# Use the guest's shared trust store across Nix package versions.
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export NIX_SSL_CERT_FILE=$SSL_CERT_FILE
 
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
