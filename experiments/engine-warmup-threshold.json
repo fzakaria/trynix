@@ -1,0 +1,2163 @@
+{
+ "description": "Browser A/B of the batch engine warm-up threshold (WASM_WARMUP / WASM_HOT_WAIT), September 13, 2026, leviathan CPUs 88-91, Chromium 151.0.7922.137, stock Linux 7.2.5 guest and the engine-20260913-0301 snapshot. Each run is a fresh browser; compiled_cold and compiled_warm count the batch functions V8 compiled (Liftoff) and tiered up (TurboFan) during that command, from the --perf-basic-prof map. Alternating rounds; three per entry for jj and python, two for opencode.",
+ "variants": {
+  "stock": "pinned engine, WARMUP 32 HOT_WAIT 384",
+  "warm64": "WARMUP 64 HOT_WAIT 384",
+  "warm128": "WARMUP 128 HOT_WAIT 768",
+  "warm256": "WARMUP 256 HOT_WAIT 1536"
+ },
+ "runs": {
+  "stock": {
+   "jujutsu": [
+    {
+     "file": "stock-jujutsu-warm-1.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 6.25,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.99,
+       "status": 0,
+       "guest": {
+        "real": 1.49,
+        "user": 0.83,
+        "sys": 0.56
+       },
+       "browser_cpu_seconds": 5.03,
+       "browser_peak_rss_bytes": 2824417280
+      },
+      "warm": {
+       "wall_seconds": 1.35,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.27,
+        "sys": 0.19
+       },
+       "browser_cpu_seconds": 1.85,
+       "browser_peak_rss_bytes": 2835537920
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 7015,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 14847,
+         "turbofan": 294
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 16751,
+         "turbofan": 557
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 7832,
+       "turbofan": 277
+      },
+      "compiled_warm": {
+       "liftoff": 1904,
+       "turbofan": 263
+      }
+     }
+    },
+    {
+     "file": "stock-jujutsu-warm-2.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 6.3,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.98,
+       "status": 0,
+       "guest": {
+        "real": 1.5,
+        "user": 0.83,
+        "sys": 0.57
+       },
+       "browser_cpu_seconds": 5.07,
+       "browser_peak_rss_bytes": 2823106560
+      },
+      "warm": {
+       "wall_seconds": 1.35,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.23,
+        "sys": 0.22
+       },
+       "browser_cpu_seconds": 1.8,
+       "browser_peak_rss_bytes": 2836561920
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 6959,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 14805,
+         "turbofan": 295
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 16735,
+         "turbofan": 555
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 7846,
+       "turbofan": 278
+      },
+      "compiled_warm": {
+       "liftoff": 1930,
+       "turbofan": 260
+      }
+     }
+    },
+    {
+     "file": "stock-jujutsu-warm-3.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 6.27,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.99,
+       "status": 0,
+       "guest": {
+        "real": 1.49,
+        "user": 0.79,
+        "sys": 0.59
+       },
+       "browser_cpu_seconds": 5.04,
+       "browser_peak_rss_bytes": 2819076096
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.26,
+        "sys": 0.19
+       },
+       "browser_cpu_seconds": 1.78,
+       "browser_peak_rss_bytes": 2831929344
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 7024,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 14925,
+         "turbofan": 287
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 16793,
+         "turbofan": 544
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 7901,
+       "turbofan": 270
+      },
+      "compiled_warm": {
+       "liftoff": 1868,
+       "turbofan": 257
+      }
+     }
+    }
+   ],
+   "opencode": [
+    {
+     "file": "stock-opencode-oc-1.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 8.65,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 160.69,
+       "status": 0,
+       "guest": {
+        "real": 65.57,
+        "user": 58.12,
+        "sys": 6.67
+       },
+       "browser_cpu_seconds": 204.74,
+       "browser_peak_rss_bytes": 3707744256
+      },
+      "warm": {
+       "wall_seconds": 146.01,
+       "status": 0,
+       "guest": {
+        "real": 59.49,
+        "user": 53.08,
+        "sys": 5.94
+       },
+       "browser_cpu_seconds": 184.12,
+       "browser_peak_rss_bytes": 3848560640
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 6950,
+         "turbofan": 18
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 199466,
+         "turbofan": 16031
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 342427,
+         "turbofan": 30687
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 192516,
+       "turbofan": 16013
+      },
+      "compiled_warm": {
+       "liftoff": 142961,
+       "turbofan": 14656
+      }
+     }
+    },
+    {
+     "file": "stock-opencode-oc-2.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 8.86,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 159.75,
+       "status": 0,
+       "guest": {
+        "real": 65.16,
+        "user": 57.84,
+        "sys": 6.56
+       },
+       "browser_cpu_seconds": 203.94,
+       "browser_peak_rss_bytes": 3778224128
+      },
+      "warm": {
+       "wall_seconds": 146.84,
+       "status": 0,
+       "guest": {
+        "real": 59.81,
+        "user": 53.6,
+        "sys": 5.74
+       },
+       "browser_cpu_seconds": 185.38,
+       "browser_peak_rss_bytes": 3854684160
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 7090,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 199793,
+         "turbofan": 15992
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 343347,
+         "turbofan": 30735
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 192703,
+       "turbofan": 15975
+      },
+      "compiled_warm": {
+       "liftoff": 143554,
+       "turbofan": 14743
+      }
+     }
+    }
+   ],
+   "python": [
+    {
+     "file": "stock-python-warm-1.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 8.43,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.84,
+       "status": 0,
+       "guest": {
+        "real": 2.28,
+        "user": 1.64,
+        "sys": 0.57
+       },
+       "browser_cpu_seconds": 7.4,
+       "browser_peak_rss_bytes": 3013660672
+      },
+      "warm": {
+       "wall_seconds": 3.21,
+       "status": 0,
+       "guest": {
+        "real": 1.21,
+        "user": 0.89,
+        "sys": 0.29
+       },
+       "browser_cpu_seconds": 4.21,
+       "browser_peak_rss_bytes": 2949955584
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 11070,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 24687,
+         "turbofan": 672
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 28589,
+         "turbofan": 1214
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 13617,
+       "turbofan": 606
+      },
+      "compiled_warm": {
+       "liftoff": 3902,
+       "turbofan": 542
+      }
+     }
+    },
+    {
+     "file": "stock-python-warm-2.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 8.41,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.85,
+       "status": 0,
+       "guest": {
+        "real": 2.26,
+        "user": 1.61,
+        "sys": 0.58
+       },
+       "browser_cpu_seconds": 7.35,
+       "browser_peak_rss_bytes": 3007217664
+      },
+      "warm": {
+       "wall_seconds": 3.47,
+       "status": 0,
+       "guest": {
+        "real": 1.25,
+        "user": 0.96,
+        "sys": 0.27
+       },
+       "browser_cpu_seconds": 4.36,
+       "browser_peak_rss_bytes": 2944249856
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 11078,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 24511,
+         "turbofan": 670
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 28612,
+         "turbofan": 1203
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 13433,
+       "turbofan": 604
+      },
+      "compiled_warm": {
+       "liftoff": 4101,
+       "turbofan": 533
+      }
+     }
+    },
+    {
+     "file": "stock-python-warm-3.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 8.41,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.84,
+       "status": 0,
+       "guest": {
+        "real": 2.31,
+        "user": 1.63,
+        "sys": 0.6
+       },
+       "browser_cpu_seconds": 7.45,
+       "browser_peak_rss_bytes": 3009622016
+      },
+      "warm": {
+       "wall_seconds": 3.19,
+       "status": 0,
+       "guest": {
+        "real": 1.23,
+        "user": 0.89,
+        "sys": 0.32
+       },
+       "browser_cpu_seconds": 4.27,
+       "browser_peak_rss_bytes": 2947235840
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 11092,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 24589,
+         "turbofan": 668
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 28579,
+         "turbofan": 1206
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 13497,
+       "turbofan": 602
+      },
+      "compiled_warm": {
+       "liftoff": 3990,
+       "turbofan": 538
+      }
+     }
+    }
+   ]
+  },
+  "warm128": {
+   "jujutsu": [
+    {
+     "file": "warm128-jujutsu-warm-1.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.06,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.74,
+       "status": 0,
+       "guest": {
+        "real": 1.45,
+        "user": 0.78,
+        "sys": 0.57
+       },
+       "browser_cpu_seconds": 4.86,
+       "browser_peak_rss_bytes": 2661105664
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.46,
+        "user": 0.26,
+        "sys": 0.19
+       },
+       "browser_cpu_seconds": 1.79,
+       "browser_peak_rss_bytes": 2672222208
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 2695,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 7670,
+         "turbofan": 281
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 9091,
+         "turbofan": 538
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 4975,
+       "turbofan": 264
+      },
+      "compiled_warm": {
+       "liftoff": 1421,
+       "turbofan": 257
+      }
+     }
+    },
+    {
+     "file": "warm128-jujutsu-warm-2.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.12,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.99,
+       "status": 0,
+       "guest": {
+        "real": 1.45,
+        "user": 0.82,
+        "sys": 0.53
+       },
+       "browser_cpu_seconds": 4.86,
+       "browser_peak_rss_bytes": 2663194624
+      },
+      "warm": {
+       "wall_seconds": 1.35,
+       "status": 0,
+       "guest": {
+        "real": 0.46,
+        "user": 0.27,
+        "sys": 0.17
+       },
+       "browser_cpu_seconds": 1.79,
+       "browser_peak_rss_bytes": 2672885760
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 2708,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 7931,
+         "turbofan": 281
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 9238,
+         "turbofan": 534
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 5223,
+       "turbofan": 264
+      },
+      "compiled_warm": {
+       "liftoff": 1307,
+       "turbofan": 253
+      }
+     }
+    },
+    {
+     "file": "warm128-jujutsu-warm-3.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.07,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.71,
+       "status": 0,
+       "guest": {
+        "real": 1.42,
+        "user": 0.81,
+        "sys": 0.52
+       },
+       "browser_cpu_seconds": 4.72,
+       "browser_peak_rss_bytes": 2662846464
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.46,
+        "user": 0.29,
+        "sys": 0.16
+       },
+       "browser_cpu_seconds": 1.75,
+       "browser_peak_rss_bytes": 2672930816
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 2749,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 7769,
+         "turbofan": 277
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 9093,
+         "turbofan": 528
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 5020,
+       "turbofan": 260
+      },
+      "compiled_warm": {
+       "liftoff": 1324,
+       "turbofan": 251
+      }
+     }
+    }
+   ],
+   "opencode": [
+    {
+     "file": "warm128-opencode-oc-1.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.63,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 156.0,
+       "status": 0,
+       "guest": {
+        "real": 63.68,
+        "user": 56.32,
+        "sys": 6.66
+       },
+       "browser_cpu_seconds": 197.45,
+       "browser_peak_rss_bytes": 3446943744
+      },
+      "warm": {
+       "wall_seconds": 146.16,
+       "status": 0,
+       "guest": {
+        "real": 59.56,
+        "user": 53.4,
+        "sys": 5.73
+       },
+       "browser_cpu_seconds": 182.53,
+       "browser_peak_rss_bytes": 4008316928
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 2717,
+         "turbofan": 18
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 128205,
+         "turbofan": 15790
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 222489,
+         "turbofan": 30369
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 125488,
+       "turbofan": 15772
+      },
+      "compiled_warm": {
+       "liftoff": 94284,
+       "turbofan": 14579
+      }
+     }
+    },
+    {
+     "file": "warm128-opencode-oc-2.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.86,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 157.91,
+       "status": 0,
+       "guest": {
+        "real": 64.43,
+        "user": 56.97,
+        "sys": 6.75
+       },
+       "browser_cpu_seconds": 200.01,
+       "browser_peak_rss_bytes": 3464441856
+      },
+      "warm": {
+       "wall_seconds": 145.14,
+       "status": 0,
+       "guest": {
+        "real": 59.1,
+        "user": 52.72,
+        "sys": 5.97
+       },
+       "browser_cpu_seconds": 181.73,
+       "browser_peak_rss_bytes": 4001964032
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 2741,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 128570,
+         "turbofan": 15738
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 222032,
+         "turbofan": 30287
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 125829,
+       "turbofan": 15721
+      },
+      "compiled_warm": {
+       "liftoff": 93462,
+       "turbofan": 14549
+      }
+     }
+    }
+   ],
+   "python": [
+    {
+     "file": "warm128-python-warm-1.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.2,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.58,
+       "status": 0,
+       "guest": {
+        "real": 2.17,
+        "user": 1.53,
+        "sys": 0.56
+       },
+       "browser_cpu_seconds": 7.02,
+       "browser_peak_rss_bytes": 2839478272
+      },
+      "warm": {
+       "wall_seconds": 3.19,
+       "status": 0,
+       "guest": {
+        "real": 1.22,
+        "user": 0.88,
+        "sys": 0.32
+       },
+       "browser_cpu_seconds": 4.17,
+       "browser_peak_rss_bytes": 2865381376
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 5515,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 13806,
+         "turbofan": 665
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 17273,
+         "turbofan": 1184
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 8291,
+       "turbofan": 599
+      },
+      "compiled_warm": {
+       "liftoff": 3467,
+       "turbofan": 519
+      }
+     }
+    },
+    {
+     "file": "warm128-python-warm-2.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.28,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.6,
+       "status": 0,
+       "guest": {
+        "real": 2.18,
+        "user": 1.6,
+        "sys": 0.5
+       },
+       "browser_cpu_seconds": 7.15,
+       "browser_peak_rss_bytes": 2838392832
+      },
+      "warm": {
+       "wall_seconds": 3.2,
+       "status": 0,
+       "guest": {
+        "real": 1.21,
+        "user": 0.85,
+        "sys": 0.34
+       },
+       "browser_cpu_seconds": 4.18,
+       "browser_peak_rss_bytes": 2865647616
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 5473,
+         "turbofan": 65
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 13765,
+         "turbofan": 660
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 17298,
+         "turbofan": 1192
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 8292,
+       "turbofan": 595
+      },
+      "compiled_warm": {
+       "liftoff": 3533,
+       "turbofan": 532
+      }
+     }
+    },
+    {
+     "file": "warm128-python-warm-3.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.25,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.57,
+       "status": 0,
+       "guest": {
+        "real": 2.13,
+        "user": 1.47,
+        "sys": 0.59
+       },
+       "browser_cpu_seconds": 6.9,
+       "browser_peak_rss_bytes": 2838421504
+      },
+      "warm": {
+       "wall_seconds": 3.19,
+       "status": 0,
+       "guest": {
+        "real": 1.2,
+        "user": 0.86,
+        "sys": 0.32
+       },
+       "browser_cpu_seconds": 4.13,
+       "browser_peak_rss_bytes": 2865643520
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 5410,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 13806,
+         "turbofan": 658
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 17245,
+         "turbofan": 1188
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 8396,
+       "turbofan": 592
+      },
+      "compiled_warm": {
+       "liftoff": 3439,
+       "turbofan": 530
+      }
+     }
+    }
+   ]
+  },
+  "warm256": {
+   "jujutsu": [
+    {
+     "file": "warm256-jujutsu-warm-1.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.19,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 4.26,
+       "status": 0,
+       "guest": {
+        "real": 1.57,
+        "user": 0.81,
+        "sys": 0.66
+       },
+       "browser_cpu_seconds": 5.18,
+       "browser_peak_rss_bytes": 2644992000
+      },
+      "warm": {
+       "wall_seconds": 1.6,
+       "status": 0,
+       "guest": {
+        "real": 0.53,
+        "user": 0.3,
+        "sys": 0.22
+       },
+       "browser_cpu_seconds": 1.95,
+       "browser_peak_rss_bytes": 2654306304
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 1471,
+         "turbofan": 15
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 5160,
+         "turbofan": 266
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 6379,
+         "turbofan": 506
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 3689,
+       "turbofan": 251
+      },
+      "compiled_warm": {
+       "liftoff": 1219,
+       "turbofan": 240
+      }
+     }
+    },
+    {
+     "file": "warm256-jujutsu-warm-2.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.13,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.99,
+       "status": 0,
+       "guest": {
+        "real": 1.47,
+        "user": 0.85,
+        "sys": 0.52
+       },
+       "browser_cpu_seconds": 4.9,
+       "browser_peak_rss_bytes": 2642771968
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.24,
+        "sys": 0.21
+       },
+       "browser_cpu_seconds": 1.77,
+       "browser_peak_rss_bytes": 2651623424
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 1507,
+         "turbofan": 15
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 5180,
+         "turbofan": 271
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 6386,
+         "turbofan": 514
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 3673,
+       "turbofan": 256
+      },
+      "compiled_warm": {
+       "liftoff": 1206,
+       "turbofan": 243
+      }
+     }
+    },
+    {
+     "file": "warm256-jujutsu-warm-3.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 14.97,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.99,
+       "status": 0,
+       "guest": {
+        "real": 1.46,
+        "user": 0.86,
+        "sys": 0.5
+       },
+       "browser_cpu_seconds": 4.84,
+       "browser_peak_rss_bytes": 2646831104
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.28,
+        "sys": 0.17
+       },
+       "browser_cpu_seconds": 1.78,
+       "browser_peak_rss_bytes": 2655121408
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 1474,
+         "turbofan": 16
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 5153,
+         "turbofan": 262
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 6365,
+         "turbofan": 501
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 3679,
+       "turbofan": 246
+      },
+      "compiled_warm": {
+       "liftoff": 1212,
+       "turbofan": 239
+      }
+     }
+    }
+   ],
+   "opencode": [
+    {
+     "file": "warm256-opencode-oc-1.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.57,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 153.44,
+       "status": 0,
+       "guest": {
+        "real": 62.65,
+        "user": 55.67,
+        "sys": 6.3
+       },
+       "browser_cpu_seconds": 193.4,
+       "browser_peak_rss_bytes": 3542196224
+      },
+      "warm": {
+       "wall_seconds": 144.69,
+       "status": 0,
+       "guest": {
+        "real": 58.99,
+        "user": 52.68,
+        "sys": 5.93
+       },
+       "browser_cpu_seconds": 180.59,
+       "browser_peak_rss_bytes": 3744575488
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 1506,
+         "turbofan": 15
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 97428,
+         "turbofan": 15461
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 170259,
+         "turbofan": 29833
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 95922,
+       "turbofan": 15446
+      },
+      "compiled_warm": {
+       "liftoff": 72831,
+       "turbofan": 14372
+      }
+     }
+    },
+    {
+     "file": "warm256-opencode-oc-2.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.75,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 156.45,
+       "status": 0,
+       "guest": {
+        "real": 63.83,
+        "user": 56.44,
+        "sys": 6.7
+       },
+       "browser_cpu_seconds": 197.64,
+       "browser_peak_rss_bytes": 3574169600
+      },
+      "warm": {
+       "wall_seconds": 145.73,
+       "status": 0,
+       "guest": {
+        "real": 59.43,
+        "user": 53.26,
+        "sys": 5.78
+       },
+       "browser_cpu_seconds": 181.91,
+       "browser_peak_rss_bytes": 3740839936
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 1484,
+         "turbofan": 15
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 98215,
+         "turbofan": 15553
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 170288,
+         "turbofan": 29852
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 96731,
+       "turbofan": 15538
+      },
+      "compiled_warm": {
+       "liftoff": 72073,
+       "turbofan": 14299
+      }
+     }
+    }
+   ],
+   "python": [
+    {
+     "file": "warm256-python-warm-1.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.17,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.57,
+       "status": 0,
+       "guest": {
+        "real": 2.11,
+        "user": 1.53,
+        "sys": 0.5
+       },
+       "browser_cpu_seconds": 6.88,
+       "browser_peak_rss_bytes": 2803003392
+      },
+      "warm": {
+       "wall_seconds": 3.19,
+       "status": 0,
+       "guest": {
+        "real": 1.21,
+        "user": 0.85,
+        "sys": 0.35
+       },
+       "browser_cpu_seconds": 4.23,
+       "browser_peak_rss_bytes": 2831990784
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 3626,
+         "turbofan": 63
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 9432,
+         "turbofan": 627
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12587,
+         "turbofan": 1160
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 5806,
+       "turbofan": 564
+      },
+      "compiled_warm": {
+       "liftoff": 3155,
+       "turbofan": 533
+      }
+     }
+    },
+    {
+     "file": "warm256-python-warm-2.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.28,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.59,
+       "status": 0,
+       "guest": {
+        "real": 2.12,
+        "user": 1.55,
+        "sys": 0.5
+       },
+       "browser_cpu_seconds": 6.88,
+       "browser_peak_rss_bytes": 2805452800
+      },
+      "warm": {
+       "wall_seconds": 3.2,
+       "status": 0,
+       "guest": {
+        "real": 1.22,
+        "user": 0.84,
+        "sys": 0.36
+       },
+       "browser_cpu_seconds": 4.25,
+       "browser_peak_rss_bytes": 2833145856
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 3646,
+         "turbofan": 64
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 9390,
+         "turbofan": 629
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12615,
+         "turbofan": 1154
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 5744,
+       "turbofan": 565
+      },
+      "compiled_warm": {
+       "liftoff": 3225,
+       "turbofan": 525
+      }
+     }
+    },
+    {
+     "file": "warm256-python-warm-3.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.22,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.57,
+       "status": 0,
+       "guest": {
+        "real": 2.11,
+        "user": 1.56,
+        "sys": 0.47
+       },
+       "browser_cpu_seconds": 6.84,
+       "browser_peak_rss_bytes": 2802601984
+      },
+      "warm": {
+       "wall_seconds": 3.19,
+       "status": 0,
+       "guest": {
+        "real": 1.2,
+        "user": 0.84,
+        "sys": 0.35
+       },
+       "browser_cpu_seconds": 4.18,
+       "browser_peak_rss_bytes": 2830417920
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 3668,
+         "turbofan": 62
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 9421,
+         "turbofan": 631
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12562,
+         "turbofan": 1156
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 5753,
+       "turbofan": 569
+      },
+      "compiled_warm": {
+       "liftoff": 3141,
+       "turbofan": 525
+      }
+     }
+    }
+   ]
+  },
+  "warm64": {
+   "jujutsu": [
+    {
+     "file": "warm64-jujutsu-warm-1.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.12,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.72,
+       "status": 0,
+       "guest": {
+        "real": 1.45,
+        "user": 0.8,
+        "sys": 0.55
+       },
+       "browser_cpu_seconds": 4.8,
+       "browser_peak_rss_bytes": 2685181952
+      },
+      "warm": {
+       "wall_seconds": 1.35,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.27,
+        "sys": 0.19
+       },
+       "browser_cpu_seconds": 1.8,
+       "browser_peak_rss_bytes": 2699898880
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 4658,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 10995,
+         "turbofan": 287
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12665,
+         "turbofan": 542
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 6337,
+       "turbofan": 270
+      },
+      "compiled_warm": {
+       "liftoff": 1670,
+       "turbofan": 255
+      }
+     }
+    },
+    {
+     "file": "warm64-jujutsu-warm-2.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.21,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 4.0,
+       "status": 0,
+       "guest": {
+        "real": 1.46,
+        "user": 0.79,
+        "sys": 0.57
+       },
+       "browser_cpu_seconds": 4.88,
+       "browser_peak_rss_bytes": 2684981248
+      },
+      "warm": {
+       "wall_seconds": 1.6,
+       "status": 0,
+       "guest": {
+        "real": 0.48,
+        "user": 0.27,
+        "sys": 0.2
+       },
+       "browser_cpu_seconds": 1.89,
+       "browser_peak_rss_bytes": 2702934016
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 4674,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 10766,
+         "turbofan": 288
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12780,
+         "turbofan": 555
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 6092,
+       "turbofan": 271
+      },
+      "compiled_warm": {
+       "liftoff": 2014,
+       "turbofan": 267
+      }
+     }
+    },
+    {
+     "file": "warm64-jujutsu-warm-3.json",
+     "data": {
+      "name": "jujutsu",
+      "spec": "pkg=jujutsu",
+      "command": "jj --version",
+      "shell_seconds": 15.21,
+      "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+      "cold": {
+       "wall_seconds": 3.72,
+       "status": 0,
+       "guest": {
+        "real": 1.44,
+        "user": 0.79,
+        "sys": 0.55
+       },
+       "browser_cpu_seconds": 4.79,
+       "browser_peak_rss_bytes": 2688098304
+      },
+      "warm": {
+       "wall_seconds": 1.34,
+       "status": 0,
+       "guest": {
+        "real": 0.47,
+        "user": 0.3,
+        "sys": 0.16
+       },
+       "browser_cpu_seconds": 1.8,
+       "browser_peak_rss_bytes": 2705989632
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 4704,
+         "turbofan": 17
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 10839,
+         "turbofan": 288
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 12766,
+         "turbofan": 548
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 6135,
+       "turbofan": 271
+      },
+      "compiled_warm": {
+       "liftoff": 1927,
+       "turbofan": 260
+      }
+     }
+    }
+   ],
+   "opencode": [
+    {
+     "file": "warm64-opencode-oc-1.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.69,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 158.5,
+       "status": 0,
+       "guest": {
+        "real": 64.66,
+        "user": 57.55,
+        "sys": 6.4
+       },
+       "browser_cpu_seconds": 200.61,
+       "browser_peak_rss_bytes": 3837800448
+      },
+      "warm": {
+       "wall_seconds": 146.47,
+       "status": 0,
+       "guest": {
+        "real": 59.69,
+        "user": 53.52,
+        "sys": 5.74
+       },
+       "browser_cpu_seconds": 183.69,
+       "browser_peak_rss_bytes": 3833552896
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 4790,
+         "turbofan": 18
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 165149,
+         "turbofan": 15913
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 285448,
+         "turbofan": 30570
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 160359,
+       "turbofan": 15895
+      },
+      "compiled_warm": {
+       "liftoff": 120299,
+       "turbofan": 14657
+      }
+     }
+    },
+    {
+     "file": "warm64-opencode-oc-2.json",
+     "data": {
+      "name": "opencode",
+      "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "command": "opencode --version",
+      "shell_seconds": 17.79,
+      "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+      "cold": {
+       "wall_seconds": 159.75,
+       "status": 0,
+       "guest": {
+        "real": 65.19,
+        "user": 57.92,
+        "sys": 6.52
+       },
+       "browser_cpu_seconds": 202.71,
+       "browser_peak_rss_bytes": 3848515584
+      },
+      "warm": {
+       "wall_seconds": 146.66,
+       "status": 0,
+       "guest": {
+        "real": 59.78,
+        "user": 53.31,
+        "sys": 6.04
+       },
+       "browser_cpu_seconds": 184.33,
+       "browser_peak_rss_bytes": 3680243712
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 4700,
+         "turbofan": 18
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 165408,
+         "turbofan": 15923
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 285482,
+         "turbofan": 30595
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 160708,
+       "turbofan": 15905
+      },
+      "compiled_warm": {
+       "liftoff": 120074,
+       "turbofan": 14672
+      }
+     }
+    }
+   ],
+   "python": [
+    {
+     "file": "warm64-python-warm-1.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.36,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.85,
+       "status": 0,
+       "guest": {
+        "real": 2.22,
+        "user": 1.64,
+        "sys": 0.51
+       },
+       "browser_cpu_seconds": 7.19,
+       "browser_peak_rss_bytes": 2878509056
+      },
+      "warm": {
+       "wall_seconds": 3.2,
+       "status": 0,
+       "guest": {
+        "real": 1.22,
+        "user": 0.83,
+        "sys": 0.36
+       },
+       "browser_cpu_seconds": 4.16,
+       "browser_peak_rss_bytes": 2904735744
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 8110,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 19066,
+         "turbofan": 662
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 22587,
+         "turbofan": 1202
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 10956,
+       "turbofan": 596
+      },
+      "compiled_warm": {
+       "liftoff": 3521,
+       "turbofan": 540
+      }
+     }
+    },
+    {
+     "file": "warm64-python-warm-2.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.38,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.58,
+       "status": 0,
+       "guest": {
+        "real": 2.2,
+        "user": 1.59,
+        "sys": 0.53
+       },
+       "browser_cpu_seconds": 7.12,
+       "browser_peak_rss_bytes": 2875932672
+      },
+      "warm": {
+       "wall_seconds": 3.2,
+       "status": 0,
+       "guest": {
+        "real": 1.2,
+        "user": 0.87,
+        "sys": 0.31
+       },
+       "browser_cpu_seconds": 4.13,
+       "browser_peak_rss_bytes": 2901819392
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 8090,
+         "turbofan": 66
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 18987,
+         "turbofan": 665
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 22568,
+         "turbofan": 1206
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 10897,
+       "turbofan": 599
+      },
+      "compiled_warm": {
+       "liftoff": 3581,
+       "turbofan": 541
+      }
+     }
+    },
+    {
+     "file": "warm64-python-warm-3.json",
+     "data": {
+      "name": "python",
+      "spec": "pkg=python3",
+      "command": "python3 -c 'print(1)'",
+      "shell_seconds": 17.38,
+      "resolved": "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+      "cold": {
+       "wall_seconds": 5.84,
+       "status": 0,
+       "guest": {
+        "real": 2.24,
+        "user": 1.64,
+        "sys": 0.52
+       },
+       "browser_cpu_seconds": 7.19,
+       "browser_peak_rss_bytes": 2878525440
+      },
+      "warm": {
+       "wall_seconds": 3.2,
+       "status": 0,
+       "guest": {
+        "real": 1.22,
+        "user": 0.88,
+        "sys": 0.32
+       },
+       "browser_cpu_seconds": 4.2,
+       "browser_peak_rss_bytes": 2904616960
+      },
+      "compiled_functions": [
+       [
+        "before",
+        {
+         "liftoff": 8070,
+         "turbofan": 65
+        }
+       ],
+       [
+        "before",
+        {
+         "liftoff": 19065,
+         "turbofan": 663
+        }
+       ],
+       [
+        "end",
+        {
+         "liftoff": 22551,
+         "turbofan": 1202
+        }
+       ]
+      ],
+      "compiled_cold": {
+       "liftoff": 10995,
+       "turbofan": 598
+      },
+      "compiled_warm": {
+       "liftoff": 3486,
+       "turbofan": 539
+      }
+     }
+    }
+   ]
+  }
+ },
+ "returning_visitor": {
+  "note": "Stock engine, jj: exec-bench in a fresh profile, then in a profile that had already loaded the page and run jj once or twice, to see whether the browser code cache skips TurboFan tier-up of the engine module. It does not.",
+  "samples": [
+   {
+    "label": "fresh",
+    "data": {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.08,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.71,
+      "status": 0,
+      "guest": {
+       "real": 1.45,
+       "user": 0.77,
+       "sys": 0.58
+      },
+      "browser_cpu_seconds": 4.86,
+      "browser_peak_rss_bytes": 2810486784
+     },
+     "warm": {
+      "wall_seconds": 1.32,
+      "status": 0,
+      "guest": {
+       "real": 0.45,
+       "user": 0.26,
+       "sys": 0.18
+      },
+      "browser_cpu_seconds": 1.77,
+      "browser_peak_rss_bytes": 2820845568
+     },
+     "label": "fresh"
+    }
+   },
+   {
+    "label": "revisit",
+    "data": {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 6.06,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.97,
+      "status": 0,
+      "guest": {
+       "real": 1.48,
+       "user": 0.79,
+       "sys": 0.59
+      },
+      "browser_cpu_seconds": 4.99,
+      "browser_peak_rss_bytes": 2820145152
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 0.45,
+       "user": 0.23,
+       "sys": 0.2
+      },
+      "browser_cpu_seconds": 1.76,
+      "browser_peak_rss_bytes": 2825883648
+     },
+     "label": "revisit"
+    }
+   },
+   {
+    "label": "revisit2",
+    "data": {
+     "name": "jujutsu",
+     "spec": "pkg=jujutsu",
+     "command": "jj --version",
+     "shell_seconds": 5.91,
+     "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+     "cold": {
+      "wall_seconds": 3.98,
+      "status": 0,
+      "guest": {
+       "real": 1.46,
+       "user": 0.8,
+       "sys": 0.55
+      },
+      "browser_cpu_seconds": 4.9,
+      "browser_peak_rss_bytes": 2816151552
+     },
+     "warm": {
+      "wall_seconds": 1.33,
+      "status": 0,
+      "guest": {
+       "real": 0.46,
+       "user": 0.26,
+       "sys": 0.18
+      },
+      "browser_cpu_seconds": 1.78,
+      "browser_peak_rss_bytes": 2823434240
+     },
+     "label": "revisit2"
+    }
+   }
+  ]
+ }
+}

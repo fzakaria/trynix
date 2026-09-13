@@ -807,3 +807,61 @@ The [raw profile](../experiments/cold-exec-profile.json) has the
 per-run sample counts, the mechanism shares and the top fifty symbols
 for each phase. Chromium 151.0.7922.137 ran these; the 152 build used
 for the kernel comparison had been garbage-collected on leviathan.
+
+Two of those rows are not what they first look like. The interpreter
+is not 0.2%: `tcg_qemu_tb_exec_tci` is inlined into the dispatcher, so
+interpreting is inside the dispatcher's 6% cold and 4.5% warm, still
+small. And the TurboFan work on the background threads is not the
+batch modules, which tier up rarely (about 270 functions in a cold
+jj); it is V8 tiering up the 13 MB engine module itself, function by
+function, on every page load. A returning visitor does not skip it:
+the same benchmark in a browser profile that had already loaded the
+page and run jj measured 4.99 and 4.90 s of cold browser CPU against
+4.86 s in a fresh profile, so Chrome's wasm code cache is not holding
+the tiered code. That 16% is out of the engine's hands.
+
+### What the warm-up threshold is worth
+
+The translation rows are spread thin. Splitting the front end by
+function puts the x86 decoder and IR generation at about 8%, the
+generic TCG passes (optimize, liveness, register allocation) at 11%,
+and the wasm emitters at 5%. Deferring wasm emission to compile time
+would save at most that 5% and needs hot blocks re-translated, so it
+was not attempted. Skipping optimization for cold blocks cannot be
+done alone: the same body is what gets compiled later.
+
+The knob that does reach the compile rows is the warm-up threshold. A
+cold jj at the stock 32 runs compiles 7800 batch functions through
+Liftoff, a quarter of the 30 thousand blocks it translates, and the
+warm run compiles 1900 more; python compiles 13500 cold. Each of those
+costs a synchronous compile on the vCPU thread. Raising the threshold
+trades that against interpreting, which the profile says is cheap.
+Four engines, same guest and snapshot, alternating rounds on
+leviathan, medians of three (two for opencode), browser CPU:
+
+| Warm-up runs | jj cold | python cold | opencode cold | opencode warm | jj cold compiles |
+| -----------: | ------: | ----------: | ------------: | ------------: | ---------------: |
+|   32 (stock) |  5.04 s |      7.40 s |       204.3 s |       184.8 s |             7846 |
+|           64 |  4.80 s |      7.19 s |       201.7 s |       184.0 s |             6135 |
+|          128 |  4.86 s |      7.02 s |       198.7 s |       182.1 s |             5020 |
+|          256 |  4.90 s |      6.88 s |       195.5 s |       181.3 s |             3679 |
+
+Warm jj and python do not move at any setting, and peak memory falls
+with the compile count (2.69 GB to 2.54 GB on jj). Python and opencode
+keep improving up to 256, but jj turns around there: its one 5.18 s
+sample is the interpreter starting to cost on start-up code that runs
+a few hundred times. 128 is where the workloads agree: 4% on jj, 5%
+on python, 3% on opencode, and the cold jj and python wall times drop
+a poll bucket each (3.99 to 3.74 s and 5.84 to 5.58 s). It ships as
+[patch 0008](../patches/0008-wasm32-warmup-128.patch), one constant
+and a comment. The [raw samples](../experiments/engine-warmup-threshold.json)
+include the compile counts for every run and the returning-visitor
+test.
+
+This is the cheap part of the cold-path work. The compile that
+remains is still synchronous on the vCPU thread, and taking it off
+that thread needs the worker to receive a compiled module without
+returning to its event loop, which the engine's threading model does
+not allow today. That, and a cheaper translation for blocks that
+never compile, are the next two steps if the cold start is to move
+by more than a few percent.

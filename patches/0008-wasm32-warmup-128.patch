@@ -1,0 +1,23 @@
+--- a/tcg/wasm32.h	2026-09-13 07:21:05.119775008 -0700
++++ b/tcg/wasm32.h	2026-09-13 08:20:29.774148437 -0700
+@@ -135,9 +135,18 @@
+  * warm it joins a batch; if its batch has not filled after a further
+  * WASM_HOT_WAIT executions, the batch compiles as it stands so a lone
+  * warm block does not wait forever for company.
++ *
++ * The threshold trades interpreting against compiling, and the
++ * interpreter is cheaper than it looks: at 32 runs a cold jj --version
++ * compiled 7800 blocks, a third of what it translated, and Liftoff took
++ * 11% of the vCPU thread while the interpreter took under 6%. At 128
++ * it compiles 5000, cold browser CPU falls 4% on jj, 5% on python and
++ * 3% on opencode, and warm runs do not move. 256 is better still for
++ * python and opencode but jj's start-up loses what it gained, so 128 is
++ * where the two meet (docs/engine-execution.md).
+  */
+-#define WASM_WARMUP 32
+-#define WASM_HOT_WAIT 384
++#define WASM_WARMUP 128
++#define WASM_HOT_WAIT 768
+ 
+ /* The helper registry is per block; these bound one block's imports. */
+ #define WASM_NUM_HELPER_FUNCS_MAX 400

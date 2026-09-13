@@ -1,10 +1,10 @@
 {
   "comment": "The qemu-wasm engine and the migration snapshot, built out of band (docs/engine.md) and published by tools/publish-engine.py under a dated release tag that is never reused, so the pins of any commit keep resolving. Pinned by hash so `nix build .#site` produces the whole deployable tree, engine included.",
   "baseUrl": "https://github.com/fzakaria/trynix/releases/download",
-  "tag": "engine-20260913-0301",
+  "tag": "engine-20260913-1524",
   "files": {
     "out.js": "sha256-dH+8QCXjo0u/yOk3RYyF0i3Uu5Nd5gXNVOSM/wssmDw=",
-    "qemu-system-x86_64.wasm": "sha256-x7Yt86buPfxIEthFYDZ76VGeaXAn8dPOV9rMyyby0Gs=",
+    "qemu-system-x86_64.wasm": "sha256-KkGRrvuvS3X5I3yf+nrJHLkaQnrp8RNWIEig3dV1O64=",
     "qemu-system-x86_64.worker.js": "sha256-jvqwKpy17mPO0i6YU7znTLuJXRWl+z1ROf74VcUPYuo=",
     "vm.state": "sha256-a4APtQVMEHPm4x1KfANhSVwx/ADB6Li96ze1vSaTdWU="
   },
