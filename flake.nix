@@ -35,6 +35,8 @@
           # `nix run .#serve` tests locally
           site = import ./nix/site.nix { inherit pkgs; };
           default = site;
+          trynixnet = import ./trynixnet/package.nix { inherit pkgs; };
+          trynixsproxy = import ./trynixsproxy/package.nix { inherit pkgs; };
 
           # the CPU probe tools/cpu-test.py boots inside the guest to
           # check the emulator's arithmetic (nix/probe.nix)
@@ -114,6 +116,15 @@
             tool "boot-test" "${python}/bin/python3 ${./tools/boot-test.py}" [
               pkgs.chromium
             ];
+
+          network-test =
+            tool "network-test"
+              "${pkgs.nodejs}/bin/node ${./tools/network-test.mjs} ${self.packages.${system}.site}"
+              [
+                pkgs.chromium
+                pkgs.openssl
+                self.packages.${system}.trynixsproxy
+              ];
 
           # boot the CPU probe in a real browser and check that the
           # emulator computes what the hardware would

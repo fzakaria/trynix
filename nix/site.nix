@@ -13,6 +13,7 @@
 { pkgs }:
 let
   vendor = import ./vendor.nix { inherit pkgs; };
+  network = import ../trynixnet/package.nix { inherit pkgs; };
   engine = import ./engine.nix { inherit pkgs; };
   guest = (import ./guest.nix { inherit pkgs; }).guest;
 in
@@ -31,6 +32,10 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   # scope is its directory, and a worker under vendor/ can never control
   # index.html — it would reload the page forever trying.
   mv $out/vendor/coi-serviceworker.js $out/coi-serviceworker.js
+
+  netHash=$(sha256sum ${network}/trynixnet.wasm | cut -c1-12)
+  cp -r ${network} $out/net.$netHash
+  substituteInPlace $out/js/network-worker.js --replace-fail "../net/" "../net.$netHash/"
 
   mkdir -p $out/qemu $out/guest
   cp ${engine}/* $out/qemu/

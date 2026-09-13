@@ -144,6 +144,13 @@ $ nix run .#boot-test     # open the site in a browser, wait for a shell
 $ nix fmt                 # before committing
 ```
 
+Guest HTTP/HTTPS access uses a Go/Wasm proxy at `192.168.2.3:8080` and a
+local SOCKS5-over-WebSocket server. Start `nix run ./trynixsproxy` alongside
+the site; [trynixnet/README.md](trynixnet/README.md) describes configuration
+and `nix run .#network-test` exercises the complete path in Chromium.
+Networked VMs cold-boot because the published snapshot has no NIC;
+`?network=off` retains the snapshot boot path.
+
 The site is deployed by GitHub Actions from `nix build .#site`, which
 produces the whole tree including the engine and the snapshot, fetched
 by hash from a dated release ([engine.md](docs/engine.md)).

@@ -26,6 +26,12 @@ import {
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { log } from "./log.js";
+import {
+  networkEnabled,
+  startNetwork,
+  networkArgs,
+  networkManifest,
+} from "./network.js";
 
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
 // /share the init script mounts (tag store0, matching nix/guest/init).
@@ -239,6 +245,8 @@ export async function startVM({
   keyBarElement,
   engine,
 }) {
+  const network = networkEnabled() ? await startNetwork() : null;
+  if (network) snapshot = null; // Published snapshot has no NIC.
   const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
   ui.attach(master);
@@ -249,7 +257,7 @@ export async function startVM({
   // Resuming a snapshot skips the whole boot — BIOS, kernel, device
   // probe — and lands in a guest already spinning for the store share,
   // which by then is full. Without one, the same arguments cold-boot.
-  const args =
+  let args =
     snapshot === null
       ? qemuArgs(machine)
       : [
@@ -259,6 +267,8 @@ export async function startVM({
           `enable=${RESUMED_TRACE_EVENT}`,
           ...qemuArgs(machine),
         ];
+
+  if (network) args = networkArgs(args, network.mac);
 
   // preRun hands the module out once its filesystem exists.
   let onFilesystem;
@@ -334,6 +344,7 @@ export async function startVM({
     terminal: ui.terminal,
     master,
     slave,
+    network,
   };
 
   return {
@@ -347,7 +358,8 @@ export async function startVM({
       share.linkAll(share.written(), roots, Precedence.KEEP);
       mod.FS.writeFile(
         `${SHARE_DIR}/manifest`,
-        manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }),
+        manifest({ rows: ui.terminal.rows, cols: ui.terminal.cols }) +
+          (network ? networkManifest(network.ip) : ""),
       );
       mod.removeRunDependency(STORE_DEPENDENCY);
 

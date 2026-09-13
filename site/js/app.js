@@ -18,6 +18,7 @@ import {
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { startVM } from "./boot.js";
+import { networkEnabled } from "./network.js";
 import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
@@ -720,20 +721,25 @@ async function boot() {
 
     // The snapshot is optional: published, a visit resumes a guest that
     // is already up; absent, the same arguments cold-boot.
-    const snapshotPromise = fetchWithProgress(await asset(SNAPSHOT_URL), {
-      onTotal: (n) => snapshotRow.setTotal(n),
-      onCacheRead: telemetry.cacheRead,
-      onBytes: (n) => snapshotRow.add(n),
-    }).then(
-      (bytes) => {
-        snapshotRow.done();
-        return bytes;
-      },
-      () => {
-        snapshotRow.done("none published — cold boot");
-        return null;
-      },
-    );
+    const snapshotPromise = networkEnabled()
+      ? Promise.resolve(null).then(() => {
+          snapshotRow.done("network NIC — cold boot");
+          return null;
+        })
+      : fetchWithProgress(await asset(SNAPSHOT_URL), {
+          onTotal: (n) => snapshotRow.setTotal(n),
+          onCacheRead: telemetry.cacheRead,
+          onBytes: (n) => snapshotRow.add(n),
+        }).then(
+          (bytes) => {
+            snapshotRow.done();
+            return bytes;
+          },
+          () => {
+            snapshotRow.done("none published — cold boot");
+            return null;
+          },
+        );
 
     // The engine starts as soon as its own inputs are in, without
     // waiting for the closure; the guest files and the snapshot are
