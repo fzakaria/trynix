@@ -1,0 +1,579 @@
+{
+ "description": "Host perf samples of the Chromium renderer during exec-bench cold and warm jj --version on the stock Linux 7.2.5 guest and the pinned engine (engine-20260913-0301 files, wasm sha256 x7Yt86...), September 13, 2026, leviathan CPUs 88-91. V8 ran with --perf-basic-prof so compiled wasm functions carry names; the kernel capped sampling at 1000 Hz (about 600 effective). Three runs per phase, merged. Percentages are of the busiest thread (the vCPU worker); _threads gives the split of all samples across threads.",
+ "method_notes": "DevTools Profiler sessions on the engine workers never answer, busy or idle, so worker CPU profiles could not be taken that way; perf on the renderer process group needs no cooperation from the workers. Chromium 151.0.7922.137 (the 152 build used earlier had been garbage-collected).",
+ "runs": {
+  "cold": [
+   {
+    "file": "cold.txt",
+    "samples": 2788,
+    "vcpu_samples": 1991
+   },
+   {
+    "file": "cold2.txt",
+    "samples": 2841,
+    "vcpu_samples": 2026
+   },
+   {
+    "file": "cold3.txt",
+    "samples": 2797,
+    "vcpu_samples": 1989
+   }
+  ],
+  "warm": [
+   {
+    "file": "warm.txt",
+    "samples": 1060,
+    "vcpu_samples": 672
+   },
+   {
+    "file": "warm2.txt",
+    "samples": 1045,
+    "vcpu_samples": 668
+   },
+   {
+    "file": "warm3.txt",
+    "samples": 1065,
+    "vcpu_samples": 670
+   }
+  ]
+ },
+ "vcpu_by_mechanism": {
+  "cold": {
+   "translation: x86 decode, TCG IR, optimize, liveness, wasm emit": 0.2359,
+   "generated code: block bodies": 0.2965,
+   "dispatcher and cpu_exec loop": 0.0621,
+   "browser runtime, allocator, kernel": 0.0701,
+   "Liftoff compile of batch modules (on this thread)": 0.1134,
+   "other engine code": 0.0163,
+   "block lookup": 0.0548,
+   "9p, virtio, interrupts": 0.0028,
+   "generated code: prologue and indirect-call builtins": 0.0511,
+   "x86 helpers": 0.0047,
+   "softmmu: TLB fill, loads and stores": 0.0508,
+   "helper calls through JS (ffi, dynCall, invoke)": 0.039,
+   "interpreter (TCI)": 0.0025,
+   "_threads": {
+    "vcpu": 0.713,
+    "turbofan_background": 0.163,
+    "other": 0.124,
+    "samples": 8426
+   }
+  },
+  "warm": {
+   "dispatcher and cpu_exec loop": 0.0453,
+   "generated code: block bodies": 0.5104,
+   "browser runtime, allocator, kernel": 0.0632,
+   "generated code: prologue and indirect-call builtins": 0.0617,
+   "Liftoff compile of batch modules (on this thread)": 0.0687,
+   "block lookup": 0.0726,
+   "other engine code": 0.0164,
+   "translation: x86 decode, TCG IR, optimize, liveness, wasm emit": 0.009,
+   "x86 helpers": 0.0104,
+   "softmmu: TLB fill, loads and stores": 0.1199,
+   "9p, virtio, interrupts": 0.003,
+   "helper calls through JS (ffi, dynCall, invoke)": 0.0169,
+   "interpreter (TCI)": 0.0025,
+   "_threads": {
+    "vcpu": 0.634,
+    "turbofan_background": 0.233,
+    "other": 0.133,
+    "samples": 3170
+   }
+  }
+ },
+ "top_symbols": {
+  "cold": [
+   {
+    "symbol": "JS:tcg_qemu_tb_exec-10783-turbofan",
+    "share": 0.0564
+   },
+   {
+    "symbol": "Builtins_WasmLiftoffFrameSetup",
+    "share": 0.0441
+   },
+   {
+    "symbol": "JS:tcg_gen_code-16937-turbofan",
+    "share": 0.0395
+   },
+   {
+    "symbol": "JS:helper_lookup_tb_ptr-10910-turbofan",
+    "share": 0.034
+   },
+   {
+    "symbol": "JS:liveness_pass_1-16941-turbofan",
+    "share": 0.0221
+   },
+   {
+    "symbol": "JS:mmu_lookup-11087-turbofan",
+    "share": 0.0147
+   },
+   {
+    "symbol": "JS:tcg_optimize-16863-turbofan",
+    "share": 0.0142
+   },
+   {
+    "symbol": "JS:disas_insn-9088-turbofan",
+    "share": 0.0122
+   },
+   {
+    "symbol": "v8::internal::wasm::WasmFullDecoder<v8::internal::wasm::Decoder::NoValidationTag, v8::internal::wasm::(anonymous namespa",
+    "share": 0.011
+   },
+   {
+    "symbol": "JS:qht_lookup_custom-16419-turbofan",
+    "share": 0.0093
+   },
+   {
+    "symbol": "JS:tcg_wasm_out_op_loadstore-16884-turbofan",
+    "share": 0.009
+   },
+   {
+    "symbol": "JS:tcg_wasm_out_op_local_get-16883-turbofan",
+    "share": 0.0075
+   },
+   {
+    "symbol": "JS:liveness_pass_0-16940-turbofan",
+    "share": 0.0072
+   },
+   {
+    "symbol": "JS:tcg_reg_alloc-16951-turbofan",
+    "share": 0.007
+   },
+   {
+    "symbol": "JS:init_arguments-16864-turbofan",
+    "share": 0.0067
+   },
+   {
+    "symbol": "JS:wasm-function[44]-44-liftoff",
+    "share": 0.0062
+   },
+   {
+    "symbol": "JS:do_ld16_mmu-11100-turbofan",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[61]-61-liftoff",
+    "share": 0.0058
+   },
+   {
+    "symbol": "JS:wasm-function[65]-65-liftoff",
+    "share": 0.0058
+   },
+   {
+    "symbol": "JS:wasm-function[28]-28-liftoff",
+    "share": 0.0057
+   },
+   {
+    "symbol": "JS:wasm-function[42]-42-liftoff",
+    "share": 0.0053
+   },
+   {
+    "symbol": "JS:wasm-function[24]-24-liftoff",
+    "share": 0.0053
+   },
+   {
+    "symbol": "JS:wasm-function[17]-17-liftoff",
+    "share": 0.0053
+   },
+   {
+    "symbol": "Builtins_CallIndirectIC",
+    "share": 0.0053
+   },
+   {
+    "symbol": "JS:tcg_wasm_out_op_global_get-16881-turbofan",
+    "share": 0.0053
+   },
+   {
+    "symbol": "JS:wasm-function[49]-49-liftoff",
+    "share": 0.0052
+   },
+   {
+    "symbol": "JS:wasm-function[51]-51-liftoff",
+    "share": 0.0052
+   },
+   {
+    "symbol": "__memmove_avx_unaligned_erms",
+    "share": 0.0052
+   },
+   {
+    "symbol": "JS:wasm-function[46]-46-liftoff",
+    "share": 0.0052
+   },
+   {
+    "symbol": "JS:wasm-function[43]-43-liftoff",
+    "share": 0.0052
+   },
+   {
+    "symbol": "JS:do_st16_mmu-11116-turbofan",
+    "share": 0.0052
+   },
+   {
+    "symbol": "JS:tb_lookup_cmp-10924-turbofan",
+    "share": 0.005
+   },
+   {
+    "symbol": "JS:wasm-function[47]-47-liftoff",
+    "share": 0.0048
+   },
+   {
+    "symbol": "JS:wasm-function[29]-29-liftoff",
+    "share": 0.0048
+   },
+   {
+    "symbol": "JS:wasm-function[15]-15-liftoff",
+    "share": 0.0047
+   },
+   {
+    "symbol": "JS:wasm-to-js-<anonymous>-none",
+    "share": 0.0047
+   },
+   {
+    "symbol": "JS:wasm-function[72]-72-turbofan",
+    "share": 0.0047
+   },
+   {
+    "symbol": "JS:wasm-function[35]-35-liftoff",
+    "share": 0.0045
+   },
+   {
+    "symbol": "JS:wasm-function[39]-39-liftoff",
+    "share": 0.0045
+   },
+   {
+    "symbol": "JS:wasm-function[33]-33-liftoff",
+    "share": 0.0043
+   },
+   {
+    "symbol": "JS:wasm-function[52]-52-liftoff",
+    "share": 0.0043
+   },
+   {
+    "symbol": "JS:wasm-function[13]-13-liftoff",
+    "share": 0.0043
+   },
+   {
+    "symbol": "JS:wasm-function[57]-57-liftoff",
+    "share": 0.0043
+   },
+   {
+    "symbol": "JS:wasm-function[63]-63-liftoff",
+    "share": 0.0043
+   },
+   {
+    "symbol": "JS:wasm-function[16]-16-liftoff",
+    "share": 0.0042
+   },
+   {
+    "symbol": "JS:wasm-function[32]-32-liftoff",
+    "share": 0.0042
+   },
+   {
+    "symbol": "JS:wasm-function[26]-26-liftoff",
+    "share": 0.0042
+   },
+   {
+    "symbol": "JS:wasm-function[40]-40-liftoff",
+    "share": 0.0042
+   },
+   {
+    "symbol": "JS:wasm-function[25]-25-liftoff",
+    "share": 0.0042
+   },
+   {
+    "symbol": "JS:wasm-function[20]-20-liftoff",
+    "share": 0.0042
+   }
+  ],
+  "warm": [
+   {
+    "symbol": "Builtins_WasmLiftoffFrameSetup",
+    "share": 0.0572
+   },
+   {
+    "symbol": "JS:helper_lookup_tb_ptr-10910-turbofan",
+    "share": 0.0498
+   },
+   {
+    "symbol": "JS:mmu_lookup-11087-turbofan",
+    "share": 0.0418
+   },
+   {
+    "symbol": "JS:tcg_qemu_tb_exec-10783-turbofan",
+    "share": 0.0413
+   },
+   {
+    "symbol": "JS:do_ld16_mmu-11100-turbofan",
+    "share": 0.0154
+   },
+   {
+    "symbol": "JS:do_st16_mmu-11116-turbofan",
+    "share": 0.0139
+   },
+   {
+    "symbol": "JS:wasm-function[72]-72-turbofan",
+    "share": 0.0119
+   },
+   {
+    "symbol": "JS:wasm-function[7]-7-turbofan",
+    "share": 0.0119
+   },
+   {
+    "symbol": "JS:helper_st_i128-11119-turbofan",
+    "share": 0.0109
+   },
+   {
+    "symbol": "JS:qht_lookup_custom-16419-turbofan",
+    "share": 0.0095
+   },
+   {
+    "symbol": "JS:wasm-function[43]-43-liftoff",
+    "share": 0.009
+   },
+   {
+    "symbol": "JS:wasm-function[73]-73-turbofan",
+    "share": 0.009
+   },
+   {
+    "symbol": "JS:wasm-function[42]-42-liftoff",
+    "share": 0.009
+   },
+   {
+    "symbol": "JS:wasm-function[48]-48-liftoff",
+    "share": 0.0085
+   },
+   {
+    "symbol": "JS:wasm-function[16]-16-liftoff",
+    "share": 0.0085
+   },
+   {
+    "symbol": "JS:wasm-function[50]-50-liftoff",
+    "share": 0.008
+   },
+   {
+    "symbol": "JS:wasm-function[44]-44-liftoff",
+    "share": 0.008
+   },
+   {
+    "symbol": "JS:wasm-function[57]-57-liftoff",
+    "share": 0.0075
+   },
+   {
+    "symbol": "JS:wasm-function[69]-69-liftoff",
+    "share": 0.0075
+   },
+   {
+    "symbol": "JS:wasm-function[18]-18-liftoff",
+    "share": 0.0075
+   },
+   {
+    "symbol": "JS:wasm-function[41]-41-liftoff",
+    "share": 0.007
+   },
+   {
+    "symbol": "JS:wasm-function[64]-64-liftoff",
+    "share": 0.007
+   },
+   {
+    "symbol": "JS:wasm-function[35]-35-liftoff",
+    "share": 0.007
+   },
+   {
+    "symbol": "JS:wasm-function[22]-22-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[71]-71-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[21]-21-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[23]-23-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:helper_ld_i128-11103-turbofan",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[40]-40-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[20]-20-liftoff",
+    "share": 0.0065
+   },
+   {
+    "symbol": "JS:wasm-function[68]-68-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[33]-33-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[63]-63-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[37]-37-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[46]-46-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[54]-54-liftoff",
+    "share": 0.006
+   },
+   {
+    "symbol": "JS:wasm-function[15]-15-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[17]-17-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[67]-67-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[29]-29-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[55]-55-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[60]-60-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[49]-49-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[31]-31-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:wasm-function[36]-36-liftoff",
+    "share": 0.0055
+   },
+   {
+    "symbol": "JS:tb_lookup_cmp-10924-turbofan",
+    "share": 0.005
+   },
+   {
+    "symbol": "JS:wasm-function[73]-73-liftoff",
+    "share": 0.005
+   },
+   {
+    "symbol": "JS:wasm-function[62]-62-liftoff",
+    "share": 0.005
+   },
+   {
+    "symbol": "JS:wasm-function[32]-32-liftoff",
+    "share": 0.005
+   },
+   {
+    "symbol": "JS:wasm-function[51]-51-liftoff",
+    "share": 0.005
+   }
+  ]
+ },
+ "exec_bench_under_perf": [
+  {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.12,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 4.62,
+    "status": 0,
+    "guest": {
+     "real": 1.5,
+     "user": 0.82,
+     "sys": 0.58
+    },
+    "browser_cpu_seconds": 5.17,
+    "browser_peak_rss_bytes": 2787581952
+   },
+   "warm": {
+    "wall_seconds": 3.16,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.25,
+     "sys": 0.2
+    },
+    "browser_cpu_seconds": 2.09,
+    "browser_peak_rss_bytes": 2801475584
+   }
+  },
+  {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.25,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 4.63,
+    "status": 0,
+    "guest": {
+     "real": 1.5,
+     "user": 0.83,
+     "sys": 0.57
+    },
+    "browser_cpu_seconds": 5.18,
+    "browser_peak_rss_bytes": 2821296128
+   },
+   "warm": {
+    "wall_seconds": 2.35,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.26,
+     "sys": 0.19
+    },
+    "browser_cpu_seconds": 1.97,
+    "browser_peak_rss_bytes": 2834006016
+   }
+  },
+  {
+   "name": "jujutsu",
+   "spec": "pkg=jujutsu",
+   "command": "jj --version",
+   "shell_seconds": 6.26,
+   "resolved": "/nix/store/hy1qgl7m2ryhqx66h4ad2h04wp90004i-jujutsu-0.45.1",
+   "cold": {
+    "wall_seconds": 4.63,
+    "status": 0,
+    "guest": {
+     "real": 1.48,
+     "user": 0.78,
+     "sys": 0.6
+    },
+    "browser_cpu_seconds": 5.16,
+    "browser_peak_rss_bytes": 2823839744
+   },
+   "warm": {
+    "wall_seconds": 2.33,
+    "status": 0,
+    "guest": {
+     "real": 0.46,
+     "user": 0.24,
+     "sys": 0.21
+    },
+    "browser_cpu_seconds": 1.94,
+    "browser_peak_rss_bytes": 2836619264
+   }
+  }
+ ]
+}

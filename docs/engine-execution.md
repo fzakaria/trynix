@@ -738,3 +738,72 @@ The [raw data](../experiments/linux-7.2.5-kernel-profile.json) holds
 the counters, the plugin's per-function tables, the class census and
 every browser sample. The harness, plugin source and kernel
 expressions are under `/tmp/trynix-k7` on leviathan.
+
+## The cold path in the engine
+
+Every engine profile above was opencode at steady state. The cold
+start is a different workload: a cold `jj --version` runs code that
+executes a handful of times, and prefetching every byte of the closure
+still leaves it at 2.9 s against 1.3 s warm. This is where that 1.6 s
+goes, measured on the pinned engine with the stock 7.2.5 guest.
+
+The DevTools route did not work here: a `Profiler` session attached to
+any of the engine's workers never answers, busy or idle, and neither
+does a plain `Runtime.evaluate`, so the worker profiles of the earlier
+sections could not be repeated. Sampling the renderer process with
+Linux `perf` instead needs nothing from the workers; V8 was started
+with `--perf-basic-prof` so compiled wasm functions keep their names,
+and the kernel capped the rate at about 600 samples a second. Three
+runs of exec-bench per phase, merged, on leviathan's pinned cores. The
+vCPU worker takes 71% of all samples during the cold run; TurboFan
+tier-up on two background threads takes 16%, and the page's main
+thread and the rest 12%.
+
+| vCPU worker, share of its own time            |  cold |  warm |
+| --------------------------------------------- | ----: | ----: |
+| Generated code: block bodies                  | 29.7% | 51.0% |
+| Translation: decode, IR, optimize, emit       | 23.6% |  0.9% |
+| Liftoff compile of batch modules              | 11.3% |  6.9% |
+| Dispatcher and `cpu_exec` loop                |  6.2% |  4.5% |
+| Block lookup                                  |  5.5% |  7.3% |
+| Generated code: prologue, indirect-call stubs |  5.1% |  6.2% |
+| Softmmu: TLB fill, loads and stores           |  5.1% | 12.0% |
+| Helper calls through JS (ffi, dynCall)        |  3.9% |  1.7% |
+| Browser runtime, allocator, kernel            |  7.0% |  6.3% |
+| Interpreter (TCI)                             |  0.2% |  0.2% |
+
+Two things stand out. The interpreter is nowhere: the warm-up gate
+keeps cold blocks in TCI for their first 32 runs, and that costs
+nothing measurable, so a faster interpreter or a lower threshold has
+nothing to win. What the cold path pays for is making code: a third
+of the vCPU thread's time is the TCG front end (`disas_insn`,
+`tcg_optimize`, `liveness_pass_1`, `tcg_gen_code` and the wasm
+emitters) plus Liftoff compiling the batch modules, and both run
+synchronously on the thread that is supposed to be executing the
+guest. At roughly 30 thousand blocks per cold run that is about 25
+microseconds of translation per block, the C translator itself
+running as TurboFan-compiled wasm. On a 3.5 s vCPU run those two rows
+are about 1.2 s, which is most of the cold penalty; the rest is
+first-execution effects, kernel work and the guest's own page faults.
+
+That names the engine work for cold start, in order:
+
+1. Take module compilation off the vCPU thread. Liftoff runs inside a
+   synchronous `WebAssembly.Module` call today; `WebAssembly.compile`
+   or a compile worker would overlap it with execution, the blocks
+   keeping to the interpreter until their module lands. That is the
+   11% row, and the 7% it still costs warm.
+2. A cheaper translation for cold blocks. `tcg_optimize` and the
+   liveness passes exist to make good code for hot blocks; a block
+   that will run 32 times in the interpreter and may never be
+   compiled does not need them. A fast path that skips optimization
+   until a block reaches the batch is the 24% row, and its ceiling is
+   the decode itself.
+3. The transition costs, dispatcher plus lookup plus prologue stubs,
+   are 17% cold and 18% warm. Patch 0007 already worked on these;
+   what remains is the goto_ptr cache the earlier section proposed.
+
+The [raw profile](../experiments/cold-exec-profile.json) has the
+per-run sample counts, the mechanism shares and the top fifty symbols
+for each phase. Chromium 151.0.7922.137 ran these; the 152 build used
+for the kernel comparison had been garbage-collected on leviathan.
