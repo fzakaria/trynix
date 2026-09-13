@@ -96,20 +96,22 @@ Otherwise the emscripten flags are upstream's verbatim (`-sASYNCIFY`,
 ## The native QEMU
 
 ```console
-$ nix run .#build-native-qemu -- ~/src/qemu-wasm ./native
+$ nix build .#native-qemu
 ```
 
 The browser resumes a VM rather than booting one, and the snapshot has
 to come from a native build of the same fork: both ends of a migration
 must agree on QEMU version, machine type and devices, which rules out
-nixpkgs' QEMU. The binary is static, so it runs on a NixOS host.
+nixpkgs' QEMU. It is a derivation (`nix/native-qemu.nix`) from the
+pinned fork commit and the same `patches/` the engine gets, so it
+changes whenever they do. `make-snapshot` uses it by itself; building
+it by hand is only for looking at it.
 
 ## The snapshot
 
 ```console
 $ nix build .#guest
-$ nix run .#make-snapshot -- --qemu ./native/qemu-system-x86_64 \
-    --guest ./result --out ./engine/vm.state
+$ nix run .#make-snapshot -- --guest ./result --out ./engine/vm.state
 ```
 
 The tool boots the guest natively, waits for init to park on its
@@ -122,17 +124,17 @@ initramfs or machine definition. The snapshot holds the kernel and
 initramfs in its RAM, and `checks.snapshot` fails when the guest the
 tree builds is not the one the pins say the snapshot came from.
 
-Rebuild the native qemu whenever the patches change, before taking a
-snapshot. The binary is not tracked and nothing rebuilds it for you.
-It matters because of patches/0003: a native qemu built without it
+The native qemu used to be a docker build kept by hand, and that is
+how two releases on 2026-09-13 shipped snapshots from a binary built
+nine days earlier, before patches/0003. Without 0003 the native build
 calibrates the guest's clock against a real TSC, and the snapshot then
 runs on the browser's counter with every guest second taking about
-three real ones. Two releases shipped that way on 2026-09-13 from a
-binary built nine days earlier; `make-snapshot` only checks that the
-guest settled on the TSC, not what it counts. `boot-test`, which CI
-runs, now times a `sleep 2` in the guest from the host and fails when
-it takes more than 4.5 s, and the bench page's `clock_ratio` for a
-release should sit near 0.9, not 0.3.
+three real ones. `make-snapshot` only checks that the guest settled on
+the TSC, not what it counts. Two things now stand in the way of a
+repeat: the native qemu is a derivation the snapshot tool takes from
+the flake, and `boot-test`, which CI runs, times a `sleep 2` in the
+guest from the host and fails when it takes more than 4.5 s. The bench
+page's `clock_ratio` for a release should sit near 0.9, not 0.3.
 
 ## Publishing
 

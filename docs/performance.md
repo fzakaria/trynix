@@ -55,7 +55,7 @@ nanoseconds, so 1 GHz. QEMU's own comment on that fallback reads "This
 will be totally wrong, but hopefully better than nothing."
 
 [`patches/0003`][0003] makes the snapshotting build count the same
-clock, and `build-native-qemu.sh` defines it. Both ends of a migration
+clock, and `nix/native-qemu.nix` defines it. Both ends of a migration
 have to agree about the clock as much as about the devices. `sleep 10`
 now takes 10.15 s and the guest reports 1000 MHz, which is what it
 gets.

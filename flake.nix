@@ -64,6 +64,11 @@
             initramfs
             guest
             ;
+
+          # the native QEMU the snapshot is taken on, from the fork and
+          # the patches, so it is never older than the engine
+          # (nix/native-qemu.nix)
+          native-qemu = import ./nix/native-qemu.nix { inherit pkgs; };
         }
       );
 
@@ -96,14 +101,21 @@
             pkgs.gnupatch
           ];
 
-          # build the native QEMU the snapshot is taken on
-          build-native-qemu = tool "build-native-qemu" ./tools/build-native-qemu.sh [
-            pkgs.docker
-            pkgs.rsync
-          ];
-
-          # take the migration snapshot: --qemu, --guest, --out
-          make-snapshot = tool "make-snapshot" "${pkgs.python3}/bin/python3 ${./tools/make-snapshot.py}" [ ];
+          # take the migration snapshot on the flake's native QEMU
+          # (packages.native-qemu): --guest, --out
+          make-snapshot = {
+            type = "app";
+            program = "${
+              pkgs.writeShellApplication {
+                name = "make-snapshot";
+                runtimeInputs = [ ];
+                text = ''
+                  export TRYNIX_NATIVE_QEMU=${self.packages.${system}.native-qemu}/bin/qemu-system-x86_64
+                  exec ${pkgs.python3}/bin/python3 ${./tools/make-snapshot.py} "$@"
+                '';
+              }
+            }/bin/make-snapshot";
+          };
 
           # boot the built site in a real browser, repeatedly, and fail
           # if the guest does not reach a shell

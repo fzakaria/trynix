@@ -32,7 +32,7 @@ translation-block shape, so a ratio between two engines names a
 mechanism instead of a workload. Run it on the native fork and in the
 browser guest against the same package and machine and diff the numbers.
 
-- Native: resume the guest under `vendor/qemu-native/qemu-system-x86_64`
+- Native: resume the guest under the flake's `native-qemu`
   with a share holding the emubench closure, then run `emubench all`.
 - Browser: serve a site whose `qemu/` holds the engine under test, open
   `?path=<emubench store path>&cache=<url key>&boot=1`, and type
@@ -738,6 +738,20 @@ The [raw data](../experiments/linux-7.2.5-kernel-profile.json) holds
 the counters, the plugin's per-function tables, the class census and
 every browser sample. The harness, plugin source and kernel
 expressions are under `/tmp/trynix-k7` on leviathan.
+
+One caveat applies to every browser table from here to the end of the
+warm-up threshold section: the snapshots those A/Bs booted were taken
+on a native qemu from before patches/0003, so their guests' clocks ran
+about three times slow (the section on the native QEMU in
+docs/engine.md). Each table compares variants under the same snapshot
+conditions, so the comparisons stand, and the jj and python figures
+match the bench page's records for the same engines within noise. The
+opencode figures do not: a three-minute run under a slow clock takes a
+third as many timer ticks, and reads about 15% below the bench page's
+188 s cold wall for the same engine. Take the opencode columns as
+relative, and note the size of that gap: a hundred timer interrupts a
+second cost this emulator on the order of a tenth of its throughput,
+which is a lead of its own.
 
 ## The cold path in the engine
 

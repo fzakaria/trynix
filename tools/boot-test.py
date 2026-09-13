@@ -345,8 +345,8 @@ def main():
         sys.exit(
             f"the guest's clock runs slow: sleep {CLOCK_SLEEP_SECONDS} took "
             f"{slow_clock:.1f}s (limit {CLOCK_LIMIT_SECONDS:g}s). The snapshot was "
-            "taken on a native qemu built without the current patches; rebuild it "
-            "with tools/build-native-qemu.sh and retake the snapshot (docs/engine.md)"
+            "taken on a native qemu built without the current patches; retake it "
+            "with `nix run .#make-snapshot` (docs/engine.md)"
         )
     print("every boot reached a shell")
 

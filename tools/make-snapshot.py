@@ -4,8 +4,10 @@
 Boots the guest on a NATIVE build of the same qemu-wasm fork the
 browser engine comes from, waits for init to reach the point where it
 is spinning for the store share, and writes the VM state out with
-`migrate`. See docs/engine.md for building the native binary and
-docs/design.md for why the snapshot is taken there.
+`migrate`. The native build is a derivation (nix/native-qemu.nix) from
+the pinned fork and the same patches as the engine; the flake app
+passes it in, so a stale binary cannot take a snapshot by accident.
+docs/design.md says why the snapshot is taken there.
 
 Both ends of a migration must agree on QEMU version, machine type and
 device model, which is why nixpkgs' QEMU cannot take this snapshot: it
@@ -110,10 +112,16 @@ def clocksource_complaint(serial_path, deadline):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--qemu", required=True, help="native qemu-system-x86_64 from the fork")
+    parser.add_argument(
+        "--qemu",
+        default=os.environ.get("TRYNIX_NATIVE_QEMU"),
+        help="native qemu-system-x86_64 from the fork (default: the one the flake built, nix/native-qemu.nix)",
+    )
     parser.add_argument("--guest", required=True, help="the guest image directory (nix build .#guest)")
     parser.add_argument("--out", required=True, help="where to write vm.state")
     args = parser.parse_args()
+    if not args.qemu:
+        sys.exit("pass --qemu, or run this as `nix run .#make-snapshot` so the flake's native qemu is used")
 
     with tempfile.TemporaryDirectory() as work:
         # The share is empty on purpose: the snapshot must not depend on
