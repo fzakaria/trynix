@@ -606,7 +606,6 @@ function describeRunner(records) {
         ? `CPUs ${runner.cpu_affinity.join(", ")}; NUMA memory node ${runner.memory_node}`
         : null,
     ],
-    ["latest run notes", latest.notes],
     [
       "memory",
       typeof runner.memory_gib === "number" ? `${runner.memory_gib} GiB` : null,
@@ -631,15 +630,6 @@ function describeRunner(records) {
         `${unbuilt.length} pinned engines could not be rebuilt: `,
         unbuilt.map((r) => `${r.commit.slice(0, 7)} (${r.subject})`).join("; "),
         ". Releases before guest/machine.json existed cannot be driven by today's page either.",
-      ]),
-    );
-  }
-  const unmeasured = records.filter((r) => r.unmeasured);
-  for (const reason of new Set(unmeasured.map((r) => r.unmeasured))) {
-    const these = unmeasured.filter((r) => r.unmeasured === reason);
-    host.append(
-      html("p", {}, [
-        `${these.length} releases carry no numbers, ${these[0].tag} to ${these[these.length - 1].tag}: ${reason}`,
       ]),
     );
   }

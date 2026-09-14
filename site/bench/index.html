@@ -246,14 +246,13 @@
           >
         </p>
         <p class="gain">
-          <code>call</code> 1.34x and <code>indirect</code> 1.2x; python 2.5 to 3% and opencode 3
-          to 4% of browser CPU; jj unchanged
+          <code>call</code> 1.34x, <code>indirect</code> 1.2x; python 3% and opencode 3 to 4% of
+          browser CPU; jj unchanged
         </p>
         <p>
-          A return or indirect jump looked its target up through a C helper on every transition.
-          Generated code now probes a per-vCPU cache keyed on the guest state first and hits 92
-          to 94% of the time, removing almost every helper call from compiled code. Most of the
-          transition cost that remains is the interpreter and V8's own function-entry stub.
+          A return or indirect jump asked a C helper for its target on every transition. Generated
+          code now probes a per-vCPU cache keyed on the guest state first, and hits 92 to 94% of
+          the time.
         </p>
       </section>
 
@@ -265,17 +264,14 @@
         </p>
         <p class="gain">
           cold <code>jj --version</code> 3.71 s to 2.92 s at this runner's one second of think
-          time, 27% less browser CPU at three seconds
+          time; 27% less browser CPU at three seconds
         </p>
         <p>
-          A cold exec is mostly the binary being faulted in over 9p, so init now reads what
-          <code>/share/bin</code> links to in the background, at the lowest priority, right after
-          mounting the store; the page cache keeps it for the command. The first release of this
-          also read the libraries the loader would map, through an ELF reader in the initramfs,
-          which took a quarter second off every small dynamic binary and put four percent on
-          python; the release after reads the binaries alone, which is why hello, ripgrep and jj
-          give a little back between those two records and python does not. These cold columns
-          now include whatever of the read lands during the runner's second before it types.
+          A cold exec is mostly the binary being faulted in over 9p, so init reads what
+          <code>/share/bin</code> links to in the background right after the mount. The first
+          release also read the libraries, which helped small binaries and cost python; the next
+          reads the binaries alone, which is why hello, ripgrep and jj give a little back between
+          those two records.
         </p>
       </section>
 
