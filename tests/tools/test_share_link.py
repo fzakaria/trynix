@@ -31,7 +31,9 @@ class Nix:
     than a store. Keyed by a prefix of the arguments as one string, so a
     test says what each invocation gives back and can then ask what was
     run. The longest matching prefix answers, so a test can single out
-    one invocation without caring what order it lists the answers in."""
+    one invocation without caring what order it lists the answers in.
+    An answer that is an exception is raised, the way the real helper
+    exits when nix fails."""
 
     def __init__(self, answers):
         self.answers = answers
@@ -45,10 +47,18 @@ class Nix:
         matches = [prefix for prefix in self.answers if call.startswith(prefix)]
         if not matches:
             raise AssertionError(f"unexpected: nix {call}")
-        return self.answers[max(matches, key=len)]
+        answer = self.answers[max(matches, key=len)]
+
+        # A scripted failure stands in for nix exiting non-zero.
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
 
     def ran(self, prefix):
         return self.count(prefix) > 0
+
+    def call(self, prefix):
+        return next(call for call in self.calls if call.startswith(prefix))
 
     def count(self, prefix):
         return sum(call.startswith(prefix) for call in self.calls)
@@ -237,9 +247,11 @@ class Resolving(unittest.TestCase):
     and which nix commands ran.
 
     Evaluating is the default and stays that way. An attribute that
-    evaluates to a placeholder is the exception: the only way to name the
-    path behind it is to realise it (#10), and a placeholder in a link
-    would be a comment nobody could boot."""
+    evaluates to a placeholder has no path to read (#10), so without
+    `--build` the tool asks nix for the path with building and
+    substituting both switched off. A placeholder in a link would be a
+    comment nobody could boot, and a build the caller did not ask for is
+    a cost they did not agree to."""
 
     def test_a_package_is_evaluated_and_not_built(self):
         """A package with a real outPath is linked without a build."""
@@ -263,9 +275,10 @@ class Resolving(unittest.TestCase):
         self.assertEqual(tool.store_paths(ATTR, build=False), [PATH])
         self.assertFalse(tool.nix.ran("build"))
 
-    def test_a_placeholder_is_realised_rather_than_linked(self):
-        """A package whose outPath is a placeholder is built, the built
-        path is linked, and the log names the placeholder."""
+    def test_a_placeholder_is_looked_up_without_building(self):
+        """A package whose outPath is a placeholder is resolved by a nix
+        build that may neither build nor substitute, the path it returns
+        is linked, and the log names the placeholder."""
         tool = resolving(
             {
                 "eval --json": '"derivation"',
@@ -275,12 +288,46 @@ class Resolving(unittest.TestCase):
         )
         paths, said = resolve(tool, ATTR, build=False)
         self.assertEqual(paths, [PATH])
-        self.assertTrue(tool.nix.ran(f"build {ATTR} --no-link --print-out-paths"))
+        lookup = tool.nix.call(f"build {ATTR} --no-link --print-out-paths")
+        self.assertIn("--max-jobs 0", lookup)
+        self.assertIn("--option substitute false", lookup)
         self.assertIn(PLACEHOLDER, said)
 
-    def test_an_app_under_a_placeholder_is_realised_through_its_drv(self):
-        """An app whose program sits under a placeholder is built through
-        the drv named in the program's string context."""
+    def test_an_unbuilt_placeholder_says_how_to_fix_it(self):
+        """When the lookup fails because nothing built the path, the tool
+        exits naming the attribute and the two ways out, rather than
+        passing on nix's complaint about max-jobs alone."""
+        failure = SystemExit("nix build failed:\nlocal builds are disabled (max-jobs = 0)")
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PLACEHOLDER,
+                "build": failure,
+            }
+        )
+        with self.assertRaises(SystemExit) as raised:
+            resolve(tool, ATTR, build=False)
+        message = str(raised.exception.code)
+        self.assertIn(ATTR, message)
+        self.assertIn("--build", message)
+        self.assertIn("max-jobs = 0", message)
+
+    def test_asking_for_a_build_builds(self):
+        """With `--build` the attribute is built with nothing switched
+        off, placeholder or not."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "build": PATH,
+            }
+        )
+        self.assertEqual(tool.store_paths(ATTR, build=True), [PATH])
+        self.assertNotIn("--max-jobs", tool.nix.call(f"build {ATTR}"))
+
+    def test_an_app_under_a_placeholder_is_looked_up_through_its_drv(self):
+        """An app whose program sits under a placeholder is looked up
+        through the drv named in the program's string context, with
+        building switched off."""
         drv = "/nix/store/xa1h0qrwyzjd3kzf06rk0sk6wdlnqm4z-hello.drv"
         tool = resolving(
             {
@@ -292,10 +339,10 @@ class Resolving(unittest.TestCase):
         )
         paths, _ = resolve(tool, ATTR, build=False)
         self.assertEqual(paths, [PATH])
-        self.assertTrue(tool.nix.ran(f"build {drv}^out"))
+        self.assertIn("--max-jobs 0", tool.nix.call(f"build {drv}^out"))
 
     def test_the_attribute_type_is_evaluated_once(self):
-        """Falling back from evaluating to building reuses the answer to
+        """Falling back from evaluating to a lookup reuses the answer to
         whether the attribute is an app, rather than evaluating the
         flake a second time to ask again."""
         tool = resolving(

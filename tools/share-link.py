@@ -29,9 +29,11 @@ that program, which is what the guest mounts.
 
 An attribute whose output path is not a function of its inputs, such
 as a content addressed derivation or a package built on a dynamic
-derivation, evaluates to a placeholder instead of a path. Such an
-attribute is built whatever `--build` says. It still produces an
-ordinary store path, and realising it is the only way to learn which.
+derivation, evaluates to a placeholder instead of a path. Without
+`--build`, the tool asks nix for the path behind the placeholder with
+building and substituting both switched off, so the attribute has to
+have been built into the same store earlier. With `--build` it is built
+like any other attribute.
 
 `--verify` asks the cache whether it really has each path and whether a
 browser is allowed to read it. Both failures produce a link that dies at
@@ -82,6 +84,11 @@ PLACEHOLDER_LENGTH = 52
 # ordinary store path.
 PLACEHOLDER = re.compile(rf"/[{NIX_BASE32}]{{{PLACEHOLDER_LENGTH}}}(?:/|\Z)")
 
+# What `nix build` needs to hand back paths already in the store and
+# refuse everything else: no local builds, no remote builders, and no
+# downloads from a substituter.
+NO_BUILD_FLAGS = ("--max-jobs", "0", "--builders", "", "--option", "substitute", "false")
+
 # What a browser needs on a response to be allowed to read it at all.
 CORS_HEADER = "access-control-allow-origin"
 
@@ -119,6 +126,13 @@ class Kind(enum.Enum):
 
     PACKAGE = "derivation"
     APP = "app"
+
+
+class Building(enum.Enum):
+    """Whether resolving an attribute may build or download anything."""
+
+    ALLOWED = "allowed"
+    FORBIDDEN = "forbidden"
 
 
 def kind_of(attr):
@@ -179,10 +193,10 @@ def evaluated_store_paths(attr, kind):
     notices that no cache has it.
 
     An attribute that evaluates to a placeholder is the exception. There
-    is no store path to read out of a placeholder, so the attribute is
-    realised even here. When the caller's build step ran against the
-    same store, nix hands back the paths that step made. Otherwise this
-    substitutes or builds them.
+    is no store path to read out of a placeholder, so nix is asked for
+    the path with building and substituting switched off. When the
+    caller's build step ran against the same store, nix hands back the
+    paths that step made. Otherwise the lookup fails and says what to do.
     """
     # Ask nix for the path without building anything.
     if kind is Kind.APP:
@@ -190,20 +204,24 @@ def evaluated_store_paths(attr, kind):
     else:
         path = nix("eval", "--raw", f"{attr}.outPath")
 
-    # A placeholder names no store path, so realise the attribute instead.
+    # A placeholder names no store path, so look up the one already built.
     if is_placeholder(path):
         print(
             f"note: {attr} evaluates to {path}, a placeholder rather than a store "
-            "path; realising it to find out which path it stands for",
+            "path; asking nix for the path it stands for without building",
             file=sys.stderr,
         )
-        return built_store_paths(attr, kind)
+        return built_store_paths(attr, kind, Building.FORBIDDEN)
 
     return [containing_store_path(path)]
 
 
-def built_store_paths(attr, kind):
+def built_store_paths(attr, kind, building):
     """Build an attribute and return every output nix installed.
+
+    With `building` forbidden, the same command only reports outputs
+    that are already in the store, and fails on anything it would have
+    to build or download.
 
     `nix build` refuses an app, since a set naming a program is not a
     derivation. The program string carries that derivation in its string
@@ -226,8 +244,25 @@ def built_store_paths(attr, kind):
         )
         target = f"{drv}^out"
 
+    # A lookup switches off everything that could build or download.
+    command = ["build", target, "--no-link", "--print-out-paths"]
+    if building is Building.FORBIDDEN:
+        command.extend(NO_BUILD_FLAGS)
+
+    # A lookup that failed means nothing earlier built the attribute here.
+    try:
+        output = nix(*command)
+    except SystemExit as failure:
+        if building is Building.ALLOWED:
+            raise
+        sys.exit(
+            f"{attr} evaluates to a placeholder and its output is not in this "
+            "store. Build it earlier in the job against the same store, or "
+            f"pass --build (the action's `build: true`).\n{failure.code}"
+        )
+
     # A build that printed nothing has nothing to link.
-    paths = nix("build", target, "--no-link", "--print-out-paths").splitlines()
+    paths = output.splitlines()
     if not paths:
         sys.exit(f"nix build {target} named no store paths")
     return paths
@@ -244,7 +279,7 @@ def store_paths(attr, build):
     # Ask what the attribute is once, for whichever route resolves it.
     kind = kind_of(attr)
     if build:
-        paths = built_store_paths(attr, kind)
+        paths = built_store_paths(attr, kind, Building.ALLOWED)
     else:
         paths = evaluated_store_paths(attr, kind)
 
