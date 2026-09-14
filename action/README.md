@@ -141,6 +141,15 @@ own, and note that building reports every output nix installs while
 evaluating reports the default one, so a multi-output package can differ
 between the two.
 
+Some attributes have no path to evaluate. A dynamic derivation's output
+path is settled while it is built rather than by its inputs, and a
+content addressed one's by what the build produced, so `.outPath` gives
+back a placeholder — `/0j78px59wbg76xis7aaj1vrvxwzc681pw013j66bzmra824fs69w`,
+a hash with no store directory and no name. What they build is an
+ordinary store path all the same. The action realises those attributes
+whatever `build` says, since that is the only way to find out which path
+to link, and the build your workflow already ran is what makes it cheap.
+
 Then the comment: one per pull request, found again by a
 `<!-- trynix-preview -->` marker at the top of its body and edited in
 place, so ten pushes leave one comment.
