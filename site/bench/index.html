@@ -184,6 +184,101 @@
         </p>
       </section>
 
+      <section class="change">
+        <h3>Linux 7.2.5</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest.nix">nix/guest.nix</a> ·
+          guest kernel 6.1.187 to 7.2.5
+        </p>
+        <p class="gain">
+          cold <code>jj --version</code> 3.19 s to 3.72 s, cold python 5.30 s to 5.58 s; warm
+          unchanged
+        </p>
+        <p>
+          The new kernel fixes ELF loading for Fil-C binaries and costs every cold exec: it does
+          about 70% more kernel work per first run over the 9p share, from a forward-only
+          readahead window for executables (6.16), read completion on a work item (6.13), and
+          page-cache code that grew across the folio conversions. No configuration setting
+          recovers it; the profile and the diagnostic builds are in engine-execution.md.
+        </p>
+      </section>
+
+      <section class="change">
+        <h3>The warm-up</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/patches/0008-wasm32-warmup-128.patch"
+            >patch 0008</a
+          >
+        </p>
+        <p class="gain">cold browser CPU 4% on jj, 5% on python, 3% on opencode; warm unchanged</p>
+        <p>
+          A block now interprets 128 times before it joins a batch instead of 32. A cold start
+          spends a third of its vCPU time making code and under six percent interpreting it, so
+          compiling a quarter of the blocks it translates was the wrong side of that trade.
+        </p>
+      </section>
+
+      <section class="change">
+        <h3>The clock, again</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/nix/native-qemu.nix">nix/native-qemu.nix</a>
+          · a guest clock check in <code>boot-test</code>
+        </p>
+        <p class="gain">
+          two releases ran guest time 3.3x slow; their guest-reported columns are wrong, the
+          host-measured ones are not
+        </p>
+        <p>
+          The snapshots of the two releases before this one were taken on a native QEMU built
+          before patch 0003, so the guest calibrated its clock against a real cycle counter
+          again. The snapshotter is now a derivation from the same patches as the engine, and
+          CI times a <code>sleep</code> in the guest from the host. A slow clock also made
+          opencode read 15% faster on those two records, which is not the engine: the same
+          engine measures 188 s here with the clock right.
+        </p>
+      </section>
+
+      <section class="change">
+        <h3>The lookup</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/patches/0009-wasm32-lookup-cache.patch"
+            >patch 0009</a
+          >
+        </p>
+        <p class="gain">
+          <code>call</code> 1.34x and <code>indirect</code> 1.2x; python 2.5 to 3% and opencode 3
+          to 4% of browser CPU; jj unchanged
+        </p>
+        <p>
+          A return or indirect jump looked its target up through a C helper on every transition.
+          Generated code now probes a per-vCPU cache keyed on the guest state first and hits 92
+          to 94% of the time, removing almost every helper call from compiled code. Most of the
+          transition cost that remains is the interpreter and V8's own function-entry stub.
+        </p>
+      </section>
+
+      <section class="change">
+        <h3>The first command</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest/init">nix/guest/init</a>
+          · a background read after the mount
+        </p>
+        <p class="gain">
+          cold <code>jj --version</code> 3.71 s to 2.92 s at this runner's one second of think
+          time, 27% less browser CPU at three seconds
+        </p>
+        <p>
+          A cold exec is mostly the binary being faulted in over 9p, so init now reads what
+          <code>/share/bin</code> links to in the background, at the lowest priority, right after
+          mounting the store; the page cache keeps it for the command. The first release of this
+          also read the libraries the loader would map, through an ELF reader in the initramfs,
+          which took a quarter second off every small dynamic binary and put four percent on
+          python; the release after reads the binaries alone, which is why hello, ripgrep and jj
+          give a little back between those two records and python does not. These cold columns
+          now include whatever of the read lands during the runner's second before it types.
+        </p>
+      </section>
+
       <h2>Appendix</h2>
       <dl id="appendix"></dl>
       <div id="appendix-skipped" class="muted"></div>
