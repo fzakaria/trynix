@@ -1,8 +1,12 @@
 """Tests for the pure parts of tools/share-link.py: composing the link
-the GitHub action posts, naming a cache from its shorthand, and reading
-a store path's digest. Nothing here builds or reaches the network."""
+the GitHub action posts, naming a cache from its shorthand, reading a
+store path's digest, and deciding what an attribute resolved to. Nothing
+here builds or reaches the network. The resolution tests answer for nix
+instead of running it."""
 
+import contextlib
 import importlib.util
+import io
 import os
 import unittest
 from urllib.parse import parse_qsl, urlparse
@@ -13,6 +17,66 @@ TOOL = os.path.join(HERE, "..", "..", "tools", "share-link.py")
 CACHE = "https://my-cache.cachix.org"
 KEY = "my-cache.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
 PATH = "/nix/store/vd1265k8rg8jgjvdm5hf5cvwbdbhywyh-hello-2.12.1"
+
+# What `.outPath` gave back for a package built on a dynamic derivation,
+# from the comment that opened issue #10: a slash and a hash, naming
+# nothing a cache could serve.
+PLACEHOLDER = "/0j78px59wbg76xis7aaj1vrvxwzc681pw013j66bzmra824fs69w"
+
+ATTR = ".#hello"
+
+
+class Nix:
+    """The nix the tool shells out to, answering from a script rather
+    than a store. Keyed by a prefix of the arguments as one string, so a
+    test says what each invocation gives back and can then ask what was
+    run. The longest matching prefix answers, so a test can single out
+    one invocation without caring what order it lists the answers in.
+    An answer that is an exception is raised, the way the real helper
+    exits when nix fails."""
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = []
+
+    def __call__(self, *args):
+        call = " ".join(args)
+        self.calls.append(call)
+
+        # Pick the most specific scripted answer for this invocation.
+        matches = [prefix for prefix in self.answers if call.startswith(prefix)]
+        if not matches:
+            raise AssertionError(f"unexpected: nix {call}")
+        answer = self.answers[max(matches, key=len)]
+
+        # A scripted failure stands in for nix exiting non-zero.
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    def ran(self, prefix):
+        return self.count(prefix) > 0
+
+    def call(self, prefix):
+        return next(call for call in self.calls if call.startswith(prefix))
+
+    def count(self, prefix):
+        return sum(call.startswith(prefix) for call in self.calls)
+
+
+def resolving(answers):
+    """The tool with its nix replaced by one that answers `answers`."""
+    tool = load()
+    tool.nix = Nix(answers)
+    return tool
+
+
+def resolve(tool, attr, build):
+    """What the tool resolved, and what it said on the way there."""
+    noise = io.StringIO()
+    with contextlib.redirect_stderr(noise):
+        paths = tool.store_paths(attr, build=build)
+    return paths, noise.getvalue()
 
 
 def load():
@@ -130,6 +194,201 @@ class ContainingStorePath(unittest.TestCase):
         tool = load()
         with self.assertRaises(SystemExit):
             tool.containing_store_path("/usr/bin/hello")
+
+
+class StorePathsAndPlaceholders(unittest.TestCase):
+    """Telling a store path from the stand-in for one. An attribute whose
+    output path is not a function of its inputs evaluates to a
+    placeholder: a slash and 52 characters of nix's base32, with no store
+    directory and no name. Each test hands the two predicates a string
+    and checks which of them claims it."""
+
+    def test_a_store_path_is_one(self):
+        """A plain store path is a store path and not a placeholder."""
+        tool = load()
+        self.assertTrue(tool.is_store_path(PATH))
+        self.assertFalse(tool.is_placeholder(PATH))
+
+    def test_a_placeholder_is_not_a_store_path(self):
+        """The placeholder from issue #10 is recognised as one."""
+        tool = load()
+        self.assertTrue(tool.is_placeholder(PLACEHOLDER))
+        self.assertFalse(tool.is_store_path(PLACEHOLDER))
+
+    def test_a_program_under_a_placeholder_is_still_a_placeholder(self):
+        """An app's program string keeps the placeholder as its prefix."""
+        tool = load()
+        self.assertTrue(tool.is_placeholder(f"{PLACEHOLDER}/bin/hello"))
+
+    def test_a_path_outside_the_store_is_neither(self):
+        """An FHS path is refused by both predicates."""
+        tool = load()
+        self.assertFalse(tool.is_store_path("/usr/bin/hello"))
+        self.assertFalse(tool.is_placeholder("/usr/bin/hello"))
+
+    def test_a_file_inside_a_store_path_is_not_the_store_path(self):
+        """A program inside a store path has to be trimmed before linking."""
+        tool = load()
+        self.assertFalse(tool.is_store_path(f"{PATH}/bin/hello"))
+
+    def test_letters_outside_nix_base32_are_neither(self):
+        """Nix's base32 has no e, o, u or t. A hash spelled with one of
+        them came from something other than nix."""
+        tool = load()
+        self.assertFalse(tool.is_placeholder("/" + "e" * tool.PLACEHOLDER_LENGTH))
+        self.assertFalse(
+            tool.is_store_path(f"{tool.STORE_PREFIX}{'e' * tool.DIGEST_LENGTH}-hello")
+        )
+
+
+class Resolving(unittest.TestCase):
+    """What an attribute resolves to, and when that costs a build. Each
+    test scripts nix's answers, resolves `.#hello`, and checks the paths
+    and which nix commands ran.
+
+    Evaluating is the default and stays that way. An attribute that
+    evaluates to a placeholder has no path to read (#10), so without
+    `--build` the tool asks nix for the path with building and
+    substituting both switched off. A placeholder in a link would be a
+    comment nobody could boot, and a build the caller did not ask for is
+    a cost they did not agree to."""
+
+    def test_a_package_is_evaluated_and_not_built(self):
+        """A package with a real outPath is linked without a build."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PATH,
+            }
+        )
+        self.assertEqual(tool.store_paths(ATTR, build=False), [PATH])
+        self.assertFalse(tool.nix.ran("build"))
+
+    def test_an_app_resolves_to_the_store_path_holding_its_program(self):
+        """An app's program is trimmed to its store path without a build."""
+        tool = resolving(
+            {
+                "eval --json": '"app"',
+                "eval --raw": f"{PATH}/bin/hello",
+            }
+        )
+        self.assertEqual(tool.store_paths(ATTR, build=False), [PATH])
+        self.assertFalse(tool.nix.ran("build"))
+
+    def test_a_placeholder_is_looked_up_without_building(self):
+        """A package whose outPath is a placeholder is resolved by a nix
+        build that may neither build nor substitute, the path it returns
+        is linked, and the log names the placeholder."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PLACEHOLDER,
+                "build": PATH,
+            }
+        )
+        paths, said = resolve(tool, ATTR, build=False)
+        self.assertEqual(paths, [PATH])
+        lookup = tool.nix.call(f"build {ATTR} --no-link --print-out-paths")
+        self.assertIn("--max-jobs 0", lookup)
+        self.assertIn("--option substitute false", lookup)
+        self.assertIn(PLACEHOLDER, said)
+
+    def test_an_unbuilt_placeholder_says_how_to_fix_it(self):
+        """When the lookup fails because nothing built the path, the tool
+        exits naming the attribute and the two ways out, rather than
+        passing on nix's complaint about max-jobs alone."""
+        failure = SystemExit("nix build failed:\nlocal builds are disabled (max-jobs = 0)")
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PLACEHOLDER,
+                "build": failure,
+            }
+        )
+        with self.assertRaises(SystemExit) as raised:
+            resolve(tool, ATTR, build=False)
+        message = str(raised.exception.code)
+        self.assertIn(ATTR, message)
+        self.assertIn("--build", message)
+        self.assertIn("max-jobs = 0", message)
+
+    def test_asking_for_a_build_builds(self):
+        """With `--build` the attribute is built with nothing switched
+        off, placeholder or not."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "build": PATH,
+            }
+        )
+        self.assertEqual(tool.store_paths(ATTR, build=True), [PATH])
+        self.assertNotIn("--max-jobs", tool.nix.call(f"build {ATTR}"))
+
+    def test_an_app_under_a_placeholder_is_looked_up_through_its_drv(self):
+        """An app whose program sits under a placeholder is looked up
+        through the drv named in the program's string context, with
+        building switched off."""
+        drv = "/nix/store/xa1h0qrwyzjd3kzf06rk0sk6wdlnqm4z-hello.drv"
+        tool = resolving(
+            {
+                "eval --json": '"app"',
+                "eval --raw": f"{PLACEHOLDER}/bin/hello",
+                "eval --raw .#hello.program --apply": drv,
+                "build": PATH,
+            }
+        )
+        paths, _ = resolve(tool, ATTR, build=False)
+        self.assertEqual(paths, [PATH])
+        self.assertIn("--max-jobs 0", tool.nix.call(f"build {drv}^out"))
+
+    def test_the_attribute_type_is_evaluated_once(self):
+        """Falling back from evaluating to a lookup reuses the answer to
+        whether the attribute is an app, rather than evaluating the
+        flake a second time to ask again."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PLACEHOLDER,
+                "build": PATH,
+            }
+        )
+        resolve(tool, ATTR, build=False)
+        self.assertEqual(tool.nix.count("eval --json"), 1)
+
+    def test_every_output_of_a_build_is_kept(self):
+        """A build that prints two outputs links both."""
+        other = "/nix/store/k8kmic5pxq0436rpi25a0pi3jbifcyp6-hello-2.12.1-man"
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "build": f"{PATH}\n{other}",
+            }
+        )
+        self.assertEqual(tool.store_paths(ATTR, build=True), [PATH, other])
+
+    def test_something_that_is_not_a_store_path_is_refused(self):
+        """Whatever the route, a link may only name a path a cache can
+        serve. A build that printed a placeholder exits instead of being
+        posted as though it were a path."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "build": PLACEHOLDER,
+            }
+        )
+        with self.assertRaises(SystemExit):
+            tool.store_paths(ATTR, build=True)
+
+    def test_a_build_that_names_nothing_is_refused(self):
+        """A build that printed no paths exits rather than linking none."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "build": "",
+            }
+        )
+        with self.assertRaises(SystemExit):
+            tool.store_paths(ATTR, build=True)
 
 
 class Digest(unittest.TestCase):
