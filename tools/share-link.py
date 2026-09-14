@@ -27,11 +27,11 @@ An attribute may be a package (`.#hello`) or an app
 than a derivation, so what lands in the link is the store path holding
 that program, which is what the guest mounts.
 
-An attribute whose output path is not a function of its inputs — a
-dynamic derivation, a content addressed one — evaluates to a
-placeholder instead of a path, and is built whatever `--build` says: it
-still produces an ordinary store path, but realising it is the only way
-to learn which one.
+An attribute whose output path is not a function of its inputs, such
+as a content addressed derivation or a package built on a dynamic
+derivation, evaluates to a placeholder instead of a path. Such an
+attribute is built whatever `--build` says. It still produces an
+ordinary store path, and realising it is the only way to learn which.
 
 `--verify` asks the cache whether it really has each path and whether a
 browser is allowed to read it. Both failures produce a link that dies at
@@ -40,6 +40,7 @@ correct, public, and still unreadable from a page.
 """
 
 import argparse
+import enum
 import json
 import re
 import subprocess
@@ -59,23 +60,27 @@ STORE_PREFIX = "/nix/store/"
 # "", "nix", "store", "<basename>" — a store path split on "/".
 STORE_PATH_PARTS = 4
 
+# The characters nix spells a hash with: the digits and the lowercase
+# letters, less e, o, u and t.
+NIX_BASE32 = "0123456789abcdfghijklmnpqrsvwxyz"
+
 # A store path as a cache knows it: the store directory, a digest, a
 # dash, and a name.
 STORE_PATH = re.compile(
-    rf"{re.escape(STORE_PREFIX)}[0-9a-z]{{{DIGEST_LENGTH}}}-[^/]+\Z"
+    rf"{re.escape(STORE_PREFIX)}[{NIX_BASE32}]{{{DIGEST_LENGTH}}}-[^/]+\Z"
 )
 
-# A hash in nix's base32, which is what a placeholder is made of.
+# A sha256 hash in nix's base32, which is what a placeholder is made of.
 PLACEHOLDER_LENGTH = 52
 
 # What an evaluation gives back in place of an output path it cannot
-# know yet. A dynamic derivation's output path is decided while it is
-# built rather than by its inputs (`builtins.outputOf` naming an output
-# of a derivation another derivation wrote), and a content addressed
-# one's by what the build produced, so neither has a path to evaluate
-# to. What they build is an ordinary store path all the same, and
-# realising them is the only way to find out which one.
-PLACEHOLDER = re.compile(rf"/[0-9a-z]{{{PLACEHOLDER_LENGTH}}}(?:/|$)")
+# know yet. A content addressed derivation's output path is decided by
+# what its build produced, and a dynamic derivation's by a derivation
+# another build wrote (`builtins.outputOf`). A derivation that takes
+# either as an input cannot know its own path until theirs are known.
+# None of them has a path to evaluate to, but each still builds an
+# ordinary store path.
+PLACEHOLDER = re.compile(rf"/[{NIX_BASE32}]{{{PLACEHOLDER_LENGTH}}}(?:/|\Z)")
 
 # What a browser needs on a response to be allowed to read it at all.
 CORS_HEADER = "access-control-allow-origin"
@@ -109,15 +114,24 @@ def nix(*args):
     return result.stdout.strip()
 
 
-def is_app(attr):
-    """Whether a flake attribute is an app rather than a derivation.
+class Kind(enum.Enum):
+    """What a flake attribute is, named by the `type` nix gives it."""
+
+    PACKAGE = "derivation"
+    APP = "app"
+
+
+def kind_of(attr):
+    """Whether a flake attribute is a package or an app.
 
     Every derivation carries `type = "derivation"` and every flake app
     carries `type = "app"`, so one evaluation separates them. An
     attribute with no `type` at all is neither, and nix's own error is
     the clearest thing to report.
     """
-    return nix("eval", "--json", f"{attr}.type") == '"app"'
+    if nix("eval", "--json", f"{attr}.type") == '"app"':
+        return Kind.APP
+    return Kind.PACKAGE
 
 
 def app_program(attr):
@@ -154,55 +168,55 @@ def containing_store_path(path):
     return "/".join(parts[:STORE_PATH_PARTS])
 
 
-def evaluated_store_paths(attr):
+def evaluated_store_paths(attr, kind):
     """The store path an attribute names, building only if it has to.
 
     Evaluating is the default, because the caller's previous step built
-    this and their cache step pushed it; asking nix to build it again
+    this and their cache step pushed it. Asking nix to build it again
     would at best be a no-op and at worst pull a closure onto a runner
-    for no reason. An attribute nothing has built still evaluates fine —
-    the path is a function of the inputs — and `--verify` is what
+    for no reason. An attribute nothing has built still evaluates fine,
+    since the path is a function of the inputs, and `--verify` is what
     notices that no cache has it.
 
-    Unless the path is not a function of the inputs. A dynamic
-    derivation evaluates to a placeholder, and there is nothing to read
-    a store path out of until it has been realised, so an attribute that
-    names one is built even here. That costs what the caller's own build
-    step already paid: the paths are in the store, and nix hands them
-    back rather than making them again.
+    An attribute that evaluates to a placeholder is the exception. There
+    is no store path to read out of a placeholder, so the attribute is
+    realised even here. When the caller's build step ran against the
+    same store, nix hands back the paths that step made. Otherwise this
+    substitutes or builds them.
     """
-    app = is_app(attr)
-    path = app_program(attr) if app else nix("eval", "--raw", f"{attr}.outPath")
+    # Ask nix for the path without building anything.
+    if kind is Kind.APP:
+        path = app_program(attr)
+    else:
+        path = nix("eval", "--raw", f"{attr}.outPath")
 
+    # A placeholder names no store path, so realise the attribute instead.
     if is_placeholder(path):
         print(
             f"note: {attr} evaluates to {path}, a placeholder rather than a store "
             "path; realising it to find out which path it stands for",
             file=sys.stderr,
         )
-        return built_store_paths(attr, app)
+        return built_store_paths(attr, kind)
 
     return [containing_store_path(path)]
 
 
-def built_store_paths(attr, app=None):
+def built_store_paths(attr, kind):
     """Build an attribute and return every output nix installed.
 
     `nix build` refuses an app, since a set naming a program is not a
     derivation. The program string carries that derivation in its string
-    context, so the context names the drv to build. `app` is that
-    question already answered, for a caller that had to ask it.
+    context, so the context names the drv to build.
 
     A multi-output package prints one path per output nix chose to
     install, and all of them belong in the link: dropping one would drop
     programs the reader was told they would get. Evaluation cannot see
     that, which is one reason the two modes can disagree.
     """
-    if app is None:
-        app = is_app(attr)
-
+    # An app is built through the drv its program string depends on.
     target = attr
-    if app:
+    if kind is Kind.APP:
         drv = nix(
             "eval",
             "--raw",
@@ -212,6 +226,7 @@ def built_store_paths(attr, app=None):
         )
         target = f"{drv}^out"
 
+    # A build that printed nothing has nothing to link.
     paths = nix("build", target, "--no-link", "--print-out-paths").splitlines()
     if not paths:
         sys.exit(f"nix build {target} named no store paths")
@@ -226,7 +241,14 @@ def store_paths(attr, build):
     though it were a path and boot for nobody (#10), and saying so is
     better than linking it.
     """
-    paths = built_store_paths(attr) if build else evaluated_store_paths(attr)
+    # Ask what the attribute is once, for whichever route resolves it.
+    kind = kind_of(attr)
+    if build:
+        paths = built_store_paths(attr, kind)
+    else:
+        paths = evaluated_store_paths(attr, kind)
+
+    # Only a store path may reach the link.
     for path in paths:
         if not is_store_path(path):
             sys.exit(f"{attr} resolved to {path}, which is not a store path")

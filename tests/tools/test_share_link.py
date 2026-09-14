@@ -1,7 +1,7 @@
 """Tests for the pure parts of tools/share-link.py: composing the link
 the GitHub action posts, naming a cache from its shorthand, reading a
 store path's digest, and deciding what an attribute resolved to. Nothing
-here builds or reaches the network — the resolution tests answer for nix
+here builds or reaches the network. The resolution tests answer for nix
 instead of running it."""
 
 import contextlib
@@ -18,8 +18,9 @@ CACHE = "https://my-cache.cachix.org"
 KEY = "my-cache.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY="
 PATH = "/nix/store/vd1265k8rg8jgjvdm5hf5cvwbdbhywyh-hello-2.12.1"
 
-# What a dynamic derivation evaluates to, from the comment that opened
-# issue #10: a slash and a hash, naming nothing a cache could serve.
+# What `.outPath` gave back for a package built on a dynamic derivation,
+# from the comment that opened issue #10: a slash and a hash, naming
+# nothing a cache could serve.
 PLACEHOLDER = "/0j78px59wbg76xis7aaj1vrvxwzc681pw013j66bzmra824fs69w"
 
 ATTR = ".#hello"
@@ -27,22 +28,30 @@ ATTR = ".#hello"
 
 class Nix:
     """The nix the tool shells out to, answering from a script rather
-    than a store. Keyed by the arguments as one string, so a test says
-    what each invocation gives back and can then ask what was run."""
+    than a store. Keyed by a prefix of the arguments as one string, so a
+    test says what each invocation gives back and can then ask what was
+    run. The longest matching prefix answers, so a test can single out
+    one invocation without caring what order it lists the answers in."""
 
     def __init__(self, answers):
         self.answers = answers
         self.calls = []
 
     def __call__(self, *args):
-        self.calls.append(" ".join(args))
-        for prefix, answer in self.answers.items():
-            if self.calls[-1].startswith(prefix):
-                return answer
-        raise AssertionError(f"unexpected: nix {self.calls[-1]}")
+        call = " ".join(args)
+        self.calls.append(call)
+
+        # Pick the most specific scripted answer for this invocation.
+        matches = [prefix for prefix in self.answers if call.startswith(prefix)]
+        if not matches:
+            raise AssertionError(f"unexpected: nix {call}")
+        return self.answers[max(matches, key=len)]
 
     def ran(self, prefix):
-        return any(call.startswith(prefix) for call in self.calls)
+        return self.count(prefix) > 0
+
+    def count(self, prefix):
+        return sum(call.startswith(prefix) for call in self.calls)
 
 
 def resolving(answers):
@@ -178,44 +187,62 @@ class ContainingStorePath(unittest.TestCase):
 
 
 class StorePathsAndPlaceholders(unittest.TestCase):
-    """Telling a path from the stand-in for one. An attribute whose
-    output path is not a function of its inputs — a dynamic derivation,
-    a content addressed one — evaluates to a placeholder: a slash and 52
-    base32 characters, with no store directory and no name."""
+    """Telling a store path from the stand-in for one. An attribute whose
+    output path is not a function of its inputs evaluates to a
+    placeholder: a slash and 52 characters of nix's base32, with no store
+    directory and no name. Each test hands the two predicates a string
+    and checks which of them claims it."""
 
     def test_a_store_path_is_one(self):
+        """A plain store path is a store path and not a placeholder."""
         tool = load()
         self.assertTrue(tool.is_store_path(PATH))
         self.assertFalse(tool.is_placeholder(PATH))
 
     def test_a_placeholder_is_not_a_store_path(self):
+        """The placeholder from issue #10 is recognised as one."""
         tool = load()
         self.assertTrue(tool.is_placeholder(PLACEHOLDER))
         self.assertFalse(tool.is_store_path(PLACEHOLDER))
 
     def test_a_program_under_a_placeholder_is_still_a_placeholder(self):
+        """An app's program string keeps the placeholder as its prefix."""
         tool = load()
         self.assertTrue(tool.is_placeholder(f"{PLACEHOLDER}/bin/hello"))
 
     def test_a_path_outside_the_store_is_neither(self):
+        """An FHS path is refused by both predicates."""
         tool = load()
         self.assertFalse(tool.is_store_path("/usr/bin/hello"))
         self.assertFalse(tool.is_placeholder("/usr/bin/hello"))
 
     def test_a_file_inside_a_store_path_is_not_the_store_path(self):
+        """A program inside a store path has to be trimmed before linking."""
         tool = load()
         self.assertFalse(tool.is_store_path(f"{PATH}/bin/hello"))
 
+    def test_letters_outside_nix_base32_are_neither(self):
+        """Nix's base32 has no e, o, u or t. A hash spelled with one of
+        them came from something other than nix."""
+        tool = load()
+        self.assertFalse(tool.is_placeholder("/" + "e" * tool.PLACEHOLDER_LENGTH))
+        self.assertFalse(
+            tool.is_store_path(f"{tool.STORE_PREFIX}{'e' * tool.DIGEST_LENGTH}-hello")
+        )
+
 
 class Resolving(unittest.TestCase):
-    """What an attribute resolves to, and when that costs a build.
+    """What an attribute resolves to, and when that costs a build. Each
+    test scripts nix's answers, resolves `.#hello`, and checks the paths
+    and which nix commands ran.
 
-    Evaluating is the default and stays that way. A dynamic derivation
-    is the exception: it evaluates to a placeholder, so the only way to
-    name the path it stands for is to realise it (#10), and a
-    placeholder in a link would be a comment nobody could boot."""
+    Evaluating is the default and stays that way. An attribute that
+    evaluates to a placeholder is the exception: the only way to name the
+    path behind it is to realise it (#10), and a placeholder in a link
+    would be a comment nobody could boot."""
 
     def test_a_package_is_evaluated_and_not_built(self):
+        """A package with a real outPath is linked without a build."""
         tool = resolving(
             {
                 "eval --json": '"derivation"',
@@ -226,6 +253,7 @@ class Resolving(unittest.TestCase):
         self.assertFalse(tool.nix.ran("build"))
 
     def test_an_app_resolves_to_the_store_path_holding_its_program(self):
+        """An app's program is trimmed to its store path without a build."""
         tool = resolving(
             {
                 "eval --json": '"app"',
@@ -236,6 +264,8 @@ class Resolving(unittest.TestCase):
         self.assertFalse(tool.nix.ran("build"))
 
     def test_a_placeholder_is_realised_rather_than_linked(self):
+        """A package whose outPath is a placeholder is built, the built
+        path is linked, and the log names the placeholder."""
         tool = resolving(
             {
                 "eval --json": '"derivation"',
@@ -249,12 +279,14 @@ class Resolving(unittest.TestCase):
         self.assertIn(PLACEHOLDER, said)
 
     def test_an_app_under_a_placeholder_is_realised_through_its_drv(self):
+        """An app whose program sits under a placeholder is built through
+        the drv named in the program's string context."""
         drv = "/nix/store/xa1h0qrwyzjd3kzf06rk0sk6wdlnqm4z-hello.drv"
         tool = resolving(
             {
                 "eval --json": '"app"',
-                "eval --raw .#hello.program --apply": drv,
                 "eval --raw": f"{PLACEHOLDER}/bin/hello",
+                "eval --raw .#hello.program --apply": drv,
                 "build": PATH,
             }
         )
@@ -262,7 +294,22 @@ class Resolving(unittest.TestCase):
         self.assertEqual(paths, [PATH])
         self.assertTrue(tool.nix.ran(f"build {drv}^out"))
 
+    def test_the_attribute_type_is_evaluated_once(self):
+        """Falling back from evaluating to building reuses the answer to
+        whether the attribute is an app, rather than evaluating the
+        flake a second time to ask again."""
+        tool = resolving(
+            {
+                "eval --json": '"derivation"',
+                "eval --raw": PLACEHOLDER,
+                "build": PATH,
+            }
+        )
+        resolve(tool, ATTR, build=False)
+        self.assertEqual(tool.nix.count("eval --json"), 1)
+
     def test_every_output_of_a_build_is_kept(self):
+        """A build that prints two outputs links both."""
         other = "/nix/store/k8kmic5pxq0436rpi25a0pi3jbifcyp6-hello-2.12.1-man"
         tool = resolving(
             {
@@ -274,8 +321,8 @@ class Resolving(unittest.TestCase):
 
     def test_something_that_is_not_a_store_path_is_refused(self):
         """Whatever the route, a link may only name a path a cache can
-        serve; a nix that answered with a placeholder would be posted as
-        though it were one."""
+        serve. A build that printed a placeholder exits instead of being
+        posted as though it were a path."""
         tool = resolving(
             {
                 "eval --json": '"derivation"',
@@ -286,6 +333,7 @@ class Resolving(unittest.TestCase):
             tool.store_paths(ATTR, build=True)
 
     def test_a_build_that_names_nothing_is_refused(self):
+        """A build that printed no paths exits rather than linking none."""
         tool = resolving(
             {
                 "eval --json": '"derivation"',

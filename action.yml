@@ -51,12 +51,6 @@ inputs:
       the normal shape is a `nix build` step earlier in the same job and a
       cache step that pushes what it made; evaluation then costs nothing
       and names the same paths. Turn it on when nothing else builds.
-
-      An attribute whose output path is not a function of its inputs — a
-      dynamic derivation, a content addressed one — evaluates to a
-      placeholder rather than a path, and is realised whatever this says:
-      a store path is what the link needs and realising is the only way
-      to learn which one it is.
     required: false
     default: "false"
 
