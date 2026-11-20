@@ -17,9 +17,11 @@ not produce named package events.
 | `grail_opened`                               | The generated Grail link is clicked               | None                                                                      |
 
 Selection methods are `picker`, `range`, `url`, and `agent`. Operations
-are `boot` and `add`. Boot mode is `snapshot`, `cold`, or `unknown` when
-unavailable or adding to a running guest. Failure stages identify the
-broad phase (`isolation`, `closure`, `download`, `guest`); parallel engine
+are `boot` and `add`. Boot mode is `snapshot` or `cold` on the qemu
+engine, `unkernel` on the unkernel engine, or `unknown` when unavailable
+or adding to a running guest. Failure stages identify the broad phase
+(`isolation`, `engine`, `closure`, `download`, `guest`); `engine` is a
+browser that cannot run the engine the link named, and parallel engine
 startup failures can appear under `download`.
 
 Package requests count attempts, including retries. Adding to a running

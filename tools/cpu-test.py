@@ -271,8 +271,16 @@ def main():
     # The cache is named by a path relative to whatever origin serves the
     # page, so one link works against a local directory and the deployed
     # site alike.
+    #
+    # The probe is x86_64 machine code checking the qemu engine's CPU,
+    # so the link names that engine.
     query = urllib.parse.urlencode(
-        {"path": probe, "cache": f"{CACHE_PATH} {public_key}", "boot": "1"}
+        {
+            "path": probe,
+            "cache": f"{CACHE_PATH} {public_key}",
+            "engine": "qemu",
+            "boot": "1",
+        }
     )
     url = f"{base}/?{query}"
     print(f"booting {url}", flush=True)

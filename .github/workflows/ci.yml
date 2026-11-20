@@ -65,6 +65,13 @@ jobs:
       - name: Boots to a shell
         run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --runs 5
 
+      # The run above takes the engine the page picks, which is unkernel.
+      # The qemu engine is the one with the resume handshake and the
+      # snapshot, and it still serves x86_64 store paths and browsers
+      # without JSPI, so it gets the same repeated cold starts.
+      - name: Boots to a shell on the qemu engine
+        run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --engine qemu --runs 5
+
       # The bzip2 decoder is the one the page does not load: it is
       # imported the first time a boot meets a path the cache still
       # stores that way, and hello at its newest is xz like everything
@@ -72,8 +79,10 @@ jobs:
       # 2.7 is bzip2, three paths and a 201 KB archive, so one run buys
       # the module resolving out of the hashed js directory and its wasm
       # fetching under COOP/COEP, neither of which node can stand in for.
+      # hello 2.7 predates Hydra's aarch64 builds, so only the qemu
+      # engine has a build of it to boot.
       - name: Boots a package the cache still keeps in bzip2
-        run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --package 'hello@2.7' --runs 1
+        run: nix run .#boot-test -- --site "$(nix build .#site --no-link --print-out-paths)" --package 'hello@2.7' --engine qemu --runs 1
 
       # Missing names must become visible when a package joins a running VM.
       - name: Adds packages after boot through WebMCP

@@ -60,6 +60,36 @@ class Completion(unittest.TestCase):
         self.assertIn("'python3 -c '\\''print(1)'\\'''", typed)
 
 
+class PageQuery(unittest.TestCase):
+    """Tests the link an entry is booted with: the entry's spec, the
+    engine named outright so a record never depends on the page's
+    default, and boot=1. Called directly with suite-shaped entries."""
+
+    def test_package(self):
+        bench = load()
+        entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
+        self.assertEqual(
+            bench.page_query(entry, "unkernel"),
+            {"pkg": "hello", "engine": "unkernel", "boot": "1"},
+        )
+
+    def test_engine_is_always_named(self):
+        bench = load()
+        entry = {"name": "x", "spec": "path=/nix/store/abc-x-1", "command": "x"}
+        self.assertEqual(
+            bench.page_query(entry, "qemu"),
+            {"path": "/nix/store/abc-x-1", "engine": "qemu", "boot": "1"},
+        )
+
+    def test_suite_runs_on_either_engine(self):
+        """Every entry is found by name in the index, so each engine
+        resolves the build for its own system; a store path would pin
+        the suite to one of them."""
+        bench = load()
+        for entry in bench.SUITE:
+            self.assertTrue(entry["spec"].startswith("pkg="), entry["name"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

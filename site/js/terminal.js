@@ -70,14 +70,20 @@ function fitToViewport(element) {
 const BACKGROUND_PROPERTY = "--console-bg";
 
 // The bridge, in both directions: what the guest writes is drawn, what
-// is typed goes through the key bar's modifiers to the line
-// discipline, and a resized terminal tells the guest its new size.
-function bridge(terminal, master, keyBar) {
-  master.onWrite(([data, callback]) => terminal.write(data, callback));
-  terminal.onData((data) =>
-    master.ldisc.writeFromLower(keyBar.transform(data)),
-  );
-  terminal.onResize(({ cols, rows }) => master.notifyResize(rows, cols));
+// is typed goes through the key bar's modifiers to the guest, and a
+// resized terminal tells the guest its new size.
+//
+// `port` is the guest's end, the same three operations whichever
+// engine is behind them: `send(data)` types into the guest's terminal,
+// `onOutput(draw)` registers the function called with each piece the
+// guest prints (and an optional callback for when the piece is drawn),
+// and `resize(rows, cols)` reports a new size. qemu's port is the
+// xterm-pty line discipline in front of a serial console (boot.js);
+// unkernel's port is a pty inside the guest (unkernel.js).
+function bridge(terminal, port, keyBar) {
+  port.onOutput((data, drawn) => terminal.write(data, drawn));
+  terminal.onData((data) => port.send(keyBar.transform(data)));
+  terminal.onResize(({ cols, rows }) => port.resize(rows, cols));
 }
 
 // Ctrl-C over a selection is a copy, everywhere else in the browser.
@@ -106,8 +112,8 @@ function handleCopyKey(terminal) {
   });
 }
 
-// Returns { terminal, attach } — attach wires a pty master to it.
-// keyBarElement holds the touch key bar (keybar.js).
+// Returns { terminal, attach } — attach wires a guest's port (see
+// bridge) to it. keyBarElement holds the touch key bar (keybar.js).
 export async function openTerminal(element, keyBarElement) {
   const {
     init,
@@ -166,13 +172,13 @@ export async function openTerminal(element, keyBarElement) {
 
   return {
     terminal,
-    attach: (master) => {
+    attach: (port) => {
       const keyBar = new KeyBar(keyBarElement, {
-        send: (data) => master.ldisc.writeFromLower(data),
+        send: (data) => port.send(data),
         focus,
         zoom,
       });
-      bridge(terminal, master, keyBar);
+      bridge(terminal, port, keyBar);
     },
   };
 }

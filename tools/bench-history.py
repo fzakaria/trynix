@@ -315,7 +315,9 @@ def measure_emubench(site, probe, cache, count, browser, workdir, log):
 
 def measure_exec(site, only, browser, workdir, log):
     out = os.path.join(workdir, "exec-bench.json")
-    arguments = ["--site", site, "--json", out, "--browser", browser]
+    # The history is of qemu engine releases, so the guest runs on qemu
+    # whatever the page's default engine is.
+    arguments = ["--site", site, "--json", out, "--browser", browser, "--guest-engine", "qemu"]
     for name in only or []:
         arguments += ["--only", name]
     # exec-bench exits nonzero when any entry failed but still writes

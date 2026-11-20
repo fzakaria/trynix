@@ -3,9 +3,19 @@
 Boot anything nixpkgs ever shipped, in your browser: https://trynix.dev
 
 Pick a package and a version from 13 years of nixpkgs history. Its
-closure is fetched from cache.nixos.org into an x86_64 Linux virtual
-machine running in the tab, and you get a shell with the package on
-PATH. Nothing runs on a server.
+closure is fetched from cache.nixos.org into a Linux guest running in
+the tab, and you get a shell with the package on PATH. Nothing runs on
+a server.
+
+The guest runs on one of two engines. The default is [unkernel], a
+Linux kernel compiled to WebAssembly that runs aarch64 programs; it
+starts in under half a second and runs a large binary's first
+invocation about ten times faster than the other
+([docs/unkernel.md](docs/unkernel.md) has the measurements). The other
+is [qemu-wasm], a whole x86_64 machine, which the page uses for
+x86_64 store paths and for browsers without JSPI, and which a link
+selects with `engine=qemu`. The rest of this page describes the qemu
+engine, which is the one built in this repository.
 
 trynix is glue between existing pieces. The [nixpkgs-multiverse]
 index resolves any `(attribute, version)` in nixpkgs history to the
@@ -131,7 +141,8 @@ The docs are [design.md](docs/design.md) for the architecture and what
 was measured, [engine.md](docs/engine.md) for building and publishing
 the engine and the snapshot, and [performance.md](docs/performance.md)
 for where a first run's time goes and which optimisations were dead
-ends, and [webmcp.md](docs/webmcp.md) for driving the page from code. [trynix.dev/bench/](https://trynix.dev/bench/) charts every engine
+ends, [unkernel.md](docs/unkernel.md) for the second engine, and
+[webmcp.md](docs/webmcp.md) for driving the page from code. [trynix.dev/bench/](https://trynix.dev/bench/) charts every engine
 release against the same probes and packages, and says what moved each
 number.
 
@@ -163,5 +174,6 @@ MIT, please see [LICENSE](LICENSE).
 [nixpkgs-multiverse]: https://github.com/fzakaria/nixpkgs-multiverse
 [grail]: https://github.com/fzakaria/grail
 [qemu-wasm]: https://github.com/ktock/qemu-wasm
+[unkernel]: https://github.com/pithings/unkernel
 [ghostty-web]: https://github.com/coder/ghostty-web
 [tomberek]: https://github.com/tomberek

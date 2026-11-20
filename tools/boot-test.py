@@ -45,6 +45,9 @@ import websocket
 # this appears.
 READY_MARKER = "welcome to the multiverse"
 
+# The page's engines (site/js/engine.js), by the name a link carries.
+ENGINES = ["unkernel", "qemu"]
+
 # The page gives the guest 180 s before it gives up, so a boot that is
 # going to hang hangs for that long. Anything over this is a failure,
 # not a slow machine: a healthy cold boot is a few seconds.
@@ -268,11 +271,25 @@ def boot_once(binary, url, limit, workdir, index, check_clock):
         browser.close()
 
 
+def page_url(base, package, engine):
+    """The link that boots `package` without a click, naming `engine`
+    when one was asked for and leaving the choice to the page when not."""
+    url = f"{base}/?pkg={package}"
+    if engine is not None:
+        url += f"&engine={engine}"
+    return url + "&boot=1"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
     parser.add_argument("--url", help="boot this URL instead of serving a directory")
     parser.add_argument("--package", default=DEFAULT_PACKAGE)
+    parser.add_argument(
+        "--engine",
+        choices=ENGINES,
+        help="boot on this engine rather than the one the page picks",
+    )
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
     parser.add_argument("--limit", type=float, default=DEFAULT_LIMIT_SECONDS)
     parser.add_argument(
@@ -290,7 +307,7 @@ def main():
         url = args.url
     else:
         base, shutdown = serve(args.site)
-        url = f"{base}/?pkg={args.package}&boot=1"
+        url = page_url(base, args.package, args.engine)
 
     print(f"booting {url}", flush=True)
     print(f"{args.runs} cold boots, each must reach a shell within {args.limit:g}s", flush=True)

@@ -19,6 +19,13 @@ The pieces already exist in sibling projects; trynix is the glue:
 - [qemu-wasm] runs the result — QEMU compiled with emscripten, executing
   an x86_64 guest in the tab.
 
+The page has two engines, and this document describes the first one
+it had, qemu-wasm. The default is now [unkernel](./unkernel.md), a
+Linux kernel compiled to WebAssembly that runs aarch64 programs; it
+shares the resolve, walk and fetch steps below and the store share,
+and replaces the resume. `engine=qemu` in a link selects the engine
+described here.
+
 ## The pipeline
 
 1. **Resolve.** Attribute (and optionally a version range) to one or
@@ -90,6 +97,7 @@ for what is on screen:
 | `pkg=ripgrep`                      | the newest version the index has          |
 | `path=/nix/store/<digest>-name`    | a store path, verbatim                    |
 | `cache=https://x.cachix.org x-1:…` | an extra binary cache and its public key  |
+| `engine=qemu`                      | the engine, when not the default          |
 | `boot=1`                           | start without a click                     |
 
 Each parameter may repeat. `cache` is what makes a store path from

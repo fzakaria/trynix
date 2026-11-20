@@ -8,6 +8,7 @@ export const SelectionMethod = Object.freeze({
 export const LoadOperation = Object.freeze({ BOOT: "boot", ADD: "add" });
 export const LoadStage = Object.freeze({
   ISOLATION: "isolation",
+  ENGINE: "engine",
   CLOSURE: "closure",
   DOWNLOAD: "download",
   GUEST: "guest",
@@ -17,6 +18,7 @@ export const BootMode = Object.freeze({
   UNKNOWN: "unknown",
   SNAPSHOT: "snapshot",
   COLD: "cold",
+  UNKERNEL: "unkernel",
 });
 export const CacheResult = Object.freeze({ HIT: "hit", MISS: "miss" });
 export const AnalyticsEvent = Object.freeze({

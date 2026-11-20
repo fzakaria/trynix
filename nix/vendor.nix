@@ -12,6 +12,11 @@
 # serves bzip2 for the oldest paths, xz for most of them and zstd for
 # the newest. coi-serviceworker injects the COOP/COEP headers on hosts
 # that cannot set them (GitHub Pages).
+#
+# unkernel is the second engine (site/js/engine.js): a Linux kernel
+# compiled to wasm, with its JavaScript SDK. The npm package carries
+# the kernel prebuilt, base system included, so unlike the qemu engine
+# there is nothing to build out of band and nothing to publish.
 { pkgs }:
 let
   npm =
@@ -29,6 +34,9 @@ let
   ghostty =
     npm "ghostty-web" "0.4.0-next.20.g1858a59"
       "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
+  unkernel =
+    npm "unkernel" "0.2.0-261119-040e142"
+      "0qg1giyy1r7lgyrb4skdn2cf21lqjc2v12f23x2gskfrh7s445h0";
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
@@ -82,4 +90,15 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   # fallback; copied so the browser's probe for it is a hit, not a 404.
   cp unpack/package/dist/__vite-browser-external-*.js $out/ 2>/dev/null || true
   cp unpack/package/ghostty-vt.wasm $out/ghostty-vt.wasm
+  rm -r unpack/package
+
+  # The SDK's browser entry, the chunk the entry imports by relative
+  # path, and the kernel. The Node entry and the CLI stay behind: the
+  # page never loads them. The workers the SDK starts are inlined in
+  # the entry as blobs, so there is no worker file to place.
+  tar -xzf ${unkernel} -C unpack
+  mkdir -p $out/unkernel/_chunks
+  cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
+  cp unpack/package/dist/_chunks/core.mjs $out/unkernel/_chunks/core.mjs
+  cp unpack/package/dist/unkernel.wasm $out/unkernel/unkernel.wasm
 ''

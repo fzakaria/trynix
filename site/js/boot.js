@@ -16,31 +16,18 @@
 // terminal itself comes from terminal.js.
 /* global openpty */
 
-import {
-  ensureDir,
-  linkPrograms,
-  Precedence,
-  programsOf,
-  writeEntries,
-} from "./store.js";
+import { ensureDir, Precedence } from "./store.js";
+import { GUEST_BIN_DIR, SHARE_DIR, STORE_DIR, storeShare } from "./share.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
+import { consoleRecorder, pause, settled } from "./console.js";
 import { log } from "./log.js";
 
 // The guest sees: -L /pack (BIOS, kernel, initramfs) and the 9p share
 // /share the init script mounts (tag store0, matching nix/guest/init).
+// The share's own layout is in share.js, which the unkernel engine
+// builds the same way.
 const PACK_DIR = "/pack";
-const SHARE_DIR = "/share";
-const STORE_DIR = `${SHARE_DIR}/nix/store`;
-
-// The farm: one directory of symlinks, one per program in the closure,
-// that the guest keeps on PATH for the life of the VM. Adding a package
-// later means adding links here, which the guest sees through 9p the
-// moment they exist — nothing has to be typed at its shell, and PATH
-// never grows past two entries.
-const BIN_DIR = `${SHARE_DIR}/bin`;
-const GUEST_BIN_DIR = BIN_DIR;
-const GUEST_STORE_DIR = "/nix/store";
 
 // The shell fragment the guest init sources. PATH, and deliberately
 // nothing else.
@@ -142,20 +129,14 @@ const RESUMED_MARKER = "vm_state_notify running 1";
 // offering newlines blind, as it did before it could ask.
 const RESUMED_TIMEOUT_MS = 10000;
 
-const TRANSCRIPT_LIMIT = 65536;
 // How often a guest QEMU never spoke for is offered its newline.
 const RESUME_POLL_MS = 300;
-// How long the console must say nothing before the guest is taken to
-// have finished coming up, and how long that is waited for at most.
-const SETTLE_MS = 400;
-const SETTLE_LIMIT_MS = 3000;
 
 // Ctrl-L: the shell's line editor clears its screen and draws the
 // prompt again. Clearing the terminal from this side wipes the prompt
 // with everything else, and a reader facing an empty console assumes
 // it is still loading.
 const REDRAW_PROMPT = "\x0c";
-const HANDSHAKE_TIMEOUT_MS = 180000;
 
 // MEMFS takes the buffer it is handed rather than copying it: the
 // bytes then exist once, in the filesystem, instead of once there and
@@ -171,53 +152,6 @@ function qemuArgs(machine) {
   return machine.args.map((arg) =>
     arg.replace(/\{(\w+)\}/g, (_, name) => values[name]),
   );
-}
-
-// The store share, as the page maintains it: which paths have been
-// written, what programs each one offers, and the farm of links.
-function storeShare(FS) {
-  const programs = new Map();
-
-  return {
-    // Materialise one parsed NAR. A path already there is left alone —
-    // a store path is immutable, so there is nothing to update.
-    write(basename, entries) {
-      if (programs.has(basename)) {
-        return;
-      }
-      writeEntries(FS, `${STORE_DIR}/${basename}`, entries);
-      programs.set(basename, programsOf(entries));
-    },
-
-    // Offer a written path's programs in the farm.
-    link(basename, precedence) {
-      linkPrograms(
-        FS,
-        BIN_DIR,
-        `${GUEST_STORE_DIR}/${basename}`,
-        programs.get(basename) ?? [],
-        precedence,
-      );
-    },
-
-    // Link a batch: the roots — what the reader asked for — first, so
-    // they win a collision, then the rest only where a name is still
-    // free, so a dependency never shadows a selection. `precedence`
-    // says whether a root may replace a link an earlier batch made.
-    linkAll(basenames, roots, precedence) {
-      for (const basename of roots) {
-        this.link(basename, precedence);
-      }
-      for (const basename of basenames) {
-        if (!roots.includes(basename)) {
-          this.link(basename, Precedence.KEEP);
-        }
-      }
-    },
-
-    programsOf: (basename) => programs.get(basename) ?? [],
-    written: () => [...programs.keys()],
-  };
 }
 
 // guestFiles: Map of name -> Uint8Array (bzImage, initramfs, BIOS).
@@ -241,7 +175,7 @@ export async function startVM({
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
   const { master, slave } = openpty();
-  ui.attach(master);
+  ui.attach(ptyPort(master));
 
   // The console transcript, tapped before the terminal draws it.
   const console_ = watchConsole(master);
@@ -404,6 +338,18 @@ export async function startVM({
   };
 }
 
+// The terminal's view of the guest (terminal.js, bridge): keystrokes go
+// into the xterm-pty line discipline, which is what turns them into the
+// bytes QEMU's serial console reads, and a new size goes to the same
+// place.
+function ptyPort(master) {
+  return {
+    send: (data) => send(master, data),
+    onOutput: (draw) => master.onWrite(([data, drawn]) => draw(data, drawn)),
+    resize: (rows, cols) => master.notifyResize(rows, cols),
+  };
+}
+
 // A cold boot announces itself, takes one newline, and mounts.
 async function coldBoot(console_, master, terminal) {
   await console_.waitFor(READY_MARKER);
@@ -450,7 +396,7 @@ async function resume(console_, master, terminal) {
   // prompt. Waiting for silence rather than for a fixed delay is what
   // keeps whatever the guest is still writing from landing after the
   // clear instead of being wiped by it.
-  await settled(console_, SETTLE_MS);
+  await settled(console_);
   terminal.clear();
   send(master, REDRAW_PROMPT);
 }
@@ -463,8 +409,6 @@ function send(master, data) {
 
 const sendLine = (master) => send(master, "\n");
 
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 // Whether `marker` turns up within `ms`.
 async function appeared(console_, marker, ms) {
   return Promise.race([
@@ -473,77 +417,10 @@ async function appeared(console_, marker, ms) {
   ]);
 }
 
-// Resolves once the guest has said nothing for `ms` — or after
-// SETTLE_LIMIT_MS, since a guest that never stops talking is still a
-// guest the reader should be given.
-async function settled(console_, ms) {
-  const deadline = Date.now() + SETTLE_LIMIT_MS;
-  for (;;) {
-    const idle = console_.quietFor();
-    const left = deadline - Date.now();
-    if (idle >= ms || left <= 0) {
-      return;
-    }
-    await pause(Math.min(ms - idle, left));
-  }
-}
-
-// Everything the guest has written, and a way to wait for a line in it.
-//
-// The transcript is capped: a guest that runs for an hour must not
-// grow this without bound, and every marker is answered early in the
-// run.
+// The record of what the guest's console has said (console.js), fed
+// from the pty before the terminal draws anything.
 function watchConsole(master) {
-  let transcript = "";
-  let spokeAt = Date.now();
-  const waiters = [];
-
-  const decoder = new TextDecoder();
-
-  master.onWrite(([data]) => {
-    spokeAt = Date.now();
-    // The pty emits either a string or raw bytes depending on what the
-    // guest wrote; concatenating the bytes directly would stringify the
-    // array and match no marker ever again.
-    transcript +=
-      typeof data === "string" ? data : decoder.decode(data, { stream: true });
-    if (transcript.length > TRANSCRIPT_LIMIT) {
-      transcript = transcript.slice(-TRANSCRIPT_LIMIT);
-    }
-    for (const waiter of waiters.splice(0)) {
-      if (transcript.includes(waiter.marker)) {
-        waiter.resolve();
-      } else {
-        waiters.push(waiter);
-      }
-    }
-  });
-
-  return {
-    transcript: () => transcript,
-
-    // How long the console has said nothing (see settled).
-    quietFor: () => Date.now() - spokeAt,
-
-    // Resolves when the marker has been seen, and gives up quietly
-    // after HANDSHAKE_TIMEOUT_MS: a guest this far off script has a
-    // worse problem than a missing newline, and unveiling its console
-    // is more useful than waiting forever.
-    waitFor(marker) {
-      if (transcript.includes(marker)) {
-        return Promise.resolve();
-      }
-      return new Promise((resolve) => {
-        const waiter = { marker, resolve };
-        waiters.push(waiter);
-        setTimeout(() => {
-          const at = waiters.indexOf(waiter);
-          if (at !== -1) {
-            waiters.splice(at, 1);
-          }
-          resolve();
-        }, HANDSHAKE_TIMEOUT_MS);
-      });
-    },
-  };
+  const recorder = consoleRecorder();
+  master.onWrite(([data]) => recorder.hear(data));
+  return recorder;
 }

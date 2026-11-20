@@ -1,8 +1,10 @@
 // Page wiring: choose packages out of the nixpkgs-multiverse index —
 // by search, by version range, or by raw store path — walk the union of
 // their runtime closures live from cache.nixos.org, then boot.
-// qemu-wasm runs an x86_64 guest in the tab, the closure rides in over
-// virtio-9p, and the serial console lands in the terminal.
+// One of two engines runs the guest in the tab (engine.js): unkernel,
+// a Linux kernel compiled to wasm that runs aarch64 programs, or
+// qemu-wasm, which emulates an x86_64 machine. Either way the closure
+// rides in over 9p and the guest's console lands in the terminal.
 // docs/design.md holds the architecture.
 
 import {
@@ -18,6 +20,15 @@ import {
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { startVM } from "./boot.js";
+import { startUnkernel } from "./unkernel.js";
+import {
+  DEFAULT_ENGINE,
+  Engine,
+  foreignSystem,
+  engineFor,
+  hasJspi,
+  systemOf,
+} from "./engine.js";
 import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
 import { PackagePicker } from "./search.js";
@@ -44,6 +55,8 @@ import { humanBytes } from "./format.js";
 import {
   DIGEST_LENGTH,
   DIGEST_PATTERN,
+  ENGINE,
+  ENGINE_NAMED,
   GUEST_FILES,
   MACHINE_URL,
   NAR_CONCURRENCY,
@@ -52,6 +65,8 @@ import {
   QEMU_WORKER,
   SNAPSHOT_URL,
   SYSTEM,
+  UNKERNEL_KERNEL,
+  UNKERNEL_MAIN,
 } from "./config.js";
 import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
@@ -79,6 +94,8 @@ const consoleSpinner = document.getElementById("console-spinner");
 const rebootLink = document.getElementById("reboot-link");
 const debugLog = document.getElementById("debug-log");
 const addNote = document.getElementById("add-note");
+const engineNote = document.getElementById("engine-note");
+const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
 // progress it was reporting.
@@ -202,6 +219,29 @@ function urlState() {
   };
 }
 
+// The engine a link for `state` has to name, or null when the link
+// can leave the engine out.
+//
+// A store path runs on one engine only, the one whose system the path
+// was built for, so a link carrying a store path always says which. A
+// link of package names resolves against whichever engine opens the
+// link, and names the engine only when the reader's own link did and
+// the engine is not the default. An engine the page fell back to for
+// this browser stays out, because the next reader's browser may be
+// able to run the default.
+function linkEngine(state) {
+  if (state.paths.length > 0) {
+    return ENGINE;
+  }
+  return ENGINE_NAMED && ENGINE !== DEFAULT_ENGINE ? ENGINE : null;
+}
+
+// The link for what is on screen, as a URL relative to this page.
+function link({ boot = false } = {}) {
+  const state = urlState();
+  return writeUrl(state, { boot, engine: linkEngine(state) });
+}
+
 // What the page has to say about the selection beyond the chips: a
 // version a link asked for that the index does not have, or has and
 // cannot boot. Kept here rather than written straight to the status
@@ -309,7 +349,29 @@ function render() {
   // A package with an attribute is shareable by name; a raw store path
   // rides as a path, and the caches ride along. Either way the link
   // reproduces this screen.
-  history.replaceState(null, "", writeUrl(urlState()));
+  history.replaceState(null, "", link());
+  renderEngineNote();
+}
+
+// The line under the boot button: which engine this page is running,
+// which system's packages the engine runs, and a link to the same
+// selection on the other engine.
+//
+// Switching is a link rather than a control because the engine is
+// fixed for the life of the page (config.js, ENGINE). Package names
+// resolve again on the other side; a store path does not travel, and
+// the boot says so if one is carried across (checkSystem).
+function renderEngineNote() {
+  const other = ENGINE === Engine.UNKERNEL ? Engine.QEMU : Engine.UNKERNEL;
+  const switchLink = document.createElement("a");
+  switchLink.href = writeUrl(urlState(), { engine: other });
+  switchLink.textContent = `switch to ${other} (${systemOf(other)})`;
+
+  const parts = [`engine: ${ENGINE}, running ${SYSTEM} packages`];
+  if (ENGINE === Engine.QEMU && !ENGINE_NAMED && !hasJspi()) {
+    parts.push("this browser lacks JSPI, which unkernel needs");
+  }
+  engineNote.replaceChildren(`${parts.join(" · ")} · `, switchLink);
 }
 
 // The debug pane mirrors the log as it is written.
@@ -609,81 +671,28 @@ let mounted = new Map();
 let bootMode = "not started";
 
 function reboot() {
-  location.href = writeUrl(urlState(), { boot: true });
+  location.href = link({ boot: true });
   location.reload();
 }
 
-// The boot flow. The engine, the guest image, the snapshot and the
-// closure download in parallel under one progress panel; the engine
-// is instantiated the moment its inputs are in, and every NAR is
-// written into the share as it lands, while the rest are still on
-// their way. When the last one is in, QEMU is released and the
-// terminal goes live.
-async function boot() {
-  // Capture the requested selection before asynchronous work can change it.
-  const entries = [...selection.values()];
-  const telemetry = createLoadTelemetry(entries, LoadOperation.BOOT);
-  let stage = LoadStage.CLOSURE;
-  let mode = BootMode.UNKNOWN;
+// ---------- the two engines ----------
 
-  // The engine is threaded, and its threads need SharedArrayBuffer,
-  // which a browser only hands to a cross-origin isolated page. Say so
-  // before anything downloads: without this the closure is fetched and
-  // the engine instantiated, and the run dies seconds later on a
-  // missing global, with nothing on the page to say why.
-  if (!globalThis.crossOriginIsolated) {
-    telemetry.finish(LoadStage.ISOLATION);
-    log("not cross-origin isolated: SharedArrayBuffer is unavailable");
-    status.textContent =
-      "not cross-origin isolated, so SharedArrayBuffer is missing and the engine cannot start — reload once, and if that does not help the browser is blocking the service worker that sets the headers";
-    return;
-  }
+// Each of these lays an engine's rows out in the progress panel and
+// returns the function that starts the engine: fetch what the engine
+// needs, bring a guest up to the point where the share is writable, and
+// resolve to its handle (boot.js and unkernel.js return the same
+// shape). `started` is called once the engine's inputs are in, with
+// how the guest is starting: the analytics mode, the phrase the report
+// uses, and the verb the page shows while the guest comes up.
 
-  bootSection.hidden = false;
-  bootButton.disabled = true;
-  consoleVeil.hidden = false;
-  consoleSpinner.hidden = false;
-  consoleNote.textContent = "fetching…";
-  const panel = new ProgressPanel(bootProgress);
-
-  const walkRow = panel.row("closure walk");
-  const signatureRow = panel.row("signatures");
+// qemu: the engine, the guest image (kernel, initramfs, BIOS) and the
+// snapshot the guest resumes from.
+function qemuEngine(panel, telemetry) {
   const engineRow = panel.row("qemu engine");
   const guestRow = panel.row("guest image");
   const snapshotRow = panel.row("snapshot");
-  const closureRow = panel.row("closure");
-  const vmRow = panel.row("virtual machine");
 
-  try {
-    const roots = await rootsOf(entries.map((entry) => entry.digest));
-    const rootDigests = digestsOf(roots);
-    const closure = await walkRoots(rootDigests, (n) =>
-      walkRow.note(`${n} narinfos`),
-    );
-    log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
-    walkRow.done(`${closure.size} paths`);
-    renderClosure(closure);
-
-    // Signatures are checked against the configured keys. A path no key
-    // vouches for is still booted — the reader chose the cache — but
-    // the count is reported rather than hidden.
-    const substituters = readSubstituters();
-    const verdicts = await Promise.all(
-      [...closure.values()].map((i) => verify(i, substituters)),
-    );
-    const unverifiable = verdicts.filter((v) => v === null).length;
-    const unsigned = verdicts.filter((v) => v === false).length;
-    if (unverifiable > 0) {
-      signatureRow.done("this browser cannot check Ed25519");
-    } else if (unsigned > 0) {
-      signatureRow.fail(
-        `${unsigned} of ${closure.size} unsigned by a known key`,
-      );
-    } else {
-      signatureRow.done(`${closure.size} verified`);
-    }
-
-    stage = LoadStage.DOWNLOAD;
+  return async function start(started) {
     const engineUrls = await assets([QEMU_MAIN, QEMU_WASM, QEMU_WORKER]);
     const engine = {
       main: engineUrls.get(QEMU_MAIN),
@@ -737,32 +746,183 @@ async function boot() {
       },
     );
 
-    // The engine starts as soon as its own inputs are in, without
-    // waiting for the closure; the guest files and the snapshot are
-    // handed over rather than kept.
-    let resuming = false;
-    const vmPromise = Promise.all([
+    // The guest files and the snapshot are handed over rather than
+    // kept.
+    const [, guestFiles, machine, snapshot] = await Promise.all([
       enginePromise,
       guestPromise,
       machinePromise,
       snapshotPromise,
-    ]).then(([, guestFiles, machine, snapshot]) => {
-      resuming = snapshot !== null;
-      mode = resuming ? BootMode.SNAPSHOT : BootMode.COLD;
-      bootMode = resuming ? "resumed from the snapshot" : "cold booted";
-      log(
-        snapshot === null
-          ? "no snapshot; the guest will cold boot"
-          : "engine instantiated; the guest will resume from the snapshot",
+    ]);
+    const resuming = snapshot !== null;
+    started({
+      mode: resuming ? BootMode.SNAPSHOT : BootMode.COLD,
+      described: resuming ? "resumed from the snapshot" : "cold booted",
+      verb: resuming ? "resuming" : "booting",
+    });
+    log(
+      resuming
+        ? "engine instantiated; the guest will resume from the snapshot"
+        : "no snapshot; the guest will cold boot",
+    );
+    return startVM({
+      guestFiles,
+      machine,
+      snapshot,
+      terminalElement,
+      keyBarElement,
+      engine,
+    });
+  };
+}
+
+// unkernel: the kernel, which carries its own base system. There is no
+// guest image and no snapshot to fetch, since the kernel boots faster
+// than a snapshot loads.
+function unkernelEngine(panel) {
+  const engineRow = panel.row("unkernel engine");
+
+  return async function start(started) {
+    const urls = await assets([UNKERNEL_MAIN, UNKERNEL_KERNEL]);
+
+    // The kernel is not held by the page: the SDK streams the wasm from
+    // the URL and the browser compiles as the bytes arrive. This
+    // download fills the HTTP cache, and the bar.
+    await warmHttpCache(urls.get(UNKERNEL_KERNEL), {
+      onTotal: (n) => engineRow.setTotal(n),
+      onBytes: (n) => engineRow.add(n),
+    });
+    engineRow.done();
+
+    started({
+      mode: BootMode.UNKERNEL,
+      described: "booted on unkernel",
+      verb: "booting",
+    });
+    consoleTty.textContent = "pts/0";
+    return startUnkernel({
+      terminalElement,
+      keyBarElement,
+      engine: {
+        main: urls.get(UNKERNEL_MAIN),
+        kernel: urls.get(UNKERNEL_KERNEL),
+      },
+    });
+  };
+}
+
+// Refuse a selected store path whose programs were built for a system
+// this page's engine does not run, naming the engine that does.
+//
+// Only the roots are looked at. A dependency is built for the system
+// its root was, and the roots are where a reader's pasted path lands.
+function checkSystem(info, entries, rootDigests) {
+  const digest = basenameOf(info).slice(0, DIGEST_LENGTH);
+  if (!rootDigests.includes(digest)) {
+    return;
+  }
+
+  const built = foreignSystem(entries, SYSTEM);
+  if (built === null) {
+    return;
+  }
+  throw new Error(
+    `${info.storePath} is built for ${built}, and the ${ENGINE} engine runs ${SYSTEM}; open the page with engine=${engineFor(built)} to run it`,
+  );
+}
+
+// The boot flow. The engine's own files (for qemu the engine, the
+// guest image and the snapshot; for unkernel the kernel) and the
+// closure download in parallel under one progress panel; the engine
+// is started the moment its inputs are in, and every NAR is written
+// into the share as it lands, while the rest are still on their way.
+// When the last one is in, the guest is let run and the terminal goes
+// live.
+async function boot() {
+  // Capture the requested selection before asynchronous work can change it.
+  const entries = [...selection.values()];
+  const telemetry = createLoadTelemetry(entries, LoadOperation.BOOT);
+  let stage = LoadStage.CLOSURE;
+  let mode = BootMode.UNKNOWN;
+
+  // The qemu engine is threaded, and its threads need SharedArrayBuffer,
+  // which a browser only hands to a cross-origin isolated page. Say so
+  // before anything downloads: without this the closure is fetched and
+  // the engine instantiated, and the run dies seconds later on a
+  // missing global, with nothing on the page to say why.
+  if (ENGINE === Engine.QEMU && !globalThis.crossOriginIsolated) {
+    telemetry.finish(LoadStage.ISOLATION);
+    log("not cross-origin isolated: SharedArrayBuffer is unavailable");
+    status.textContent =
+      "not cross-origin isolated, so SharedArrayBuffer is missing and the engine cannot start — reload once, and if that does not help the browser is blocking the service worker that sets the headers";
+    return;
+  }
+
+  // unkernel's kernel switches tasks by suspending WebAssembly, which
+  // needs JSPI. The page only picks unkernel by itself where the
+  // browser has JSPI (engine.js), so this is a link that named the
+  // engine, opened in a browser that cannot run it.
+  if (ENGINE === Engine.UNKERNEL && !hasJspi()) {
+    telemetry.finish(LoadStage.ENGINE);
+    log("no JSPI: WebAssembly.Suspending is unavailable");
+    status.textContent =
+      "this browser cannot suspend WebAssembly (JSPI), which the unkernel engine needs; Chrome 137, Firefox 153 and Safari 27 have it. The qemu engine runs here: use the switch link below";
+    return;
+  }
+
+  bootSection.hidden = false;
+  bootButton.disabled = true;
+  consoleVeil.hidden = false;
+  consoleSpinner.hidden = false;
+  consoleNote.textContent = "fetching…";
+  const panel = new ProgressPanel(bootProgress);
+
+  const walkRow = panel.row("closure walk");
+  const signatureRow = panel.row("signatures");
+  const startEngine =
+    ENGINE === Engine.UNKERNEL
+      ? unkernelEngine(panel)
+      : qemuEngine(panel, telemetry);
+  const closureRow = panel.row("closure");
+  const vmRow = panel.row("virtual machine");
+
+  try {
+    const roots = await rootsOf(entries.map((entry) => entry.digest));
+    const rootDigests = digestsOf(roots);
+    const closure = await walkRoots(rootDigests, (n) =>
+      walkRow.note(`${n} narinfos`),
+    );
+    log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
+    walkRow.done(`${closure.size} paths`);
+    renderClosure(closure);
+
+    // Signatures are checked against the configured keys. A path no key
+    // vouches for is still booted — the reader chose the cache — but
+    // the count is reported rather than hidden.
+    const substituters = readSubstituters();
+    const verdicts = await Promise.all(
+      [...closure.values()].map((i) => verify(i, substituters)),
+    );
+    const unverifiable = verdicts.filter((v) => v === null).length;
+    const unsigned = verdicts.filter((v) => v === false).length;
+    if (unverifiable > 0) {
+      signatureRow.done("this browser cannot check Ed25519");
+    } else if (unsigned > 0) {
+      signatureRow.fail(
+        `${unsigned} of ${closure.size} unsigned by a known key`,
       );
-      return startVM({
-        guestFiles,
-        machine,
-        snapshot,
-        terminalElement,
-        keyBarElement,
-        engine,
-      });
+    } else {
+      signatureRow.done(`${closure.size} verified`);
+    }
+
+    stage = LoadStage.DOWNLOAD;
+    // The engine starts as soon as its own inputs are in, without
+    // waiting for the closure.
+    let waiting = "booting";
+    const vmPromise = startEngine((started) => {
+      mode = started.mode;
+      bootMode = started.described;
+      waiting = started.verb;
     });
 
     // Each NAR goes into the share the moment it is parsed, and is
@@ -779,20 +939,23 @@ async function boot() {
           (n) => closureRow.add(n),
           telemetry.cacheRead,
         );
+        checkSystem(info, entries, rootDigests);
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);
       },
     ).then(() => closureRow.done());
+    // A NAR that fails while the engine is still starting has nobody
+    // awaiting it yet. The await below reports the failure; this keeps
+    // the same failure from also being logged as unhandled.
+    closurePromise.catch(() => {});
 
     vm = await vmPromise;
     await closurePromise;
 
-    consoleNote.textContent = resuming
-      ? "resuming the guest…"
-      : "booting the guest…";
+    consoleNote.textContent = `${waiting} the guest…`;
     // The bar fills when the guest is at its prompt; until then the row
     // says what the guest is doing, not that it is done.
-    vmRow.note(resuming ? "resuming…" : "booting…");
+    vmRow.note(`${waiting}…`);
     vmStarted = true;
     mounted = closure;
 
@@ -879,16 +1042,21 @@ async function addToRunningVM() {
     const unpacked = await mapConcurrent(
       infos,
       NAR_CONCURRENCY,
-      async (info) => ({
-        basename: basenameOf(info),
-        entries: await fetchNar(info, (n) => row.add(n), telemetry.cacheRead),
-      }),
+      async (info) => {
+        const entries = await fetchNar(
+          info,
+          (n) => row.add(n),
+          telemetry.cacheRead,
+        );
+        checkSystem(info, entries, rootDigests);
+        return { basename: basenameOf(info), entries };
+      },
     );
 
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }
-    vm.add(unpacked, basenamesOf(mounted, rootDigests));
+    await vm.add(unpacked, basenamesOf(mounted, rootDigests));
     reportSilent(vm, mounted, roots);
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
@@ -999,6 +1167,13 @@ async function prefetch() {
       // an optimisation that failed is not an error
     }
   };
+  // unkernel has one file worth warming, the kernel, which goes to the
+  // HTTP cache where the SDK's own fetch finds it.
+  if (ENGINE === Engine.UNKERNEL) {
+    warm(UNKERNEL_KERNEL, warmHttpCache);
+    return;
+  }
+
   // The wasm goes to the HTTP cache, where the engine's own fetch
   // finds it; the rest to the Cache API, where the page's do.
   warm(QEMU_WASM, warmHttpCache);
@@ -1067,7 +1242,7 @@ const page = {
       inCache: entry.held ?? null,
     })),
     caches: extraCaches,
-    link: new URL(writeUrl(urlState()), location.href).href,
+    link: new URL(link(), location.href).href,
   }),
 
   search: (query, limit) => searchAttrs(query, limit),

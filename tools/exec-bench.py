@@ -12,11 +12,14 @@ closure in over 9p and translating everything, the second is warm.
     nix run .#exec-bench -- --site <site> --json new.json
     nix run .#exec-bench -- --site <site> --engine <dir> --json new.json --baseline old.json
 
---engine overlays a locally built engine over the site's qemu/ files in
-a scratch copy. --baseline prints the ratio of every number against an
-earlier run. --only picks entries by name. The suite is the table below;
-`path=` entries are fetched from the default cache, `pkg=` entries are
-resolved by the page's index.
+--guest-engine picks which of the page's two engines runs the guest:
+unkernel (aarch64 guest, the page's default) or qemu (x86_64 guest). The
+link names the engine outright, so a record never depends on what the
+page would have chosen. --engine overlays a locally built qemu engine
+over the site's qemu/ files in a scratch copy. --baseline prints the
+ratio of every number against an earlier run. --only picks entries by
+name. The suite is the table below; every entry is a `pkg=` the page's
+index resolves, so each engine fetches the build for its own system.
 
 Numbers per entry and execution: wall seconds from keystroke to prompt;
 the guest's own real/user/sys from busybox `time`; the browser process
@@ -53,17 +56,23 @@ def load(name, filename):
 # name, how the page finds it, what to type. Sizes: hello is a few
 # hundred KB, ripgrep and jujutsu are tens of MB of Rust, python is an
 # interpreter start, opencode is a 190 MB Bun binary that JITs.
+#
+# opencode is pinned to one version because its start-up cost moves
+# between releases. On x86_64 that version is the store path
+# 6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29, which is what every
+# record in site/bench/history.json measured when this entry was still
+# a `path=`.
 SUITE = [
     {"name": "hello", "spec": "pkg=hello", "command": "hello"},
     {"name": "ripgrep", "spec": "pkg=ripgrep", "command": "rg --version"},
     {"name": "jujutsu", "spec": "pkg=jujutsu", "command": "jj --version"},
     {"name": "python", "spec": "pkg=python3", "command": "python3 -c 'print(1)'"},
-    {
-        "name": "opencode",
-        "spec": "path=/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
-        "command": "opencode --version",
-    },
+    {"name": "opencode", "spec": "pkg=opencode@1.18.29", "command": "opencode --version"},
 ]
+
+# The page's engines (site/js/engine.js), by the name a link carries.
+GUEST_ENGINES = ["unkernel", "qemu"]
+DEFAULT_GUEST_ENGINE = "unkernel"
 
 ITERATIONS = ["cold", "warm"]
 COMMAND_LIMIT_SECONDS = 1800
@@ -151,11 +160,17 @@ def group_usage(pgid):
     return cpu_ticks / CLOCK_TICKS, rss
 
 
-def run_entry(entry, base, browser_binary, runs_dir):
+def page_query(entry, guest_engine):
+    """The link's parameters for one entry: what to boot, on which
+    engine, and to start without a click."""
+    kind, value = entry["spec"].split("=", 1)
+    return {kind: value, "engine": guest_engine, "boot": "1"}
+
+
+def run_entry(entry, base, browser_binary, runs_dir, guest_engine):
     """Boot a fresh guest with the entry's package, run its command cold
     then warm, and return the measurements."""
-    kind, value = entry["spec"].split("=", 1)
-    query = urllib.parse.urlencode({kind: value, "boot": "1"})
+    query = urllib.parse.urlencode(page_query(entry, guest_engine))
     url = f"{base}/?{query}"
     profile = tempfile.mkdtemp(prefix="exec-bench-", dir=runs_dir)
     browser = cpu.Browser(browser_binary, profile)
@@ -274,6 +289,12 @@ def main():
     parser.add_argument("--site", help="a built site directory to serve")
     parser.add_argument("--url", help="test this address instead of serving a directory")
     parser.add_argument("--engine", help="overlay this engine directory over the site's qemu/")
+    parser.add_argument(
+        "--guest-engine",
+        choices=GUEST_ENGINES,
+        default=DEFAULT_GUEST_ENGINE,
+        help="which of the page's engines runs the guest",
+    )
     parser.add_argument("--json", help="write the measurements here")
     parser.add_argument("--baseline", help="an earlier --json file to print ratios against")
     parser.add_argument("--only", action="append", help="run only this entry (repeatable)")
@@ -309,10 +330,15 @@ def main():
     try:
         for entry in suite:
             print(f"== {entry['name']}: {entry['command']}", flush=True)
-            results.append(run_entry(entry, base, args.browser, runs_dir))
+            results.append(run_entry(entry, base, args.browser, runs_dir, args.guest_engine))
             if args.json:
+                record = {
+                    "engine": args.engine or "site",
+                    "guest_engine": args.guest_engine,
+                    "results": results,
+                }
                 with open(args.json, "w") as f:
-                    json.dump({"engine": args.engine or "site", "results": results}, f, indent=2)
+                    json.dump(record, f, indent=2)
     finally:
         if shutdown:
             shutdown()

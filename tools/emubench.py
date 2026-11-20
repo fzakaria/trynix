@@ -239,7 +239,10 @@ def main():
             site, scratch = overlay_engine(site, args.engine)
         base, shutdown = cpu.serve(site)
 
-    query = urllib.parse.urlencode({"path": probe, "cache": cache, "boot": "1"})
+    # The probe is x86_64 assembly and measures the qemu engine.
+    query = urllib.parse.urlencode(
+        {"path": probe, "cache": cache, "engine": "qemu", "boot": "1"}
+    )
     url = f"{base}/?{query}"
     print(f"booting {url}", flush=True)
 

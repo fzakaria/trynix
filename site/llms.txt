@@ -2,9 +2,11 @@
 
 > Boot anything nixpkgs ever shipped, in a browser tab. Pick a package
 > and a version from 13 years of nixpkgs history; its closure is fetched
-> from cache.nixos.org into an x86_64 Linux virtual machine running in
-> the page, and you get a shell with the package on PATH. Nothing runs
-> on a server.
+> from cache.nixos.org into a Linux guest running in the page, and you
+> get a shell with the package on PATH. Nothing runs on a server. The
+> guest is aarch64 by default (the unkernel engine); `engine=qemu` in
+> the link runs an x86_64 guest instead, which is what an x86_64 store
+> path needs.
 
 Two things are worth knowing if you are driving this page rather than
 reading it. The selection is entirely in the URL, so most of what the

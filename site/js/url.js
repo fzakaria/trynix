@@ -5,6 +5,7 @@
 //   ?pkg=ripgrep                           newest version in the index
 //   ?path=/nix/store/<digest>-name         a store path, verbatim
 //   &cache=https://x.cachix.org x-1:key=   an extra binary cache
+//   &engine=qemu                           the engine, when not the default
 //   &boot=1                                start without a click
 //
 // Everything is written back with replaceState as it changes, so the
@@ -15,11 +16,15 @@
 const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
 const PARAM_CACHE = "cache";
+const PARAM_ENGINE = "engine";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
-//   caches: [{url, key}], boot: boolean }
+//   caches: [{url, key}], engine: string|null, boot: boolean }
+//
+// The engine is handed back as written, or null when the link names
+// none: engine.js decides what a missing or unknown name means.
 export function readUrl() {
   const params = new URLSearchParams(location.search);
 
@@ -48,13 +53,24 @@ export function readUrl() {
     .filter((parts) => parts.length === 2)
     .map(([url, key]) => ({ url: url.replace(/\/$/, ""), key }));
 
-  return { pkgs, paths, caches, boot: params.get(PARAM_BOOT) === "1" };
+  return {
+    pkgs,
+    paths,
+    caches,
+    engine: params.get(PARAM_ENGINE),
+    boot: params.get(PARAM_BOOT) === "1",
+  };
 }
 
 // Rewrite the address bar to describe the current selection. `boot`
 // stays out unless asked for: a shared link should offer the boot, and
-// only the reload path wants it automatic.
-export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
+// only the reload path wants it automatic. `engine` stays out unless
+// the caller names one, which keeps a link for the default engine as
+// short as a link was before there were two.
+export function writeUrl(
+  { pkgs, paths, caches = [] },
+  { boot = false, engine = null } = {},
+) {
   const params = new URLSearchParams();
   for (const { attr, version } of pkgs) {
     params.append(
@@ -67,6 +83,9 @@ export function writeUrl({ pkgs, paths, caches = [] }, { boot = false } = {}) {
   }
   for (const { url, key } of caches) {
     params.append(PARAM_CACHE, `${url} ${key}`);
+  }
+  if (engine !== null) {
+    params.set(PARAM_ENGINE, engine);
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");

@@ -204,6 +204,7 @@
           or start over in a fresh VM
         </a>
       </p>
+      <p id="engine-note" class="muted"></p>
       <p id="add-note" class="muted" hidden>
         Packages added to a running VM appear in the shell straight away; the most recently added
         one wins when two provide the same command. A command the shell has already run once is
@@ -216,7 +217,7 @@
       <div id="boot-progress"></div>
       <div id="console">
         <div id="console-bar">
-          <span>ttyS0</span>
+          <span id="console-tty">ttyS0</span>
           <span title="libghostty-vt, compiled to wasm">ghostty</span>
         </div>
         <div id="console-body">
