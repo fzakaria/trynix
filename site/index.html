@@ -21,7 +21,7 @@
     <title>trynix</title>
     <meta
       name="description"
-      content="Boot anything nixpkgs ever shipped, in your browser: qemu-wasm plus the nixpkgs-multiverse index, no server anywhere."
+      content="Boot anything nixpkgs ever shipped, in your browser: a Linux guest in WebAssembly plus the nixpkgs-multiverse index, no server anywhere."
     />
     <link rel="canonical" href="https://trynix.dev/" />
     <link
@@ -36,7 +36,7 @@
     <meta property="og:title" content="trynix — boot anything nixpkgs ever shipped, in your browser" />
     <meta
       property="og:description"
-      content="Pick any package from 13 years of nixpkgs history and boot it in an x86_64 Linux VM in your tab. No server anywhere."
+      content="Pick any package from 13 years of nixpkgs history and boot it in a Linux guest in your tab. No server anywhere."
     />
     <meta property="og:url" content="https://trynix.dev/" />
 
@@ -91,10 +91,8 @@
       <strong class="lede">Boot any package nixpkgs ever shipped, in this tab.</strong> Pick a
       package and a version from
       <a href="https://github.com/fzakaria/nixpkgs-multiverse">13 years of nixpkgs history</a>; its
-      closure is fetched from <a href="https://cache.nixos.org">cache.nixos.org</a> into an x86_64
-      Linux virtual machine
-      (<a href="https://github.com/ktock/qemu-wasm">QEMU compiled to WebAssembly</a>) and you get a
-      shell with the package on <code>PATH</code>.
+      closure is fetched from <a href="https://cache.nixos.org">cache.nixos.org</a> into a Linux
+      guest running in WebAssembly and you get a shell with the package on <code>PATH</code>.
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
@@ -132,7 +130,7 @@
         <a class="active" href="#" data-lane="search">Search packages</a>
         <a href="#" data-lane="ranges">Package specs</a>
         <a href="#" data-lane="path">Store path</a>
-        <a href="#" data-lane="caches">Caches</a>
+        <a href="#" data-lane="settings">Settings</a>
       </nav>
 
       <div class="lane" data-lane="search">
@@ -180,7 +178,42 @@
         </form>
       </div>
 
-      <div class="lane" data-lane="caches" hidden>
+      <div class="lane" data-lane="settings" hidden>
+        <!-- The guest: an architecture and the engine that runs it
+             (site/js/engine.js). One choice rather than two, because each
+             engine runs one architecture. Choosing reloads the page, since
+             an engine holds its memory for the life of the page. -->
+        <fieldset id="guest">
+          <legend>Guest</legend>
+          <label>
+            <input type="radio" name="guest" value="unkernel" />
+            <span>
+              <strong>aarch64</strong> on
+              <a href="https://github.com/pithings/unkernel">unkernel</a>
+              <span class="muted">
+                The fast one, and the default: boots in under a second and starts programs several
+                times quicker. It is new and has gaps: only packages built for aarch64, which
+                leaves out older versions, and no <code>strace</code> or <code>gdb</code>.
+              </span>
+            </span>
+          </label>
+          <label>
+            <input type="radio" name="guest" value="qemu" />
+            <span>
+              <strong>x86_64</strong> on
+              <a href="https://github.com/ktock/qemu-wasm">QEMU</a>
+              <span class="muted">
+                The compatible one: slower, but a complete emulated PC running a stock kernel. Pick
+                it for an older version, an x86_64 store path, or anything that misbehaves on
+                unkernel.
+              </span>
+            </span>
+          </label>
+          <!-- Said only to a browser that cannot run unkernel (app.js). -->
+          <p id="guest-status" class="muted" hidden></p>
+        </fieldset>
+
+        <h3>Binary caches</h3>
         <p class="muted">
           Extra binary caches, one per line, as a URL and its public key. They go into this page's
           link with the selection, so a store path from your cachix and the key that vouches for it
@@ -204,7 +237,6 @@
           or start over in a fresh VM
         </a>
       </p>
-      <p id="engine-note" class="muted"></p>
       <p id="add-note" class="muted" hidden>
         Packages added to a running VM appear in the shell straight away; the most recently added
         one wins when two provide the same command. A command the shell has already run once is

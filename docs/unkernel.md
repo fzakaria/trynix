@@ -103,8 +103,10 @@ meets a selected path built for the other system stops with a message
 that names the engine to use (it reads the ELF header of the path's
 programs).
 
-The line under the Boot button says which engine is running and links
-to the same selection on the other one.
+The Settings tab has the choice, as one "Guest" setting: aarch64 on
+unkernel or x86_64 on QEMU. Architecture and engine are not two
+settings because each engine runs one architecture. Choosing the other
+guest reloads the same selection on it.
 
 The guest side is unkernel's base system, with no distro image:
 
@@ -129,7 +131,7 @@ isolation to run at all.
   for fewer years than x86_64-linux. In the two index shards checked
   (`ju`, `py`) aarch64 holds 87% and 93% of the versions x86_64 does.
   A version with no aarch64 build is shown struck through, as any
-  unbuilt version is, and the switch link takes the reader to qemu.
+  unbuilt version is, with a note that Settings has the x86_64 guest.
 - **Browsers.** JSPI means Chrome 137, Firefox 153 or Safari 27. An
   older browser gets qemu without being asked.
 - **Kernel features.** No seccomp and no ptrace register sets, so

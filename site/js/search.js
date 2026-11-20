@@ -31,7 +31,8 @@ import {
   versionRowsOf,
 } from "./multiverse.js";
 import { humanBytes } from "./format.js";
-import { SEARCH_LIMIT, SYSTEM } from "./config.js";
+import { ENGINE, SEARCH_LIMIT, SYSTEM } from "./config.js";
+import { Engine } from "./engine.js";
 
 // How long the box sits still before a keystroke becomes a search.
 const DEBOUNCE_MS = 120;
@@ -45,7 +46,14 @@ const PICK_LABEL = "pick";
 // the whole message on a phone, where there is no hover and so no
 // tooltip.
 const NO_BUILD = "no build";
-const NO_BUILD_NOTE = `no build: nixpkgs shipped that version and Hydra never built it for ${SYSTEM}, so there is nothing to fetch. Hydra builds neither unfree nor broken packages, and an attribute can also be taken out of its jobset.`;
+// Hydra has built x86_64-linux for longer and for more packages than
+// aarch64-linux, so on the aarch64 guest a version with no build may
+// have one for the other guest, and the note says where to look.
+const OTHER_GUEST_NOTE =
+  ENGINE === Engine.UNKERNEL
+    ? " It may have been built for x86_64: Settings has that guest."
+    : "";
+const NO_BUILD_NOTE = `no build: nixpkgs shipped that version and Hydra never built it for ${SYSTEM}, so there is nothing to fetch. Hydra builds neither unfree nor broken packages, and an attribute can also be taken out of its jobset.${OTHER_GUEST_NOTE}`;
 
 export class PackagePicker {
   // The page owns the selection, since packages also arrive from the

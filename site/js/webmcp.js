@@ -34,7 +34,7 @@ function toolsFor(page) {
     {
       name: "page-state",
       description:
-        "What trynix currently has: whether a guest is running, which packages are selected, and the link that reproduces this page.",
+        "What trynix currently has: whether a guest is running, which engine and system the guest is (packages resolve to builds for that system), which packages are selected, and the link that reproduces this page.",
       inputSchema: { type: "object", properties: {} },
       execute: async () => json(page.state()),
     },

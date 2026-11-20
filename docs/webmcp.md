@@ -16,16 +16,16 @@ operations as [WebMCP](https://github.com/webmachinelearning/webmcp)
 tools on `document.modelContext`, so an agent driving the browser calls
 them instead of synthesising clicks.
 
-| tool              | what it does                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `page-state`      | whether a guest is running, what is selected, the caches, the link that reproduces the page |
-| `search-packages` | attribute names in the nixpkgs-multiverse index                                             |
-| `list-versions`   | every version of an attribute, marked with whether Hydra built it for x86\_64-linux         |
-| `select-packages` | add attributes or store paths to the selection                                              |
-| `set-caches`      | the extra binary caches to fetch from, each with its public key                             |
-| `boot`            | fetch the closure and start the VM, resolving at the guest's prompt                         |
-| `run-command`     | run a shell command in the guest, returning its output and exit status                      |
-| `read-console`    | everything the guest has said, boot messages included                                       |
+| tool              | what it does                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `page-state`      | whether a guest is running, its engine and system, what is selected, the caches, the link that reproduces the page |
+| `search-packages` | attribute names in the nixpkgs-multiverse index                                                                    |
+| `list-versions`   | every version of an attribute, marked with whether Hydra built it for x86\_64-linux                                |
+| `select-packages` | add attributes or store paths to the selection                                                                     |
+| `set-caches`      | the extra binary caches to fetch from, each with its public key                                                    |
+| `boot`            | fetch the closure and start the VM, resolving at the guest's prompt                                                |
+| `run-command`     | run a shell command in the guest, returning its output and exit status                                             |
+| `read-console`    | everything the guest has said, boot messages included                                                              |
 
 Once a guest is running, selecting more packages and calling `boot`
 again adds them without a reboot, the same way the button does.

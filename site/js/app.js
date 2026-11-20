@@ -27,7 +27,6 @@ import {
   foreignSystem,
   engineFor,
   hasJspi,
-  systemOf,
 } from "./engine.js";
 import { fetchWithProgress, mapConcurrent, warmHttpCache } from "./net.js";
 import { ProgressPanel } from "./progress.js";
@@ -94,7 +93,8 @@ const consoleSpinner = document.getElementById("console-spinner");
 const rebootLink = document.getElementById("reboot-link");
 const debugLog = document.getElementById("debug-log");
 const addNote = document.getElementById("add-note");
-const engineNote = document.getElementById("engine-note");
+const guestChoice = document.getElementById("guest");
+const guestStatus = document.getElementById("guest-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -154,7 +154,7 @@ function select(entry) {
 
 // Ask the caches whether they hold this path, and redraw when they
 // answer. This is the one failure the page can see coming, so it is
-// worth saying while there is still a cache lane to paste into, rather
+// worth saying while there is still a caches box to paste into, rather
 // than three seconds into a walk.
 async function probe(entry) {
   const held = await holdsPath(entry.digest, readSubstituters());
@@ -196,8 +196,8 @@ function deselect(digest) {
   render();
 }
 
-// The extra caches in effect: the page's copy of what the caches lane
-// says, and what the link carries.
+// The extra caches in effect: the page's copy of what the caches box
+// under Settings says, and what the link carries.
 let extraCaches = [];
 
 // The package picker, once the lanes below have built it. Named here
@@ -350,29 +350,35 @@ function render() {
   // rides as a path, and the caches ride along. Either way the link
   // reproduces this screen.
   history.replaceState(null, "", link());
-  renderEngineNote();
 }
 
-// The line under the boot button: which engine this page is running,
-// which system's packages the engine runs, and a link to the same
-// selection on the other engine.
+// The guest choice under Settings: the architecture this page boots
+// and the engine that runs it, which are one choice because each engine
+// runs one architecture (engine.js).
 //
-// Switching is a link rather than a control because the engine is
-// fixed for the life of the page (config.js, ENGINE). Package names
-// resolve again on the other side; a store path does not travel, and
-// the boot says so if one is carried across (checkSystem).
-function renderEngineNote() {
-  const other = ENGINE === Engine.UNKERNEL ? Engine.QEMU : Engine.UNKERNEL;
-  const switchLink = document.createElement("a");
-  switchLink.href = writeUrl(urlState(), { engine: other });
-  switchLink.textContent = `switch to ${other} (${systemOf(other)})`;
+// Choosing reloads the page at a link that names the choice, because
+// the engine is fixed for the life of the page (config.js, ENGINE).
+// Package names resolve again on the other side; a store path does not
+// travel, and the boot says so if one is carried across (checkSystem).
+function wireGuestChoice() {
+  const option = (engine) =>
+    guestChoice.querySelector(`input[value="${engine}"]`);
+  option(ENGINE).checked = true;
 
-  const parts = [`engine: ${ENGINE}, running ${SYSTEM} packages`];
-  if (ENGINE === Engine.QEMU && !ENGINE_NAMED && !hasJspi()) {
-    parts.push("this browser lacks JSPI, which unkernel needs");
+  // unkernel cannot run without JSPI, so a browser that lacks it is
+  // not offered the choice, and is told why.
+  if (!hasJspi()) {
+    option(Engine.UNKERNEL).disabled = true;
+    guestStatus.hidden = false;
+    guestStatus.textContent =
+      "This browser cannot suspend WebAssembly (JSPI), which unkernel needs, so only the x86_64 guest runs here. Chrome 137, Firefox 153 and Safari 27 have it.";
   }
-  engineNote.replaceChildren(`${parts.join(" · ")} · `, switchLink);
+
+  guestChoice.addEventListener("change", (event) => {
+    location.href = writeUrl(urlState(), { engine: event.target.value });
+  });
 }
+wireGuestChoice();
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {
@@ -866,7 +872,7 @@ async function boot() {
     telemetry.finish(LoadStage.ENGINE);
     log("no JSPI: WebAssembly.Suspending is unavailable");
     status.textContent =
-      "this browser cannot suspend WebAssembly (JSPI), which the unkernel engine needs; Chrome 137, Firefox 153 and Safari 27 have it. The qemu engine runs here: use the switch link below";
+      "this browser cannot suspend WebAssembly (JSPI), which the unkernel engine needs; Chrome 137, Firefox 153 and Safari 27 have it. The x86_64 guest runs here: choose it under Settings";
     return;
   }
 
@@ -1228,6 +1234,10 @@ const page = {
   state: () => ({
     booted: vmStarted,
     bootMode,
+    // The guest this page boots: packages resolve to builds for this
+    // system, and a store path has to be one.
+    engine: ENGINE,
+    system: SYSTEM,
     closurePaths: mounted.size,
     selection: [...selection.values()].map((entry) => ({
       attr: entry.attr ?? entry.named?.attr ?? null,
@@ -1289,7 +1299,7 @@ const page = {
     return `booted; ${mounted.size} paths mounted`;
   },
 
-  // The caches lane, as an operation. A cache is reachable from a page
+  // The caches box under Settings, as an operation. A cache is reachable from a page
   // only if it allows cross-origin reads, and every path it serves is
   // still checked against the key given here before it is booted.
   caches(list) {

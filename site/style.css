@@ -162,7 +162,7 @@ code {
   white-space: nowrap;
 }
 
-/* The lane tabs: search, ranges, store path. */
+/* The lane tabs: search, ranges, store path, settings. */
 #lanes {
   margin: 1rem 0 0.8rem;
   border-bottom: 1px solid var(--line);
@@ -238,6 +238,38 @@ code {
 #ranges-complete li:hover,
 #ranges-complete li.selected {
   background: var(--code-bg);
+}
+
+/* The settings lane: the guest choice as a short list of radio rows,
+   each option's explanation on the option's own line, then the caches. */
+#guest {
+  margin: 0 0 1.2rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+#guest legend {
+  padding: 0 0.3rem;
+  font-weight: 600;
+}
+#guest label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+#guest label .muted {
+  display: block;
+  font-size: 13px;
+}
+#guest-status {
+  margin: 0.4rem 0 0;
+  font-size: 13px;
+}
+.lane h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1em;
 }
 
 #caches-input {
@@ -406,7 +438,7 @@ code {
 }
 
 /* A selected path no configured cache holds. The boot is still
-   offered, because a cache pasted into the caches lane may hold what
+   offered, because a cache pasted under Settings may hold what
    cache.nixos.org has dropped, so this is a warning rather than a
    removal. It carries the accent's outline instead of its fill. */
 #selection .chip.missing {
