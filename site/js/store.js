@@ -12,14 +12,30 @@
 // first time a boot meets a bzip2 path, which for most boots is never.
 /* global xzwasm, fzstd */
 
-import { CACHE_URL } from "./config.js";
+import { CACHE_URL, NAR_CONCURRENCY } from "./config.js";
+import { workerPool } from "./pool.js";
 import { parseNar } from "./nar.js";
 import { fetchWithProgress } from "./net.js";
 import { evictFromCache } from "./cache.js";
 import { verifyHash } from "./hash.js";
 import { log } from "./log.js";
 
-// Downloads run several at a time, but decompression does not.
+// Decompression happens in workers where the browser has them, several
+// archives at once, and on this thread, one at a time, where it does
+// not.
+//
+// The workers are the difference between a boot that is ready when its
+// downloads are and one that then sits decoding. A closure the browser
+// already holds (the compressed NARs are kept in the Cache API) costs
+// no network at all, and its whole boot used to be this: python3's 23
+// archives took about two seconds of the page's thread, one after the
+// other, and while they did the progress bars froze and the engine,
+// whose start-up also needs this thread, was held up behind them. The
+// newest archives are zstd, which is decoded by a pure JavaScript
+// library, so the work is real and worth spreading over cores.
+//
+// On this thread, downloads run several at a time but decompression
+// does not.
 //
 // Each xz stream instantiates its own decoder, and a NAR can be
 // enormous — gcc unpacks to 143 MB. Several of those decoding at once
@@ -114,6 +130,9 @@ export async function fetchNar(info, onBytes, onCacheRead) {
   for (let attempt = 1; ; attempt += 1) {
     const compressed = await fetchWithProgress(url, { onBytes, onCacheRead });
 
+    // Taken now: decompressing may hand the bytes to a worker, which
+    // leaves this array empty.
+    const fetched = compressed.byteLength;
     const drift = compressedDrift(info, compressed);
     if (drift !== null) {
       log(`${info.storePath}: ${drift}`);
@@ -148,7 +167,7 @@ export async function fetchNar(info, onBytes, onCacheRead) {
       throw new Error(`${info.storePath}: ${problem}`);
     }
     log(`${info.storePath}: ${problem}; fetching again`);
-    onBytes(-compressed.byteLength);
+    onBytes(-fetched);
   }
 }
 
@@ -171,10 +190,72 @@ const NAR_ATTEMPTS = 2;
 // nothing to evict and nothing a second download would fix.
 class DecoderUnavailable extends Error {}
 
+// The compressions the decode workers handle (decode-worker.js).
+const WORKER_COMPRESSIONS = ["xz", "zstd"];
+
+// The pool of decode workers, made on first use; null where there are
+// no workers to be had (a test under node, or a browser that refused to
+// start one), which sends every decode to this thread.
+let decodePool;
+
+function decodeWorkers() {
+  if (decodePool !== undefined) {
+    return decodePool;
+  }
+  if (typeof Worker !== "function") {
+    decodePool = null;
+    return decodePool;
+  }
+
+  // As many workers as downloads in flight, less where the device has
+  // fewer cores to give: one is left for the page and the engine.
+  const cores = globalThis.navigator?.hardwareConcurrency ?? NAR_CONCURRENCY;
+  decodePool = workerPool({
+    size: Math.max(1, Math.min(NAR_CONCURRENCY, cores - 1)),
+    spawn: () => new Worker(new URL("./decode-worker.js", import.meta.url)),
+  });
+  return decodePool;
+}
+
+// Decompress in a worker. Resolves with the archive, or with null when
+// there is no worker to do it. The compressed bytes are handed over
+// rather than copied, so the caller's array is empty afterwards.
+async function decompressInWorker(info, compressed) {
+  const pool = decodeWorkers();
+  if (pool === null || !WORKER_COMPRESSIONS.includes(info.compression)) {
+    return null;
+  }
+
+  try {
+    const { nar } = await pool.run(
+      { compression: info.compression, bytes: compressed },
+      [compressed.buffer],
+    );
+    return nar;
+  } catch (err) {
+    log(
+      `failed to decompress ${info.url} (${info.compression}): ${err.message}`,
+    );
+    // A worker that died says the workers cannot be relied on here, not
+    // that the archive is bad. The bytes went with the worker, so this
+    // attempt is lost, but fetchNar fetches again and that attempt and
+    // every later one decodes on this thread.
+    if (err.crashed) {
+      decodePool = null;
+    }
+    throw new Error(`${info.compression} decode failed: ${err.message}`);
+  }
+}
+
 // The archive's bytes, whatever it was compressed with.
 async function decompress(info, compressed) {
   if (info.compression === "none") {
     return compressed;
+  }
+
+  const nar = await decompressInWorker(info, compressed);
+  if (nar !== null) {
+    return nar;
   }
 
   return serialize(async () => {

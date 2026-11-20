@@ -125,6 +125,64 @@ The kernel runs in a worker when the page is cross-origin isolated and
 on the page's thread when it is not. Unlike qemu it does not need
 isolation to run at all.
 
+## Where a boot's time goes now
+
+The kernel is up 0.3 to 0.8 s after the click. Everything after that
+is the closure: downloading the NARs and decompressing them. Measured
+in headless Chromium on a laptop, 2026-11-20, click to prompt:
+
+| package  | return visit, before | return visit, now |
+| -------- | -------------------- | ----------------- |
+| jujutsu  | 3.5 s                | 0.7 s             |
+| python3  | 2.4 s                | 1.3 s             |
+| opencode | 2.5 s                | 1.7 s             |
+
+A return visit has the compressed NARs in the Cache API, so its boot
+is decompression alone. That used to run on the page's thread, one
+archive at a time, in a pure JavaScript zstd decoder, and it held up
+the kernel's own start as well. It now runs in workers, several at
+once ([site/js/store.js](../site/js/store.js)). A first visit is
+bound by the network: at 4.5 MB/s the opencode NAR alone is 13 s.
+
+The shell reaches its prompt the moment the closure is in. The lane
+used to wait for 0.4 s of console silence first, as the qemu lane
+does; [site/js/unkernel.js](../site/js/unkernel.js) says what
+replaced the wait and what the wait had been hiding.
+
+## Measured and dropped
+
+Each of these looked like a win and was measured on leviathan.
+
+- **Fetching a store path only when the guest first touches it.** A
+  first command touches 85 to 97% of its closure's bytes: the package
+  itself and glibc are nearly all of it, and a compressed NAR cannot
+  be fetched in part. hello touches 2 of 5 paths and 45 of 47 MiB.
+- **Showing the prompt before the closure is in.** The shell looks a
+  command up in `/share/bin` first, and the links there cannot exist
+  before the selected packages' own NARs have arrived, so every
+  command would block where the prompt used to.
+- **A longer attribute timeout on the store mount.** A round trip to
+  the page's file system costs 0.1 to 0.2 ms and repeated lookups are
+  cached, hits and misses alike. A warm python3 makes about 175, most
+  of them opens that any cache mode would make: roughly 25 ms of 550.
+- **Turning ASLR off in the guest**, hoping decoded code would be
+  reused across processes: 10 to 15% on a loop of process starts,
+  within noise on python3 and jj.
+- **Dropping `LANG=C.UTF-8`.** It costs a C program that converts
+  characters about 50 ms a start (hello: 5 ms without, 58 ms with),
+  because nixpkgs' glibc ships no gconv cache and parses the
+  2,000-line `gconv-modules` table in every such process. Setting
+  only `LC_CTYPE` costs the same. Rust and Python programs do not pay
+  it, the qemu guest pays it too, and without a UTF-8 locale line
+  editing breaks on multibyte input and btop refuses to start. Kept.
+- **Running x86_64 through `qemu-user` in the guest**: above.
+
+What is left is inside unkernel. A warm `python3 -c 'print(1)'` is
+0.55 s against 0.02 s native, and nearly all of it is the emulator
+running code it has not compiled yet: each process decodes its
+program again, and code that runs only a few times stays on the
+interpreter. That is the first item on unkernel's own roadmap.
+
 ## What it costs
 
 - **Coverage.** Hydra has built aarch64-linux for fewer packages and
