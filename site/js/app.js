@@ -806,7 +806,7 @@ function unkernelEngine(panel) {
       verb: "booting",
     });
     consoleTty.textContent = "pts/0";
-    return startUnkernel({
+    const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
       engine: {
@@ -814,6 +814,8 @@ function unkernelEngine(panel) {
         kernel: urls.get(UNKERNEL_KERNEL),
       },
     });
+    log("unkernel booted");
+    return vm;
   };
 }
 
@@ -949,7 +951,10 @@ async function boot() {
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);
       },
-    ).then(() => closureRow.done());
+    ).then(() => {
+      closureRow.done();
+      log("closure written to the share");
+    });
     // A NAR that fails while the engine is still starting has nobody
     // awaiting it yet. The await below reports the failure; this keeps
     // the same failure from also being logged as unhandled.

@@ -32,7 +32,7 @@ import {
 import { Precedence } from "./store.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
-import { consoleRecorder, pause, settled } from "./console.js";
+import { consoleRecorder, pause } from "./console.js";
 import { UNKERNEL_MEMORY_MIB } from "./config.js";
 import { log } from "./log.js";
 
@@ -50,10 +50,32 @@ const MANIFEST_FILE = `${SHARE_DIR}/manifest`;
 // thing whichever engine they are pointed at.
 const MOUNTED_MARKER = "trynix: welcome to the multiverse";
 
-// Ctrl-L: the shell's line editor clears its screen and draws the
-// prompt again (boot.js says why the terminal is not cleared from this
-// side alone).
-const REDRAW_PROMPT = "\x0c";
+// What the page types once a shell has printed that line: the newline
+// the manifest is waiting to read, and Ctrl-L, which the shell's line
+// editor answers by clearing the screen and drawing its prompt.
+//
+// The pair is how a shell is brought to a clean prompt with nothing in
+// flight. ash's line editor asks the terminal where the cursor is as it
+// draws a prompt (ESC [ 6 n), and reads the terminal's answer as input,
+// sixteen bytes at a time, dropping whatever else such a read brought.
+// A command typed just behind the answer therefore loses its first
+// characters: the harnesses in tools/ type within a millisecond of the
+// boot finishing, and their first command arrived with ten of them
+// gone. The qemu engine never met this because its page waits for the
+// console to go quiet first, which costs 0.4 s of every boot.
+//
+// The editor skips the question when input is already waiting. So the
+// manifest ends by reading one line from the terminal, which holds the
+// shell short of its first prompt until this arrives; the newline ends
+// that read and the Ctrl-L is still waiting when the editor starts. No
+// question is asked, nothing is answered, and the redraw the Ctrl-L
+// causes is the one moment the page can name at which the shell is
+// ready and the screen holds a prompt and nothing else.
+const HANDSHAKE = "\n\x0c";
+
+// What the line editor prints for that Ctrl-L before the prompt: cursor
+// home, erase to the end of the screen.
+const REDRAWN = "\x1b[H\x1b[J";
 
 // How often the guest is asked whether paths added to a running guest
 // have appeared, and how long before the page stops asking.
@@ -96,7 +118,9 @@ function manifest() {
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
-    `echo; echo "${MOUNTED_MARKER}"; echo`,
+    `echo "${MOUNTED_MARKER}"`,
+    // Wait for the page's handshake (see HANDSHAKE).
+    "read -r _handshake",
     "",
   ].join("\n");
 }
@@ -134,8 +158,18 @@ function ptyPort() {
 // Read the shell's output until the shell ends, handing each piece to
 // the record and then to the terminal. The stream is pulled: the guest
 // is only given room to print as fast as this loop reads.
+//
+// The first thing a shell prints is the welcome line, and the loop
+// answers that line with the handshake, once per shell, so a shell
+// started after an `exit` comes up the same way the first one did.
 async function pump(shell, port, console_) {
   const reader = shell.output.getReader();
+
+  // What this shell has said so far, as text, until the welcome line
+  // has been seen in it; null from then on.
+  const decoder = new TextDecoder();
+  let awaitingWelcome = "";
+
   for (;;) {
     const { value, done } = await reader.read();
     if (done) {
@@ -143,6 +177,15 @@ async function pump(shell, port, console_) {
     }
     console_.hear(value);
     port.draw(value);
+    if (awaitingWelcome === null) {
+      continue;
+    }
+
+    awaitingWelcome += decoder.decode(value, { stream: true });
+    if (awaitingWelcome.includes(MOUNTED_MARKER)) {
+      awaitingWelcome = null;
+      shell.write(HANDSHAKE).catch(() => {});
+    }
   }
 }
 
@@ -240,12 +283,25 @@ export async function startUnkernel({
 
       shells().catch((err) => log(`guest shell failed: ${err.message ?? err}`));
 
-      // Drop what the shell said on the way up; the reader starts at a
-      // prompt, as after a qemu boot.
+      // Read the programs ahead of the first command, as the qemu
+      // guest's init does. A first run is slowed by its binary coming
+      // in over 9p a piece at a time, and reading it once puts it in
+      // the guest's page cache: measured on unkernel, a cold
+      // `jj --version` went from 0.27 s to 0.19 s with the binary read
+      // first. The read runs at the lowest priority and is not waited
+      // for, so a command typed at once still goes ahead of it.
+      kernel
+        .exec(SHELL, [
+          "-c",
+          `nice -n 19 cat ${GUEST_BIN_DIR}/* > /dev/null 2>&1`,
+        ])
+        .catch(() => {});
+
+      // The shell is ready once it has sourced the manifest, taken the
+      // handshake and redrawn its prompt on a cleared screen (see
+      // HANDSHAKE for why that moment and no earlier one).
       await console_.waitFor(MOUNTED_MARKER);
-      await settled(console_);
-      ui.terminal.clear();
-      port.send(REDRAW_PROMPT);
+      await console_.waitFor(REDRAWN);
     },
 
     // Add store paths to a guest that is already running. The share is
