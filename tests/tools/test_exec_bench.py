@@ -3,7 +3,9 @@ output in both spacings, and the split completion marker that must not
 match the terminal's echo of the command itself."""
 
 import importlib.util
+import json
 import os
+import re
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +60,32 @@ class Completion(unittest.TestCase):
         bench = load()
         typed = bench.wrap_command("python3 -c 'print(1)'", "EXEC_BENCH_0")
         self.assertIn("'python3 -c '\\''print(1)'\\'''", typed)
+
+
+class PageTimer(unittest.TestCase):
+    """Tests the script that times a command inside the page, where the
+    clock is not a host poll a quarter of a second wide. The script is
+    text handed to the browser, so the tests read the text: the line to
+    type has to arrive intact, and the pattern the page waits on has to
+    match exactly what completion() matches on the host."""
+
+    def test_types_the_line_as_given(self):
+        bench = load()
+        line = "time sh -c 'echo \"hi\"'; printf done\n"
+        script = bench.page_timer(line, "EXEC_BENCH_0")
+        self.assertIn(json.dumps(line), script)
+
+    def test_waits_for_the_same_closing_line_as_the_host(self):
+        bench = load()
+        marker = "EXEC_BENCH_1"
+        pattern = re.compile(bench.closing_pattern(marker))
+        self.assertIn(json.dumps(bench.closing_pattern(marker)), bench.page_timer("x\n", marker))
+
+        echoed = "printf '\\n%s%s:%s\\n' 'EXEC_BENCH_' '1' $?\r\n"
+        printed = "\nEXEC_BENCH_1:0\r\n"
+        self.assertIsNone(pattern.search(echoed))
+        self.assertIsNotNone(pattern.search(echoed + printed))
+        self.assertEqual(bench.completion(echoed + printed, marker), 0)
 
 
 class PageQuery(unittest.TestCase):

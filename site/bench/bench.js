@@ -2,6 +2,13 @@
 // engine, as small multiples over the engine releases. tools/bench-history.py
 // writes the file; this only reads it. Plain SVG, no library: a handful of
 // lines over twenty points does not need one.
+//
+// The history holds two engines on one axis, oldest first. A qemu record
+// is one release of the engine built here. An unkernel record is one
+// version of the unkernel package the site vendors; the record says so
+// in `engine`, carries no instruction-class rows (the probe is x86_64
+// assembly), and keeps the qemu engine's numbers from the same run
+// under `baseline`, which is what the side-by-side table draws.
 
 const HISTORY_URL = "history.json";
 
@@ -12,6 +19,11 @@ const HISTORY_URL = "history.json";
 const REPO_URL = "https://github.com/fzakaria/trynix/";
 const RELEASES_URL = REPO_URL + "releases/tag/";
 const PATCHES_URL = REPO_URL + "blob/main/patches/";
+// An unkernel record's tag is this prefix and the package's version, and
+// the version's release lives in unkernel's own repository.
+const UNKERNEL_TAG_PREFIX = "unkernel-";
+const UNKERNEL_RELEASES_URL =
+  "https://github.com/pithings/unkernel/releases/tag/v";
 const MILESTONES = [
   {
     tag: "engine-20260905-0511",
@@ -59,6 +71,11 @@ const MILESTONES = [
   {
     tag: "engine-20260912-2220",
     label: "the guest kernel moves from Linux 6.1 to 7.2.5",
+  },
+  {
+    tag: "unkernel-0.2.0-261119-040e142",
+    label:
+      "the default engine becomes unkernel: the kernel is compiled wasm, the guest is aarch64",
   },
 ];
 
@@ -141,11 +158,13 @@ function changeDescription(milestone) {
   return parts;
 }
 
-// A release tag as a link to the release that holds the engine.
+// A release tag as a link to the release that holds the engine: this
+// repository's for a qemu engine, unkernel's own for an unkernel version.
 function tagLink(tag) {
-  return html("a", { href: RELEASES_URL + tag, class: "tag" }, [
-    html("code", {}, [tag]),
-  ]);
+  const href = tag.startsWith(UNKERNEL_TAG_PREFIX)
+    ? UNKERNEL_RELEASES_URL + tag.slice(UNKERNEL_TAG_PREFIX.length)
+    : RELEASES_URL + tag;
+  return html("a", { href, class: "tag" }, [html("code", {}, [tag])]);
 }
 
 function format(value, unit) {
@@ -174,17 +193,39 @@ function execResult(record, name) {
   return (record.exec?.results ?? []).find((r) => r.name === name) ?? null;
 }
 
-// A command that did not exit 0 measured nothing: on the engines whose
-// guest CPU was qemu64, opencode dies on SIGILL in a second, and that
-// second is not a speed.
-function wall(record, name, phase) {
-  const measurement = execResult(record, name)?.[phase];
-  if (!measurement || measurement.status !== 0) {
+// How long one execution took, keystroke to closing line, or null.
+//
+// exec-bench times a command twice. `page_seconds` is the page's own
+// clock, a few milliseconds wide; `wall_seconds` is the tool's poll of
+// the console, a quarter of a second wide, and all that the records
+// before 2026-11-20 carry. The two measure the same interval, so the
+// finer one is used where a record has it. The difference only shows
+// below a second, which is where unkernel's numbers are.
+function seconds(measurement) {
+  if (!measurement) {
     return null;
+  }
+  if (typeof measurement.page_seconds === "number") {
+    return measurement.page_seconds;
   }
   return typeof measurement.wall_seconds === "number"
     ? measurement.wall_seconds
     : null;
+}
+
+// A command that did not exit 0 measured nothing: on the engines whose
+// guest CPU was qemu64, opencode dies on SIGILL in a second, and that
+// second is not a speed.
+function wallOf(result, phase) {
+  const measurement = result?.[phase];
+  if (!measurement || measurement.status !== 0) {
+    return null;
+  }
+  return seconds(measurement);
+}
+
+function wall(record, name, phase) {
+  return wallOf(execResult(record, name), phase);
 }
 
 // For the table: a run's wall time however it ended, with the exit
@@ -192,17 +233,22 @@ function wall(record, name, phase) {
 // what it was rather than as a dash.
 function wallCell(record, name, phase) {
   const measurement = execResult(record, name)?.[phase];
-  if (!measurement || typeof measurement.wall_seconds !== "number") {
+  if (seconds(measurement) === null) {
     return format(null, "s");
   }
-  const text = format(measurement.wall_seconds, "s");
+  const text = format(seconds(measurement), "s");
   return measurement.status === 0
     ? text
     : `${text} (exit ${measurement.status ?? "?"})`;
 }
 
 function bootSeconds(record) {
-  const boots = (record.exec?.results ?? [])
+  return medianBoot(record.exec);
+}
+
+// The median time to a shell over one suite run's fresh guests.
+function medianBoot(exec) {
+  const boots = (exec?.results ?? [])
     .map((r) => r.shell_seconds)
     .filter((v) => typeof v === "number")
     .sort((a, b) => a - b);
@@ -406,7 +452,9 @@ function panel(title, subtitle, records, series, unit, tooltipHost) {
     tooltipHost.replaceChildren(
       html("div", { class: "tip-head" }, [record.tag]),
       html("div", { class: "tip-commit" }, [
-        `${record.commit.slice(0, 7)} ${record.subject}`,
+        record.commit
+          ? `${record.commit.slice(0, 7)} ${record.subject}`
+          : record.subject,
       ]),
       ...(milestone
         ? [html("div", { class: "tip-change" }, changeDescription(milestone))]
@@ -610,6 +658,16 @@ function describeRunner(records) {
       "memory",
       typeof runner.memory_gib === "number" ? `${runner.memory_gib} GiB` : null,
     ],
+    [
+      "clock",
+      typeof runner.clock_mhz === "number"
+        ? `${runner.clock_mhz} MHz on a busy core, with turbo boost off. The September records were taken before this host's kernel boosted at all; the QEMU engine measured again at this clock read within 5% of its September record`
+        : null,
+    ],
+    [
+      "timing",
+      "seconds from the keystroke to the command's closing line, on the page's own clock from 2026-11-20; earlier records were timed by a poll a quarter of a second wide, which is why their small values step by 0.27 s",
+    ],
     ["kernel", `Linux ${runner.kernel}`],
     ["browser", runner.browser],
     ["probe", latest.probe ? latest.probe.split("/").pop() : null],
@@ -659,7 +717,10 @@ function packageLink(records, name) {
   }
   const { version } = nameAndVersion(resolved);
   if (spec.startsWith("pkg=") && version) {
-    const attr = spec.slice("pkg=".length);
+    // The attribute alone: an entry pinned to a version writes the
+    // version into its spec, and the resolved path supplies the version
+    // either way.
+    const [attr] = spec.slice("pkg=".length).split("@");
     return html(
       "a",
       {
@@ -727,15 +788,99 @@ function standings(records) {
     );
 }
 
+// The two engines side by side: the newest unkernel record's own suite
+// against the qemu engine's, which the same run measured on the same
+// cores with the same day's packages. The charts above put the engines
+// on one axis; this is the pair that is comparable to the percent.
+function drawEngines(records) {
+  const record = [...records]
+    .reverse()
+    .find((r) => r.baseline?.exec?.results && r.exec?.results);
+  if (!record) {
+    return;
+  }
+  const host = document.getElementById("engines");
+  const qemu = record.baseline.exec;
+  const unkernel = record.exec;
+  const resultOf = (exec, name) =>
+    exec.results.find((r) => r.name === name) ?? null;
+  const ratio = (a, b) =>
+    a !== null && b !== null && b > 0 ? `${(a / b).toFixed(1)}x` : "–";
+
+  const head = html("tr", {}, [
+    html("th", {}, ["package"]),
+    html("th", {}, ["command"]),
+    html("th", {}, ["cold, qemu"]),
+    html("th", {}, ["cold, unkernel"]),
+    html("th", {}, ["speedup"]),
+    html("th", {}, ["warm, qemu"]),
+    html("th", {}, ["warm, unkernel"]),
+    html("th", {}, ["speedup"]),
+  ]);
+  const rows = PACKAGES.map((name) => {
+    const cells = [
+      html("td", {}, [name]),
+      html("td", {}, [
+        html("code", {}, [resultOf(unkernel, name)?.command ?? ""]),
+      ]),
+    ];
+    for (const phase of ["cold", "warm"]) {
+      const before = wallOf(resultOf(qemu, name), phase);
+      const after = wallOf(resultOf(unkernel, name), phase);
+      cells.push(
+        html("td", { class: "num" }, [format(before, "s")]),
+        html("td", { class: "num" }, [format(after, "s")]),
+        html("td", { class: "num" }, [ratio(before, after)]),
+      );
+    }
+    return html("tr", {}, cells);
+  });
+
+  // The boot row has one number per engine, under the cold columns.
+  const bootBefore = medianBoot(qemu);
+  const bootAfter = medianBoot(unkernel);
+  rows.push(
+    html("tr", {}, [
+      html("td", {}, ["boot"]),
+      html("td", { class: "muted" }, ["click to a shell, closure fetched"]),
+      html("td", { class: "num" }, [format(bootBefore, "s")]),
+      html("td", { class: "num" }, [format(bootAfter, "s")]),
+      html("td", { class: "num" }, [ratio(bootBefore, bootAfter)]),
+      html("td", {}, []),
+      html("td", {}, []),
+      html("td", {}, []),
+    ]),
+  );
+
+  host.append(
+    html("p", { class: "muted" }, [
+      tagLink(record.baseline.tag),
+      " against ",
+      tagLink(record.tag),
+      `, measured together on ${record.measured.slice(0, 10)}.`,
+    ]),
+    html("div", { class: "scroll" }, [
+      html("table", { class: "prose" }, [
+        html("thead", {}, [head]),
+        html("tbody", {}, rows),
+      ]),
+    ]),
+  );
+}
+
 // Every link into the repository is written against main, and rewritten
 // here to the commit of the latest engine measured, so the patches and
 // documents the page links are the ones that produced the numbers on it.
+// A link marked data-unpinned is left on main: it names a file newer
+// than that commit.
 function pinLinks(records) {
   const latest = [...records].reverse().find((r) => r.commit && !r.error);
   if (!latest) {
     return;
   }
-  for (const anchor of document.querySelectorAll("a[href]")) {
+  for (const anchor of document.querySelectorAll(
+    "a[href]:not([data-unpinned])",
+  )) {
     const href = anchor.getAttribute("href");
     for (const kind of ["blob", "tree"]) {
       const prefix = `${REPO_URL}${kind}/main/`;
@@ -755,6 +900,7 @@ async function main() {
   const history = await response.json();
   const records = history.records ?? [];
   drawExec(records);
+  drawEngines(records);
   drawEmubench(records);
   standings(records);
   describeRunner(records);

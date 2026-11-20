@@ -34,9 +34,8 @@ let
   ghostty =
     npm "ghostty-web" "0.4.0-next.20.g1858a59"
       "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
-  unkernel =
-    npm "unkernel" "0.2.0-261119-040e142"
-      "0qg1giyy1r7lgyrb4skdn2cf21lqjc2v12f23x2gskfrh7s445h0";
+  unkernelVersion = "0.2.0-261119-040e142";
+  unkernel = npm "unkernel" unkernelVersion "0qg1giyy1r7lgyrb4skdn2cf21lqjc2v12f23x2gskfrh7s445h0";
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
@@ -101,4 +100,8 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
   cp unpack/package/dist/_chunks/core.mjs $out/unkernel/_chunks/core.mjs
   cp unpack/package/dist/unkernel.wasm $out/unkernel/unkernel.wasm
+  # The version, for the benchmark history: a record of the unkernel
+  # engine is named after the version the site carried
+  # (tools/bench-history.py).
+  echo ${unkernelVersion} > $out/unkernel/VERSION
 ''

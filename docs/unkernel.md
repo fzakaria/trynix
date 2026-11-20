@@ -36,6 +36,15 @@ warm.
 | python, 3M-iteration `sum()` | 28.8 / 27.2   | 8.7 / 8.5     |
 | `opencode --version`         | 116.5 / 108.3 | 56 / 59       |
 
+These were taken on cores with turbo boost on (3.5 GHz), which this
+host's kernel started doing after the benchmark page's September
+records. Both columns ran that way, so the ratios hold, but the
+seconds are a third lower than the history's. The benchmark page
+([site/bench/](../site/bench/)) carries the same suite at the
+history's clock, 2.45 GHz with boost off, through the real page and
+shell: cold `jj --version` 3.02 s against 0.35 s, python 5.21 s
+against 1.09 s, opencode 184 s against 98 s.
+
 The package versions differ slightly between the two columns. The
 unkernel side ran the aarch64 builds from the nixpkgs revision this
 flake locks (jj 0.44.0, python 3.14.7, opencode 1.18.25), the qemu side
@@ -51,6 +60,17 @@ many modules. Why is not known.
 
 The raw results and the harness are on leviathan under
 `~/bench/unkernel-20261120/`.
+
+## Tracking it
+
+`nix run .#bench-history -- --site <site> --out history.json --unkernel`
+measures the unkernel version the site carries and, in the same run,
+the site's qemu engine, and adds a record named after the version to
+the history the benchmark page draws. Run it on leviathan pinned to a
+NUMA node with boost off (node 7 as of 2026-11-20:
+`numactl --physcpubind=120-123 --membind=5`), from a copy of the tree,
+and do it again whenever the version in
+[nix/vendor.nix](../nix/vendor.nix) changes.
 
 ## Running x86_64 programs on unkernel
 

@@ -21,9 +21,12 @@ ratio of every number against an earlier run. --only picks entries by
 name. The suite is the table below; every entry is a `pkg=` the page's
 index resolves, so each engine fetches the build for its own system.
 
-Numbers per entry and execution: wall seconds from keystroke to prompt;
-the guest's own real/user/sys from busybox `time`; the browser process
-group's CPU seconds and peak RSS over the same window. The RSS is a sum
+Numbers per entry and execution: seconds from keystroke to the command's
+closing line, twice, as `page_seconds` on the page's own clock (a few
+milliseconds wide) and as `wall_seconds` on this tool's quarter-second
+poll, which is all the records before 2026-11-20 have; the guest's own
+real/user/sys from busybox `time`; the browser process group's CPU
+seconds and peak RSS over the same window. The RSS is a sum
 over processes and double-counts shared pages: compare it between runs,
 do not read it as a footprint.
 """
@@ -77,6 +80,14 @@ DEFAULT_GUEST_ENGINE = "unkernel"
 ITERATIONS = ["cold", "warm"]
 COMMAND_LIMIT_SECONDS = 1800
 POLL_SECONDS = 0.25
+# The page's own timer (page_timer): where the page leaves its answer,
+# how often the page looks for the closing line, and how long the host
+# waits for the answer once the host has seen the line too.
+PAGE_TIMER = "__execBenchSeconds"
+PAGE_POLL_MILLISECONDS = 2
+PAGE_TIMER_GRACE_SECONDS = 2
+PAGE_TIMER_READ_SECONDS = 0.02
+MILLISECONDS_PER_SECOND = 1000
 KIB = 1024
 CLOCK_TICKS = os.sysconf("SC_CLK_TCK")
 SUCCESS_STATUS = 0
@@ -94,12 +105,60 @@ def wrap_command(command, marker):
     return f"time sh -c {quoted}; printf '\\n%s%s:%s\\n' '{prefix}_' '{suffix}' $?"
 
 
+def closing_pattern(marker):
+    """The regular expression for the line that ends a command: the
+    marker, a colon and the exit status, on a line of their own. Written
+    in the syntax Python and JavaScript share, since the page waits on
+    the same line (page_timer)."""
+    return r"(?:^|\n)" + re.escape(marker) + r":(\d+)\r*\n"
+
+
 def completion(transcript, marker):
     """The exit status once the whole marker line has been printed."""
     if "Stopped" in transcript:
         return None
-    match = re.search(r"(?:^|\n)" + re.escape(marker) + r":(\d+)\r*\n", transcript)
+    match = re.search(closing_pattern(marker), transcript)
     return int(match[1]) if match else None
+
+
+def page_timer(line, marker):
+    """JavaScript that types `line` into the guest and leaves, in
+    window[PAGE_TIMER], the seconds until the closing line of `marker`
+    appears, by the page's clock.
+
+    The loop below this function's caller looks at the console every
+    POLL_SECONDS, so a command that takes 20 ms reads as a quarter of a
+    second from there. The page looks every few milliseconds instead.
+    The transcript is searched whole: the marker differs per execution
+    and the echo of the typed line carries the marker in two halves, so
+    nothing printed earlier can match."""
+    return f"""(() => {{
+  const closing = new RegExp({json.dumps(closing_pattern(marker))});
+  const started = performance.now();
+  window.{PAGE_TIMER} = null;
+  window.trynix.type({json.dumps(line)});
+  const look = () => {{
+    if (closing.test(window.trynix.transcript())) {{
+      window.{PAGE_TIMER} = (performance.now() - started) / {MILLISECONDS_PER_SECOND};
+      return;
+    }}
+    setTimeout(look, {PAGE_POLL_MILLISECONDS});
+  }};
+  look();
+}})()"""
+
+
+def read_page_timer(browser):
+    """The seconds page_timer measured, or None if the page never saw
+    the closing line. The host can see the line a moment before the
+    page's own loop does, so the answer is waited for briefly."""
+    deadline = time.monotonic() + PAGE_TIMER_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        seconds = browser.evaluate(f"window.{PAGE_TIMER}")
+        if seconds is not None:
+            return round(seconds, 3)
+        time.sleep(PAGE_TIMER_READ_SECONDS)
+    return None
 
 
 def command_error(status):
@@ -210,7 +269,7 @@ def run_entry(entry, base, browser_binary, runs_dir, guest_engine):
             cpu_before, _ = group_usage(pgid)
             peak_rss = 0
             t0 = time.monotonic()
-            browser.type(wrap_command(entry["command"], marker) + "\n")
+            browser.evaluate(page_timer(wrap_command(entry["command"], marker) + "\n", marker))
             status = None
             while time.monotonic() - t0 < COMMAND_LIMIT_SECONDS:
                 _, rss = group_usage(pgid)
@@ -223,6 +282,7 @@ def run_entry(entry, base, browser_binary, runs_dir, guest_engine):
             cpu_after, _ = group_usage(pgid)
             said = browser.transcript()[mark:]
             measurement = {
+                "page_seconds": read_page_timer(browser) if status is not None else None,
                 "wall_seconds": round(wall, 2),
                 "status": status,
                 "guest": parse_time(said),
@@ -238,7 +298,8 @@ def run_entry(entry, base, browser_binary, runs_dir, guest_engine):
             if status is None:
                 break
             print(
-                f"  {entry['name']:9s} {label:4s} wall {wall:8.2f}s"
+                f"  {entry['name']:9s} {label:4s} page {measurement['page_seconds'] or float('nan'):8.3f}s"
+                f" wall {wall:8.2f}s"
                 f" guest user {measurement['guest'].get('user', float('nan')):7.2f}s"
                 f" browser cpu {measurement['browser_cpu_seconds']:7.2f}s"
                 f" rss {peak_rss / (1 << 20):6.0f} MiB status {status}",

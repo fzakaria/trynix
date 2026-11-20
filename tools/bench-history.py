@@ -15,6 +15,7 @@ file, keyed by the release tag.
     nix run .#bench-history -- --site <site> --out history.json
     nix run .#bench-history -- --site <site> --out h.json --revs 805107b cd13238 --emubench-runs 3
     nix run .#bench-history -- --merge a.json b.json --out history.json
+    nix run .#bench-history -- --site <site> --out history.json --unkernel
 
 --site is the page every engine is driven through: build it from the
 checkout the tool runs in (`nix build .#site`). --revs restricts the
@@ -29,8 +30,22 @@ measured against that clock. Each record therefore carries the ratio of
 the guest's account of the run to the host's, and a `mips_host` per row
 corrected by it. The page draws `mips_host`.
 
+The unkernel engine (docs/unkernel.md) is not built here and has no
+pins to walk: the site carries one version of it, vendored from npm.
+--unkernel measures that version through --site with the package suite
+and adds a record tagged unkernel-<version>. The same run then measures
+the site's qemu engine on the same suite, and the record keeps those
+numbers beside its own as `baseline`, because the suite's packages move
+with the index and two engines are only comparable when both ran the
+same day's packages on the same cores. The instruction-class probe is
+x86_64 assembly and is not run.
+
 Read the numbers as one machine's: the history is only comparable within
-a run on one host, which the record names.
+a run on one host, which the record names. One machine is not one speed
+either: leviathan's kernel began boosting busy cores from 2.45 to 3.5 GHz
+in November 2026, on every NUMA node where boost has not been turned
+off, and a boosted run reads a third faster. A record keeps the CPUs it
+was pinned to and the clock a busy one of them ran at.
 """
 
 import argparse
@@ -44,6 +59,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -62,6 +78,15 @@ PROBE_LIMIT_SECONDS = 1800
 # a build of an old commit can take a kernel compile; a bench, opencode
 BUILD_LIMIT_SECONDS = 3600
 BENCH_LIMIT_SECONDS = 7200
+# The unkernel engine's records: the tag's prefix, and the file in the
+# site that names the vendored version (nix/vendor.nix writes it).
+UNKERNEL_ENGINE = "unkernel"
+QEMU_ENGINE = "qemu"
+UNKERNEL_TAG_PREFIX = "unkernel-"
+UNKERNEL_VERSION_FILE = "vendor/unkernel/VERSION"
+# How long a core spins before its clock is read, so it has left idle.
+CLOCK_SPIN_SECONDS = 1
+KHZ_PER_MHZ = 1000
 DESCRIPTION = (
     "One record per published trynix engine, measured on one machine by "
     "tools/bench-history.py: the per-instruction-class probe (emubench, "
@@ -237,17 +262,66 @@ def merge_record(existing, fresh):
     return merged
 
 
+def chronological(record):
+    """Where a record sorts: by its date, then by its tag. A qemu
+    engine's date is its pin commit's and its tag is dated too, so the
+    two agree. An unkernel record's tag is a version, which says nothing
+    about when trynix carried it, so the date is what orders the two
+    engines against each other. A record with no date sorts first, by
+    tag."""
+    date = record.get("date")
+    moment = datetime.datetime.fromisoformat(date) if date else datetime.datetime.min
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return (moment, record["tag"])
+
+
 def merge_histories(histories):
-    """One record per tag, the last one given winning, in tag order --
-    the tags are dated, so that is chronological."""
+    """One record per tag, the last one given winning, oldest first."""
     by_tag = {}
     for history in histories:
         for record in history.get("records", []):
             by_tag[record["tag"]] = record
     return {
         "description": DESCRIPTION,
-        "records": [by_tag[tag] for tag in sorted(by_tag)],
+        "records": sorted(by_tag.values(), key=chronological),
     }
+
+
+def unkernel_record(version, machine, measured, unkernel, baseline_tag, baseline):
+    """The record of one unkernel version: its own suite numbers, and
+    the qemu engine's from the same run under `baseline`. The date is
+    when the version was measured, which is when trynix carried it."""
+    return {
+        "engine": UNKERNEL_ENGINE,
+        "tag": UNKERNEL_TAG_PREFIX + version,
+        "unkernel_version": version,
+        "subject": f"unkernel {version}",
+        "date": measured,
+        "measured": measured,
+        "runner": machine,
+        "exec": unkernel,
+        "baseline": {"tag": baseline_tag, "exec": baseline},
+    }
+
+
+def busy_clock(cpu):
+    """The clock one CPU runs at while busy, in MHz, read from cpufreq
+    while a loop spins on that CPU; None on a machine without cpufreq."""
+    path = f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq"
+    if not os.path.exists(path):
+        return None
+    spin = subprocess.Popen(
+        [sys.executable, "-c", f"import os\nos.sched_setaffinity(0, [{cpu}])\nwhile True: pass"]
+    )
+    try:
+        time.sleep(CLOCK_SPIN_SECONDS)
+        with open(path) as f:
+            khz = int(f.read())
+    finally:
+        spin.kill()
+        spin.wait()
+    return round(khz / KHZ_PER_MHZ)
 
 
 def runner(browser):
@@ -274,7 +348,7 @@ def runner(browser):
         version = subprocess.run([browser, "--version"], capture_output=True, text=True).stdout.strip()
     except OSError:
         version = browser
-    return {
+    machine = {
         "host": socket.gethostname(),
         "cpu": cpu,
         "cores": os.cpu_count(),
@@ -282,6 +356,16 @@ def runner(browser):
         "kernel": platform.release(),
         "browser": version,
     }
+
+    # The CPUs this run is pinned to, when it is pinned, and the clock a
+    # busy one of them runs at (the module docstring says why).
+    allowed = sorted(os.sched_getaffinity(0))
+    if len(allowed) < (os.cpu_count() or 0):
+        machine["cpu_affinity"] = allowed
+    clock = busy_clock(allowed[0])
+    if clock is not None:
+        machine["clock_mhz"] = clock
+    return machine
 
 
 def measure_emubench(site, probe, cache, count, browser, workdir, log):
@@ -313,11 +397,12 @@ def measure_emubench(site, probe, cache, count, browser, workdir, log):
     }
 
 
-def measure_exec(site, only, browser, workdir, log):
-    out = os.path.join(workdir, "exec-bench.json")
-    # The history is of qemu engine releases, so the guest runs on qemu
-    # whatever the page's default engine is.
-    arguments = ["--site", site, "--json", out, "--browser", browser, "--guest-engine", "qemu"]
+def measure_exec(site, only, browser, workdir, log, guest_engine=QEMU_ENGINE):
+    """The package suite through `site` on one of the page's engines.
+    A qemu engine release is measured on qemu whatever the page's
+    default engine is."""
+    out = os.path.join(workdir, f"exec-bench-{guest_engine}.json")
+    arguments = ["--site", site, "--json", out, "--browser", browser, "--guest-engine", guest_engine]
     for name in only or []:
         arguments += ["--only", name]
     # exec-bench exits nonzero when any entry failed but still writes
@@ -327,6 +412,37 @@ def measure_exec(site, only, browser, workdir, log):
         return {"error": failure or "no output"}
     with open(out) as f:
         return {"results": json.load(f)["results"]}
+
+
+def measure_unkernel(site, pins_root, only, browser, machine, log):
+    """Measure the unkernel version `site` carries, then the site's qemu
+    engine on the same suite, and return the record."""
+    with open(os.path.join(site, UNKERNEL_VERSION_FILE)) as f:
+        version = f.read().strip()
+    with open(os.path.join(pins_root, PINS_PATH)) as f:
+        baseline_tag = json.load(f)["tag"]
+    print(f"== {UNKERNEL_TAG_PREFIX}{version}, beside {baseline_tag}", flush=True)
+
+    workdir = tempfile.mkdtemp(prefix="bench-history-runs-")
+    try:
+        measurements = {}
+        for guest_engine in (UNKERNEL_ENGINE, QEMU_ENGINE):
+            measurements[guest_engine] = measure_exec(site, only, browser, workdir, log, guest_engine)
+            for result in measurements[guest_engine].get("results", []):
+                cold = result.get("cold", {}).get("page_seconds")
+                warm = result.get("warm", {}).get("page_seconds")
+                print(f"   {guest_engine:8s} {result['name']:9s} cold {cold} warm {warm}", flush=True)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    return unkernel_record(
+        version=version,
+        machine=machine,
+        measured=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        unkernel=measurements[UNKERNEL_ENGINE],
+        baseline_tag=baseline_tag,
+        baseline=measurements[QEMU_ENGINE],
+    )
 
 
 def load_history(path):
@@ -364,6 +480,11 @@ def main():
     )
     parser.add_argument("--only", action="append", help="exec-bench entries to run (repeatable)")
     parser.add_argument("--merge", nargs="*", help="join these history files into --out and stop")
+    parser.add_argument(
+        "--unkernel",
+        action="store_true",
+        help="measure the unkernel version --site carries, and its qemu engine beside it, and stop",
+    )
     parser.add_argument("--log", help="where the tools' own output goes (default: <out>.log)")
     parser.add_argument(
         "--browser",
@@ -380,12 +501,27 @@ def main():
 
     if not args.site:
         sys.exit("pass --site <a built site directory>")
-    repo = args.repo or git(os.getcwd(), "rev-parse", "--show-toplevel").strip()
     log = args.log or args.out + ".log"
     history = load_history(args.out)
     done = {record["tag"] for record in history["records"]}
     machine = runner(args.browser)
-    print(f"measuring on {machine['host']} ({machine['cpu']}), {machine['browser']}", flush=True)
+    print(
+        f"measuring on {machine['host']} ({machine['cpu']}), {machine['browser']},"
+        f" CPUs {machine.get('cpu_affinity', 'unpinned')} at {machine.get('clock_mhz')} MHz",
+        flush=True,
+    )
+
+    # The unkernel record needs no pin history, only the tree that
+    # names the site's qemu engine: --repo, or the working directory.
+    if args.unkernel:
+        record = measure_unkernel(args.site, args.repo or os.getcwd(), args.only, args.browser, machine, log)
+        existing = next((r for r in history["records"] if r["tag"] == record["tag"]), None)
+        history["records"] = [r for r in history["records"] if r["tag"] != record["tag"]]
+        history["records"].append(merge_record(existing, record))
+        save_history(args.out, history)
+        return
+
+    repo = args.repo or git(os.getcwd(), "rev-parse", "--show-toplevel").strip()
     probe = None
     probe_cache = None
     keydir = tempfile.mkdtemp(prefix="bench-history-key-")

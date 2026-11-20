@@ -39,9 +39,13 @@
 
     <main>
       <p>
-        A benchmark of the QEMU emulator behind trynix, measured across its
+        A benchmark of the engines behind trynix. The first is a QEMU emulator built here,
+        measured across its
         <a href="https://github.com/fzakaria/trynix/releases">engine releases</a> to check that
-        each change to it was an improvement.
+        each change to it was an improvement. The second is
+        <a href="https://github.com/pithings/unkernel">unkernel</a>, the page's default since
+        November 2026, measured at each version the site carries. Both are on the same axis,
+        oldest first.
       </p>
 
       <h2>Real packages, cold and warm</h2>
@@ -52,10 +56,20 @@
       <div id="exec-charts"></div>
       <div id="standings"></div>
 
+      <h2>The two engines, measured together</h2>
+      <p>
+        The suite's packages are whatever the index holds newest, so they move between records,
+        and the two engines run different builds of them: x86_64 on QEMU, aarch64 on unkernel.
+        This table is one run that measured both engines back to back on the same cores, which
+        is the comparison to trust to the percent.
+      </p>
+      <div id="engines"></div>
+
       <h2>Instruction classes</h2>
       <p>
         Millions of guest instructions per second on a fixed assembly loop per mechanism the
         emulator pays for, so a change names a mechanism rather than a workload. Higher is better.
+        The loops are x86_64 assembly, so these charts cover the QEMU engine only.
       </p>
       <div id="emubench-charts"></div>
 
@@ -272,6 +286,38 @@
           release also read the libraries, which helped small binaries and cost python; the next
           reads the binaries alone, which is why hello, ripgrep and jj give a little back between
           those two records.
+        </p>
+      </section>
+
+      <section class="change">
+        <h3>A second engine</h3>
+        <p class="meta">
+          <a href="https://github.com/pithings/unkernel">unkernel</a>
+          ·
+          <a
+            data-unpinned
+            href="https://github.com/fzakaria/trynix/blob/main/docs/unkernel.md"
+            >docs/unkernel.md</a
+          >
+          · the kernel is compiled to wasm, only the programs are emulated
+        </p>
+        <p class="gain">
+          cold <code>jj --version</code> 3.02 s to 0.35 s, <code>python3 -c 'print(1)'</code> 5.21
+          s to 1.09 s, <code>opencode --version</code> 184 s to 98 s, measured together
+        </p>
+        <p>
+          QEMU emulates a whole PC, so the guest's kernel runs through the same translator as the
+          program, and a first run is mostly kernel work: faulting the closure in over 9p, mapping
+          it, starting the process. unkernel is Linux compiled to WebAssembly with an aarch64
+          emulator inside for user programs, so that work runs as compiled code. It boots in
+          under half a second, which is why the boot panel drops without a snapshot. The page
+          resolves packages against the aarch64 builds for it; QEMU stays for x86_64 store paths,
+          for versions Hydra never built for aarch64, and for browsers without JSPI.
+        </p>
+        <p>
+          The last point on every package chart is unkernel. The step there is two engines apart,
+          not one engine improving, and the table under "The two engines, measured together" is
+          the like-for-like pair.
         </p>
       </section>
 

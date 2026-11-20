@@ -127,3 +127,56 @@ class MergeRecord(unittest.TestCase):
         tool = load()
         fresh = {"tag": "engine-20260909-1605"}
         self.assertIs(tool.merge_record(None, fresh), fresh)
+
+
+class Chronology(unittest.TestCase):
+    """Tests the order records are kept in once two engines share the
+    history. Tags only sort chronologically within one engine, so the
+    order comes from each record's date; the records here are built by
+    hand with tags that would sort the wrong way."""
+
+    def test_records_sort_by_date_across_engines(self):
+        history = load()
+        qemu = {"tag": "engine-20260913-2056", "date": "2026-09-13T13:56:42-07:00"}
+        first = {"tag": "unkernel-0.10.0", "date": "2026-11-20T18:00:00+00:00", "engine": "unkernel"}
+        second = {"tag": "unkernel-0.9.0", "date": "2026-11-21T02:00:00+09:00", "engine": "unkernel"}
+        merged = history.merge_histories([{"records": [first, qemu, second]}])
+        self.assertEqual(
+            [record["tag"] for record in merged["records"]],
+            ["engine-20260913-2056", "unkernel-0.9.0", "unkernel-0.10.0"],
+        )
+
+    def test_a_record_without_a_date_keeps_its_tag_order(self):
+        history = load()
+        dated = {"tag": "engine-b", "date": "2026-09-13T13:56:42-07:00"}
+        undated = {"tag": "engine-a"}
+        merged = history.merge_histories([{"records": [dated, undated]}])
+        self.assertEqual([record["tag"] for record in merged["records"]], ["engine-a", "engine-b"])
+
+
+class UnkernelRecord(unittest.TestCase):
+    """Tests the record an unkernel measurement becomes: named after the
+    unkernel version the site carries, marked with its engine, and
+    holding the qemu engine's numbers from the same run beside its own.
+    Built from made-up measurements, with no browser."""
+
+    def test_names_the_version_and_keeps_the_baseline(self):
+        history = load()
+        record = history.unkernel_record(
+            version="0.2.0-261119-040e142",
+            machine={"host": "leviathan"},
+            measured="2026-11-20T20:00:00+00:00",
+            unkernel={"results": [{"name": "hello"}]},
+            baseline_tag="engine-20260913-2056",
+            baseline={"results": [{"name": "hello"}]},
+        )
+        self.assertEqual(record["tag"], "unkernel-0.2.0-261119-040e142")
+        self.assertEqual(record["engine"], "unkernel")
+        self.assertEqual(record["date"], "2026-11-20T20:00:00+00:00")
+        self.assertEqual(record["exec"], {"results": [{"name": "hello"}]})
+        self.assertEqual(record["baseline"]["tag"], "engine-20260913-2056")
+        self.assertEqual(record["baseline"]["exec"], {"results": [{"name": "hello"}]})
+
+
+if __name__ == "__main__":
+    unittest.main()
