@@ -14,6 +14,15 @@ const VENDOR = new URL("../../site/vendor/unkernel/", import.meta.url);
 const MEMORY_MIB = 256;
 const WAIT_MS = 20000;
 
+// The kernel switches tasks by suspending WebAssembly (JSPI), which
+// node 24 has only behind --experimental-wasm-jspi. The flake's check
+// runs this file with the flag; a run without it skips these tests.
+const NEEDS_JSPI = {
+  skip:
+    typeof WebAssembly.Suspending !== "function" &&
+    "needs JSPI (node --experimental-wasm-jspi)",
+};
+
 // A machine and what it has said, with ways to wait on both.
 async function session() {
   const sdk = await import(new URL("web.mjs", VENDOR));
@@ -81,47 +90,51 @@ async function session() {
 // keyframe brings back the files and the shell as they were, the
 // next keyframe after a restore is a branch off the restored one, and
 // the share and exec() keep working in a restored machine.
-test("keyframes at prompts restore the guest as it was", async () => {
-  const s = await session();
-  try {
-    s.machine.files.writeFile("/hello.txt", "from the share\n", {
-      mode: 0o644,
-    });
-    await s.machine.run([]);
-    await s.until(() => s.frames.length >= 1, "the first keyframe");
-    const start = s.frames[0];
-    assert.equal(start.kind, KeyframeKind.PROMPT);
-    assert.equal(start.parent, null);
+test(
+  "keyframes at prompts restore the guest as it was",
+  NEEDS_JSPI,
+  async () => {
+    const s = await session();
+    try {
+      s.machine.files.writeFile("/hello.txt", "from the share\n", {
+        mode: 0o644,
+      });
+      await s.machine.run([]);
+      await s.until(() => s.frames.length >= 1, "the first keyframe");
+      const start = s.frames[0];
+      assert.equal(start.kind, KeyframeKind.PROMPT);
+      assert.equal(start.parent, null);
 
-    const one = await s.run("echo one > /tmp/a");
-    assert.equal(one.prompt.command, "echo one > /tmp/a");
-    assert.equal(one.parent, start.id);
-    const two = await s.run("echo two > /tmp/a");
-    assert.equal(two.parent, one.id);
-    assert.doesNotMatch(s.output(), /\x1b\]7701/);
+      const one = await s.run("echo one > /tmp/a");
+      assert.equal(one.prompt.command, "echo one > /tmp/a");
+      assert.equal(one.parent, start.id);
+      const two = await s.run("echo two > /tmp/a");
+      assert.equal(two.parent, one.id);
+      assert.doesNotMatch(s.output(), /\x1b\]7701/);
 
-    // Back to the prompt after "one": the file says one again, and the
-    // next keyframe hangs off the restored one.
-    await s.machine.restore(one.id);
-    const branch = await s.run("cat /tmp/a /share/hello.txt");
-    assert.equal(branch.parent, one.id);
-    assert.match(s.output(), /one\r?\nfrom the share/);
-    const read = await s.machine.exec("/bin/cat", ["/tmp/a"]);
-    assert.equal(read.stdout, "one\n");
+      // Back to the prompt after "one": the file says one again, and the
+      // next keyframe hangs off the restored one.
+      await s.machine.restore(one.id);
+      const branch = await s.run("cat /tmp/a /share/hello.txt");
+      assert.equal(branch.parent, one.id);
+      assert.match(s.output(), /one\r?\nfrom the share/);
+      const read = await s.machine.exec("/bin/cat", ["/tmp/a"]);
+      assert.equal(read.stdout, "one\n");
 
-    // And over to the other branch.
-    await s.machine.restore(two.id);
-    const after = s.output().length;
-    await s.run("cat /tmp/a");
-    assert.match(s.output().slice(after), /two/);
-  } finally {
-    await s.machine.stop();
-  }
-});
+      // And over to the other branch.
+      await s.machine.restore(two.id);
+      const after = s.output().length;
+      await s.run("cat /tmp/a");
+      assert.match(s.output().slice(after), /two/);
+    } finally {
+      await s.machine.stop();
+    }
+  },
+);
 
 // Checks that an empty line at the prompt takes no keyframe: nothing
 // ran, so there is nothing new to go back to.
-test("an empty line takes no keyframe", async () => {
+test("an empty line takes no keyframe", NEEDS_JSPI, async () => {
   const s = await session();
   try {
     await s.machine.run([]);
@@ -140,7 +153,7 @@ test("an empty line takes no keyframe", async () => {
 // keyframe of the live machine, half-typed line and all, is taken
 // before the restore, and going to it brings the line back, so
 // finishing the line runs the command.
-test("going back keeps a keyframe of where it left", async () => {
+test("going back keeps a keyframe of where it left", NEEDS_JSPI, async () => {
   const s = await session();
   try {
     await s.machine.run([]);

@@ -349,6 +349,10 @@
                 cd tree
                 ln -s ${vendor} site/vendor
                 node --test tests/site/*.test.mjs
+                # the machine's tests boot the real kernel, which needs
+                # JSPI; the rest must run without it, where the page
+                # picks the qemu engine
+                node --experimental-wasm-jspi --test tests/site/machine.test.mjs
                 python3 -m unittest discover -s tests/tools -t .
                 touch $out
               '';
