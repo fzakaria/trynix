@@ -188,6 +188,10 @@ itself.
 - Keep a screen's layout across a resize. The recorded bytes assumed
   the terminal's width when they were drawn, and a screen replayed at
   another width wraps where the guest did not.
+- Rebuild more than the last 2 MiB of a screen. The page keeps at most
+  that much of the console per keyframe, past the terminal's 5000
+  lines of scrollback, so that a command flooding the console cannot
+  fill the tab.
 - Keep a nested shell's commands apart. Only the login shell's prompt
   carries the mark, so `sh` started at the prompt is one long command
   until it exits.
