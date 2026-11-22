@@ -227,12 +227,38 @@ the runs part at call 372, where one reads the clock and the other
 waits in poll_oneoff, because the clock had moved.
 
 A virtual clock is not what the page wants, since it makes `sleep 6`
-take no time. What the result supports is record and replay: log each
-import call's result as the page runs (the clock readings, random
-bytes, console and vsock bytes read, poll events, the interrupt word on
-return) and feed those back from the keyframe up to the chosen call,
-then switch the instance to live inputs. One input the experiment did
-not exercise could still differ: the SDK's JIT refuses compiles while
-the engine has not collected freed modules, which depends on V8's
-garbage collector, so a refused compile would need to be part of the
-record as well. Not built.
+take no time. The other way to pin the inputs is to record them:
+[experiments/replay.mjs](../experiments/replay.mjs) runs the guest on
+its real clock, randomness and typing, and records what each of five
+imports returned and wrote into memory: clock_time_get, random_get,
+fd_read, poll_oneoff and sched_yield, with the interrupt word as each
+returned. Every other import (task switches, JIT compiles, console
+writes) depends only on what the kernel asks and runs for real on
+replay. A replay restores the same snapshot, answers those five from
+the record up to a chosen call, and then switches the instance to live
+inputs, with the guest's clock carried on from its last recorded
+reading.
+
+The record run typed `cat /proc/uptime; date; echo $RANDOM; sleep 1`,
+eight bytes of `/dev/urandom` and a 100k-round loop: 22,360 import
+calls in 6.3 s, and about 424 KiB of record. Replayed to calls 4000,
+8000, 12000, 16000 and 20000, memory was identical to the record run's
+at each, and each replayed guest went on to answer a command typed
+live. Replaying to call 20000 took 3.9 s, the `sleep` skipped and the
+loop at the speed it ran at first, since a restored instance's JIT
+starts cold.
+
+So scrubbing inside a command can be built on this: record the five
+imports continuously in the guest worker, keep each keyframe's record
+up to the next one, and to show a point between two keyframes, restore
+the earlier one and replay to it. It is not built. What is missing:
+the vsock imports (vsock_rx_len and vsock_recv carry the share's 9p
+replies, and the page writes a NAR into the share when a package is
+added, which changes what a replayed read returns, so the record needs
+the bytes read, not a re-read); the time a replay takes, which is the
+command's CPU time and not the wall time; a way to find the import call
+for a point the reader picked on the strip (the console output's
+offset, recorded per call, would do); and the JIT's one dependency on
+the host, a compile it refuses while V8 has not collected freed
+modules, which a long session could hit and the record would then need
+to carry.
