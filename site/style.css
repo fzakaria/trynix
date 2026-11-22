@@ -735,6 +735,15 @@ code {
   text-overflow: ellipsis;
   font-size: 11px;
 }
+.timeline-label.first {
+  left: 0;
+  transform: none;
+}
+.timeline-label.last {
+  left: auto;
+  right: 0;
+  transform: none;
+}
 .timeline-handle {
   position: absolute;
   top: 0.9rem;

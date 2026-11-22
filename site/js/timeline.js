@@ -329,6 +329,10 @@ export class Timeline {
         label.className = "timeline-label";
         label.textContent = labelOf(position);
         label.style.maxWidth = `${spacing - 8}px`;
+        // The labels at the two ends hang inward, so the strip's edge
+        // does not cut them.
+        label.classList.toggle("first", index === 0);
+        label.classList.toggle("last", index === this.positions.length - 1);
         mark.append(label);
       }
       return mark;
@@ -381,7 +385,7 @@ export class Timeline {
       this.caption.textContent =
         future === 0
           ? describe(position)
-          : `back at ${describe(position)}; a new command starts a branch`;
+          : `${describe(position)} · a new command starts a branch`;
       return;
     }
     this.caption.textContent = `${describe(position)} (release or Enter to go, Esc to stay at ${describe(here)})`;
