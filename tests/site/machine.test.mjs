@@ -132,9 +132,11 @@ test(
   },
 );
 
-// Checks that an empty line at the prompt takes no keyframe: nothing
-// ran, so there is nothing new to go back to.
-test("an empty line takes no keyframe", NEEDS_JSPI, async () => {
+// Checks that a prompt where nothing ran takes no keyframe: an empty
+// line, an empty line after the terminal answered the line editor's
+// cursor question, and a line cancelled with Ctrl-C. There is nothing
+// new to go back to.
+test("an empty or cancelled line takes no keyframe", NEEDS_JSPI, async () => {
   const s = await session();
   try {
     await s.machine.run([]);
@@ -142,8 +144,38 @@ test("an empty line takes no keyframe", NEEDS_JSPI, async () => {
     await s.run("true");
     const count = s.frames.length;
     s.machine.write("\n");
+    s.machine.write("\x1b[5;9R");
+    s.machine.write("\n");
+    s.machine.write("echo never\x03");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    s.machine.write("\n");
     await new Promise((resolve) => setTimeout(resolve, 500));
     assert.equal(s.frames.length, count);
+  } finally {
+    await s.machine.stop();
+  }
+});
+
+// Checks that the same command run several times in a row gets a
+// keyframe each time, labelled with the command. busybox's line editor
+// leaves a repeat out of the history, so the prompt's history line
+// does not change; typing a line is what says a command ran.
+test("a command run again gets a keyframe of its own", NEEDS_JSPI, async () => {
+  const s = await session();
+  try {
+    await s.machine.run([]);
+    await s.until(() => s.frames.length >= 1, "the first keyframe");
+    for (let run = 0; run < 3; run++) {
+      const frame = await s.run("ls /");
+      assert.equal(frame.prompt.command, "ls /");
+    }
+    // Recalling the line with the up arrow is a command run too.
+    const recalled = await s.run("\x1b[A");
+    assert.equal(recalled.prompt.command, "ls /");
+    const labels = s.frames
+      .filter((f) => f.kind === KeyframeKind.PROMPT)
+      .map((f) => f.prompt.command);
+    assert.deepEqual(labels, ["", "ls /", "ls /", "ls /", "ls /"]);
   } finally {
     await s.machine.stop();
   }

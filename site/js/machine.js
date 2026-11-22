@@ -28,7 +28,7 @@ import {
 } from "./share.js";
 import { Precedence } from "./store.js";
 import { KeyframeStore } from "./keyframes.js";
-import { PROMPT_HOOK, promptScanner } from "./prompt.js";
+import { lineCounter, PROMPT_HOOK, promptScanner } from "./prompt.js";
 
 // The shell programs run through: busybox ash from unkernel's base
 // system.
@@ -231,9 +231,10 @@ export async function startMachine({
   };
 
   // A prompt was drawn. A keyframe is taken there if a command ran
-  // since the last one (its history entry differs), or if it is the
-  // first prompt; an empty line adds nothing to the history and gets
-  // none.
+  // since the last one, or if it is the first prompt. A command ran if
+  // the history entry differs, or if a line was typed (prompt.js,
+  // lineCounter): busybox leaves a repeated command out of the
+  // history. An empty line does neither and gets no keyframe.
   //
   // The keyframe waits for the console to go quiet (PROMPT_QUIET_MS),
   // or for the next keystroke, whichever comes first: typing goes to
@@ -242,11 +243,14 @@ export async function startMachine({
   // prompt's keyframe behind it.
   let promptTimer = null;
   let promptPending = null;
+  const lines = lineCounter();
   function prompted(mark) {
+    const typedLines = lines.take();
     const ran =
       lastPrompt === null ||
       mark.number !== lastPrompt.number ||
-      mark.command !== lastPrompt.command;
+      mark.command !== lastPrompt.command ||
+      typedLines > 0;
     lastPrompt = mark;
     commandRunning = false;
     if (!ran) {
@@ -411,6 +415,7 @@ export async function startMachine({
       vm.resize(size.cols, size.rows);
       const frame = frames.get(id);
       lastPrompt = frame.prompt;
+      lines.reset();
       commandRunning = frame.running;
       lastKeyframeAt = performance.now();
       changed = false;
@@ -468,6 +473,7 @@ export async function startMachine({
     // is running, which is when the periodic keyframes are taken.
     write(data) {
       changed = true;
+      lines.typed(data);
       if (promptPending !== null) {
         typing = takePromptKeyframe();
       }
