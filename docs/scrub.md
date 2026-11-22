@@ -46,8 +46,14 @@ The prompt says when it is drawn. The manifest puts a mark in front of
 PS1, an OSC sequence carrying the exit status and the shell's last
 history line ([site/js/prompt.js](../site/js/prompt.js)); the worker
 reads it out of the console stream and removes it before the terminal
-sees the output. The history number tells an empty line, which adds no
-history entry and gets no keyframe, from a command run twice. A
+sees the output. A new history number means a command ran. The number
+stays the same after an empty line, and also after a command that
+repeats the one before it, which busybox's line editor leaves out of
+the history, so the worker also counts the lines typed into the
+console: any key and then Enter, the up arrow included, is a line;
+Enter alone, Ctrl-C and the terminal's cursor reports are not. A
+repeat typed ahead, before the prompt it belongs to is drawn, shares
+the earlier prompt's keyframe. A
 keystroke that arrives while a prompt's keyframe is still waiting for
 the console to go quiet takes the keyframe first and reaches the guest
 after it, so a command typed the instant the prompt is back still
