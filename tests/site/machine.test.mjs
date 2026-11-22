@@ -135,3 +135,31 @@ test("an empty line takes no keyframe", async () => {
     await s.machine.stop();
   }
 });
+
+// Checks that going back first keeps where the machine was: a
+// keyframe of the live machine, half-typed line and all, is taken
+// before the restore, and going to it brings the line back, so
+// finishing the line runs the command.
+test("going back keeps a keyframe of where it left", async () => {
+  const s = await session();
+  try {
+    await s.machine.run([]);
+    await s.until(() => s.frames.length >= 1, "the first keyframe");
+    const start = s.frames[0];
+    const last = await s.run("echo one > /tmp/a");
+    s.machine.write("echo par");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    await s.machine.restore(start.id);
+    const left = s.frames.find((f) => f.kind === KeyframeKind.DEPARTED);
+    assert.ok(left, "a keyframe of where the machine was");
+    assert.equal(left.parent, last.id);
+
+    await s.machine.restore(left.id);
+    const after = s.output().length;
+    await s.run("tial");
+    assert.match(s.output().slice(after), /partial/);
+  } finally {
+    await s.machine.stop();
+  }
+});

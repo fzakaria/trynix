@@ -73,6 +73,9 @@ export const KeyframeKind = Object.freeze({
   PROMPT: "prompt",
   // While a command runs.
   RUNNING: "running",
+  // Where the machine was when it went back to an earlier keyframe, so
+  // that it can come back.
+  DEPARTED: "departed",
 });
 
 // How long the console must be quiet after a prompt is drawn before the
@@ -168,6 +171,8 @@ export async function startMachine({
   let lastPrompt = null;
   let lastOutputAt = 0;
   let commandRunning = false;
+  // Whether anything was printed or typed since the last keyframe.
+  let changed = false;
 
   let store = null;
   let lastKeyframeAt = 0;
@@ -199,6 +204,7 @@ export async function startMachine({
       return;
     }
     lastOutputAt = performance.now();
+    changed = true;
 
     // Each new shell (the first, and one started after an `exit`)
     // prints the welcome line and waits for the handshake.
@@ -299,17 +305,20 @@ export async function startMachine({
   // current one. Resolves to the keyframe, or null when the guest was
   // busy every time it was tried.
   function keyframe(kind, prompt) {
-    return queue(async () => {
-      for (let attempt = 0; attempt < RETRY_LIMIT; attempt++) {
-        const frame = await snapshotOnce(kind, prompt);
-        if (frame !== null || kind === KeyframeKind.RUNNING) {
-          return frame;
-        }
-        await pause(RETRY_MS);
+    return queue(() => keyframeNow(kind, prompt));
+  }
+
+  // The same, inside an operation already queued.
+  async function keyframeNow(kind, prompt) {
+    for (let attempt = 0; attempt < RETRY_LIMIT; attempt++) {
+      const frame = await snapshotOnce(kind, prompt);
+      if (frame !== null || kind === KeyframeKind.RUNNING) {
+        return frame;
       }
-      log("no keyframe at this prompt: the guest stayed busy");
-      return null;
-    });
+      await pause(RETRY_MS);
+    }
+    log(`no ${kind} keyframe: the guest stayed busy`);
+    return null;
   }
 
   async function snapshotOnce(kind, prompt) {
@@ -326,6 +335,9 @@ export async function startMachine({
         parent,
         kind,
         prompt,
+        // Whether a command was running, which decides whether a
+        // restored machine takes running keyframes.
+        running: commandRunning,
         at: startedAt,
         pageCount: stored.pageCount,
         rawBytes: stored.rawBytes,
@@ -344,6 +356,7 @@ export async function startMachine({
       captured.snapshotMs = performance.now() - startedAt;
       frames.set(captured.id, captured);
       lastKeyframeAt = performance.now();
+      changed = false;
       return captured;
     } catch (err) {
       if (captured !== null) {
@@ -356,10 +369,14 @@ export async function startMachine({
 
   // Put the machine back at keyframe `id`: the old instance is stopped
   // and a fresh one resumes the keyframe's memory and devices, with the
-  // share mounted again.
+  // share mounted again. Where the machine was is kept first, as a
+  // keyframe of its own, unless nothing happened since the last one.
   function restore(id) {
     clearTimeout(promptTimer);
     return queue(async () => {
+      if (changed) {
+        await keyframeNow(KeyframeKind.DEPARTED, lastPrompt);
+      }
       const startedAt = performance.now();
       const { memory, meta } = await store.moveTo(id);
       const movedAt = performance.now();
@@ -374,8 +391,9 @@ export async function startMachine({
       vm.resize(size.cols, size.rows);
       const frame = frames.get(id);
       lastPrompt = frame.prompt;
-      commandRunning = frame.kind === KeyframeKind.RUNNING;
+      commandRunning = frame.running;
       lastKeyframeAt = performance.now();
+      changed = false;
       timings.restores.push({
         id,
         moveMs: movedAt - startedAt,
@@ -432,6 +450,7 @@ export async function startMachine({
       if (/[\r\n]/.test(data)) {
         commandRunning = true;
       }
+      changed = true;
       vm?.write(data);
     },
 
