@@ -30,8 +30,11 @@ const MARK_LIMIT = 4096;
 // What goes in front of PS1, as the shell reads it: `\[` and `\]`
 // tell the line editor the mark takes no columns, `$?` is the status,
 // and the command substitution is the history's last line, cut out
-// with parameter expansion so the prompt runs no program.
-export const PROMPT_HOOK = `\\[\\033]${OSC_NUMBER};$?;$(h=$(history); echo "\${h##*\n}")\\007\\]`;
+// with parameter expansion so the prompt runs no program. The line
+// editor expands backslash escapes in the prompt after the shell has
+// expanded the rest, so the line's backslashes are doubled first, or
+// `printf 'a\n'` would come back with a newline in it.
+export const PROMPT_HOOK = `\\[\\033]${OSC_NUMBER};$?;$(h=$(history); h=\${h##*\n}; echo "\${h//\\\\/\\\\\\\\}")\\007\\]`;
 
 // A mark as the shell prints it, for tests and for documentation.
 export const promptMark = (status, historyLine) =>
