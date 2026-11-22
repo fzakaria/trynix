@@ -7,7 +7,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { KeyframeStore } from "../../site/js/keyframes.js";
+import {
+  CHUNK_PAGES,
+  deflateCodec,
+  KeyframeStore,
+} from "../../site/js/keyframes.js";
 import { PAGE_SIZE } from "../../site/js/pages.js";
 
 const PAGES = 32;
@@ -173,4 +177,40 @@ test("clear forgets everything", async () => {
   assert.equal(store.current, null);
   assert.equal(store.frames().length, 0);
   assert.equal(spill.kept.size, 0);
+});
+
+// Checks that going back reads only the part of a big keyframe that
+// holds the pages it needs: a keyframe is compressed in chunks, and a
+// restore that needs one page of a 200 MiB keyframe must not inflate
+// all of it. Counts the bytes the codec inflates.
+test("going back inflates only the chunks it needs", async () => {
+  const pages = 2048;
+  const live = new Uint8Array(pages * PAGE_SIZE);
+  let inflated = 0;
+  const codec = {
+    compress: deflateCodec.compress,
+    decompress: async (bytes) => {
+      const out = await deflateCodec.decompress(bytes);
+      inflated += out.byteLength;
+      return out;
+    },
+  };
+  const store = new KeyframeStore({ bytes: live.byteLength, codec });
+  const keyframe = () => {
+    const id = store.capture({ live });
+    store.describe(id, META);
+    return id;
+  };
+
+  live.fill(1);
+  const big = keyframe();
+  const copy = live.slice();
+  pageOf(live, 5).fill(2);
+  keyframe();
+  await store.settled();
+
+  inflated = 0;
+  const { memory } = await store.moveTo(big);
+  assert.deepEqual(memory, copy);
+  assert.ok(inflated <= CHUNK_PAGES * PAGE_SIZE, `inflated ${inflated} bytes`);
 });

@@ -18,6 +18,11 @@
 // the target that holds it. Going back three commands decompresses
 // three commands' worth of pages, whatever the session's length.
 //
+// A keyframe's pages are compressed in chunks of CHUNK_PAGES, so that
+// going back for a few pages of a big keyframe (the one after a 200 MiB
+// download, say) inflates the chunks holding them and not the whole
+// keyframe.
+//
 // Compressed pages are held in memory up to `memoryCap` bytes. Past
 // the cap the oldest keyframes' pages go to `spill` (IndexedDB on the
 // page, spill.js) and are read back when a move needs them.
@@ -27,6 +32,12 @@ import { capturePages, PAGE_SIZE, writePage } from "./pages.js";
 // What the compressed pages of all keyframes may take in memory before
 // the oldest move to the spill target.
 export const DEFAULT_MEMORY_CAP = 128 * 1024 * 1024;
+
+// Pages per compressed chunk: 1 MiB of them, big enough that deflate
+// has something to work with and small enough that one page costs
+// little to get back.
+export const CHUNK_PAGES = 256;
+const CHUNK_BYTES = CHUNK_PAGES * PAGE_SIZE;
 
 // The compression the pages are stored with, as the browser (and
 // Node) provide it: no library, and the work happens off the
@@ -93,9 +104,9 @@ export class KeyframeStore {
       freeBytes: diff.freeBytes,
       // The pages' bytes until they are compressed, then null.
       raw: diff.data,
-      // The compressed bytes while they are in memory, then null.
-      blob: null,
-      spilled: false,
+      // The compressed chunks, once compressed: { blob, spilled,
+      // storedBytes }, blob null once spilled.
+      chunks: null,
       pageCount: diff.changed.length + diff.zeroed.length,
       rawBytes: diff.data.byteLength,
       storedBytes: 0,
@@ -184,11 +195,12 @@ export class KeyframeStore {
       });
     }
 
-    // Read each keyframe the pages come from once, then write them.
-    const pagesOf = new Map();
+    // Read each chunk the pages come from once, then write them.
+    const chunksRead = new Map();
     for (const { frame, index } of sources.values()) {
-      if (index >= 0 && !pagesOf.has(frame.id)) {
-        pagesOf.set(frame.id, await this.pages(frame));
+      const key = chunkKey(frame.id, Math.floor(index / CHUNK_PAGES));
+      if (index >= 0 && !chunksRead.has(key)) {
+        chunksRead.set(key, await this.chunk(frame, index));
       }
     }
     for (const page of need) {
@@ -197,8 +209,11 @@ export class KeyframeStore {
         writePage(this.shadow, this.written, page, null);
         continue;
       }
-      const data = pagesOf.get(source.frame.id);
-      const start = source.index * PAGE_SIZE;
+      const { frame, index } = source;
+      const data = chunksRead.get(
+        chunkKey(frame.id, Math.floor(index / CHUNK_PAGES)),
+      );
+      const start = (index % CHUNK_PAGES) * PAGE_SIZE;
       writePage(
         this.shadow,
         this.written,
@@ -220,24 +235,33 @@ export class KeyframeStore {
     return frames;
   }
 
-  // A keyframe's changed pages, back to back, from wherever they are.
-  async pages(frame) {
+  // The chunk of a keyframe's changed pages that holds page `index`
+  // of them, back to back, from wherever it is.
+  async chunk(frame, index) {
+    const number = Math.floor(index / CHUNK_PAGES);
     if (frame.raw !== null) {
-      return frame.raw;
+      return frame.raw.subarray(
+        number * CHUNK_BYTES,
+        (number + 1) * CHUNK_BYTES,
+      );
     }
-    const blob = frame.spilled
-      ? await this.spill.get(spillKey(frame.id))
-      : frame.blob;
+    const chunk = frame.chunks[number];
+    const blob = chunk.spilled
+      ? await this.spill.get(chunkKey(frame.id, number))
+      : chunk.blob;
     return this.codec.decompress(blob);
   }
 
   async compress(frame) {
-    if (frame.rawBytes > 0) {
-      frame.blob = await this.codec.compress(frame.raw);
-    } else {
-      frame.blob = new Uint8Array(0);
+    const chunks = [];
+    for (let start = 0; start < frame.rawBytes; start += CHUNK_BYTES) {
+      const blob = await this.codec.compress(
+        frame.raw.subarray(start, start + CHUNK_BYTES),
+      );
+      chunks.push({ blob, spilled: false, storedBytes: blob.byteLength });
     }
-    frame.storedBytes = frame.blob.byteLength;
+    frame.chunks = chunks;
+    frame.storedBytes = chunks.reduce((sum, c) => sum + c.storedBytes, 0);
     frame.raw = null;
     this.inMemoryBytes += frame.storedBytes;
     await this.enforceCap();
@@ -254,16 +278,18 @@ export class KeyframeStore {
     this.spilling = true;
     try {
       for (const frame of this.byId.values()) {
-        if (this.inMemoryBytes <= this.memoryCap) {
-          break;
+        for (const [number, chunk] of (frame.chunks ?? []).entries()) {
+          if (this.inMemoryBytes <= this.memoryCap) {
+            return;
+          }
+          if (chunk.spilled) {
+            continue;
+          }
+          await this.spill.put(chunkKey(frame.id, number), chunk.blob);
+          chunk.spilled = true;
+          chunk.blob = null;
+          this.inMemoryBytes -= chunk.storedBytes;
         }
-        if (frame.blob === null || frame.spilled) {
-          continue;
-        }
-        await this.spill.put(spillKey(frame.id), frame.blob);
-        frame.spilled = true;
-        this.inMemoryBytes -= frame.storedBytes;
-        frame.blob = null;
       }
     } catch (err) {
       this.log(`keyframes stay in memory: spilling failed (${err.message})`);
@@ -295,8 +321,10 @@ export class KeyframeStore {
     for (const frame of this.byId.values()) {
       rawBytes += frame.rawBytes;
       storedBytes += frame.storedBytes;
-      if (frame.spilled) {
-        spilledBytes += frame.storedBytes;
+      for (const chunk of frame.chunks ?? []) {
+        if (chunk.spilled) {
+          spilledBytes += chunk.storedBytes;
+        }
       }
     }
     return {
@@ -311,21 +339,25 @@ export class KeyframeStore {
   // Forget every keyframe, spilled ones included.
   async clear() {
     await this.settled();
-    const spilled = this.frames().filter((frame) => frame.spilled);
+    const spilled = this.frames().flatMap((frame) =>
+      (frame.chunks ?? [])
+        .map((chunk, number) =>
+          chunk.spilled ? chunkKey(frame.id, number) : null,
+        )
+        .filter((key) => key !== null),
+    );
     this.byId.clear();
     this.current = null;
     this.inMemoryBytes = 0;
     this.shadow.fill(0);
     this.written.fill(0);
     await Promise.all(
-      spilled.map((frame) =>
-        this.spill?.delete(spillKey(frame.id)).catch(() => {}),
-      ),
+      spilled.map((key) => this.spill?.delete(key).catch(() => {})),
     );
   }
 }
 
-const spillKey = (id) => `keyframe-${id}`;
+const chunkKey = (id, number) => `keyframe-${id}-${number}`;
 
 function addPages(set, frame) {
   frame.changed.forEach((page) => set.add(page));
