@@ -176,3 +176,31 @@ test("going back keeps a keyframe of where it left", NEEDS_JSPI, async () => {
     await s.machine.stop();
   }
 });
+
+// Checks that a command typed the moment the prompt is back still
+// leaves a keyframe at that prompt (a harness types that fast), and
+// that a command with backslashes is labelled as typed: the prompt
+// expands backslash escapes, so the hook doubles them first.
+test(
+  "every prompt gets its keyframe, labelled as typed",
+  NEEDS_JSPI,
+  async () => {
+    const s = await session();
+    try {
+      await s.machine.run([]);
+      await s.until(() => s.frames.length >= 1, "the first keyframe");
+      const typed = String.raw`printf 'a\tb\n'`;
+      s.machine.write(`${typed}\n`);
+      await s.until(() => s.output().includes("a\tb"), "the first command");
+      s.machine.write("echo second\n");
+      await s.until(
+        () => s.frames.some((f) => f.prompt?.command === "echo second"),
+        "the second command's keyframe",
+      );
+      const commands = s.frames.map((f) => f.prompt?.command);
+      assert.ok(commands.includes(typed), JSON.stringify(commands));
+    } finally {
+      await s.machine.stop();
+    }
+  },
+);

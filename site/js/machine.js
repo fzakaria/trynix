@@ -234,7 +234,14 @@ export async function startMachine({
   // since the last one (its history entry differs), or if it is the
   // first prompt; an empty line adds nothing to the history and gets
   // none.
+  //
+  // The keyframe waits for the console to go quiet (PROMPT_QUIET_MS),
+  // or for the next keystroke, whichever comes first: typing goes to
+  // the guest only once the keyframe is taken (see write), so a
+  // command typed the moment the prompt is back still leaves the
+  // prompt's keyframe behind it.
   let promptTimer = null;
+  let promptPending = null;
   function prompted(mark) {
     const ran =
       lastPrompt === null ||
@@ -247,20 +254,32 @@ export async function startMachine({
     }
 
     clearTimeout(promptTimer);
+    promptPending = mark;
     const drawnAt = performance.now();
     const waitQuiet = () => {
       const now = performance.now();
       const quiet = now - lastOutputAt >= PROMPT_QUIET_MS;
       if (quiet || now - drawnAt >= PROMPT_QUIET_LIMIT_MS) {
-        keyframe(KeyframeKind.PROMPT, mark).catch((err) =>
-          log(`keyframe at a prompt failed: ${err.message}`),
-        );
+        takePromptKeyframe();
         return;
       }
       promptTimer = setTimeout(waitQuiet, PROMPT_QUIET_MS);
     };
     promptTimer = setTimeout(waitQuiet, PROMPT_QUIET_MS);
   }
+
+  // Take the keyframe a prompt is waiting for, now.
+  function takePromptKeyframe() {
+    clearTimeout(promptTimer);
+    const mark = promptPending;
+    promptPending = null;
+    return keyframe(KeyframeKind.PROMPT, mark).catch((err) =>
+      log(`keyframe at a prompt failed: ${err.message}`),
+    );
+  }
+
+  // Typed input, in order, held back behind a prompt's keyframe.
+  let typing = Promise.resolve();
 
   // A keyframe every RUNNING_PERIOD_MS while a command runs: a line
   // was typed since the last prompt, and no prompt has come back.
@@ -373,6 +392,7 @@ export async function startMachine({
   // keyframe of its own, unless nothing happened since the last one.
   function restore(id) {
     clearTimeout(promptTimer);
+    promptPending = null;
     return queue(async () => {
       if (changed) {
         await keyframeNow(KeyframeKind.DEPARTED, lastPrompt);
@@ -447,11 +467,16 @@ export async function startMachine({
     // Typed input. A line typed while no prompt is up means a command
     // is running, which is when the periodic keyframes are taken.
     write(data) {
-      if (/[\r\n]/.test(data)) {
-        commandRunning = true;
-      }
       changed = true;
-      vm?.write(data);
+      if (promptPending !== null) {
+        typing = takePromptKeyframe();
+      }
+      typing = typing.then(() => {
+        if (/[\r\n]/.test(data)) {
+          commandRunning = true;
+        }
+        vm?.write(data);
+      });
     },
 
     resize(newCols, newRows) {
