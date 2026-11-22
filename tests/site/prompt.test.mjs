@@ -5,7 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { promptMark, promptScanner } from "../../site/js/prompt.js";
+import {
+  lineCounter,
+  promptMark,
+  promptScanner,
+} from "../../site/js/prompt.js";
 
 const encode = (text) => new TextEncoder().encode(text);
 const decode = (bytes) => new TextDecoder().decode(bytes);
@@ -81,4 +85,32 @@ test("an unterminated mark is given up on", () => {
   const start = decode(scanner.feed(encode("\x1b]7701;0;")).bytes);
   const rest = decode(scanner.feed(encode("y".repeat(10000))).bytes);
   assert.equal(start + rest, `\x1b]7701;0;${"y".repeat(10000)}`);
+});
+
+// Checks how lines typed at the shell are counted, which is how a
+// command run twice is told from an empty line: busybox leaves a repeat
+// out of the history. Keys then Enter is a line; Enter alone, the
+// terminal's cursor report, and a line cancelled with Ctrl-C are not.
+test("typed lines are counted, empty and cancelled ones are not", () => {
+  const lines = lineCounter();
+  lines.typed("ls /\r");
+  assert.equal(lines.take(), 1);
+  assert.equal(lines.take(), 0);
+
+  lines.typed("\r");
+  lines.typed("\x1b[24;9R");
+  lines.typed("\r");
+  lines.typed("echo no\x03");
+  lines.typed("\r");
+  assert.equal(lines.take(), 0);
+
+  // The up arrow recalls a line; Enter runs it.
+  lines.typed("\x1b[A");
+  lines.typed("\r");
+  assert.equal(lines.take(), 1);
+
+  lines.typed("half");
+  lines.reset();
+  lines.typed("\r");
+  assert.equal(lines.take(), 0);
 });

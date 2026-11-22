@@ -11,10 +11,12 @@
 //   ESC ] 7701 ; <status> ; <history line> BEL
 //
 // The history line is busybox's `history` output for the command just
-// run, "   12  ls -la", which gives both the command and its number;
-// the number is how an empty line (which adds nothing to the history)
-// is told apart from a command run twice. The shell side is
-// PROMPT_HOOK, below, which the manifest puts in front of PS1.
+// run, "   12  ls -la", which gives both the command and its number. A
+// new number means a command ran. The same number means either an
+// empty line or a command that repeated the one before it, which
+// busybox leaves out of the history; lineCounter, below, tells those
+// two apart. The shell side is PROMPT_HOOK, below, which the manifest
+// puts in front of PS1.
 
 const OSC_NUMBER = "7701";
 const OPEN = `\x1b]${OSC_NUMBER};`;
@@ -159,6 +161,61 @@ export function promptScanner() {
         offset += part.length;
       }
       return { bytes: clean, marks };
+    },
+  };
+}
+
+// The terminal's answer to the line editor's cursor question,
+// ESC [ row ; col R: typed by the terminal, not by the reader.
+const CURSOR_REPORT = /\x1b\[\d+;\d+R/g;
+const INTERRUPT = "\x03";
+const LINE_ENDS = new Set(["\r", "\n"]);
+
+// The lines typed at the guest's shell, counted from what goes into the
+// console.
+//
+// A prompt mark's history line says a command ran when it changes, but
+// busybox's line editor leaves a command out of the history when it
+// repeats the one before it ("Don't save dupes" in lineedit.c), so `ls`
+// run three times leaves the history line as it was. So the machine
+// also counts lines: any key and then Enter is a line, Enter on its own
+// is not, nor is a line cancelled with Ctrl-C, nor the terminal's
+// cursor report. Recalling a line with the up arrow and running it is a
+// key and Enter, so it counts.
+//
+// Lines typed ahead, before the prompt they belong to is drawn, are
+// counted against the prompt before it; a repeat typed ahead of its
+// prompt shares that prompt's keyframe.
+export function lineCounter() {
+  let keys = false;
+  let lines = 0;
+  return {
+    typed(data) {
+      for (const char of data.replace(CURSOR_REPORT, "")) {
+        if (char === INTERRUPT) {
+          keys = false;
+          continue;
+        }
+        if (LINE_ENDS.has(char)) {
+          if (keys) {
+            lines++;
+          }
+          keys = false;
+          continue;
+        }
+        keys = true;
+      }
+    },
+    // How many lines were typed since the last take.
+    take() {
+      const taken = lines;
+      lines = 0;
+      return taken;
+    },
+    // Forget everything typed: the machine went to a keyframe.
+    reset() {
+      keys = false;
+      lines = 0;
     },
   };
 }
