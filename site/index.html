@@ -259,6 +259,24 @@
         <!-- The keys a phone's keyboard lacks; shown on touch devices
              only (site/js/keybar.js fills it). -->
         <div id="keybar" aria-label="terminal keys"></div>
+        <!-- The session's keyframes, one mark per command; dragging
+             back restores the whole guest there (site/js/timeline.js).
+             The unkernel engine only. -->
+        <div id="timeline" hidden>
+          <div id="timeline-bar">
+            <span>timeline</span>
+            <span id="timeline-caption" aria-live="polite"></span>
+            <select id="timeline-branches" aria-label="branch" hidden></select>
+          </div>
+          <div id="timeline-scroll">
+            <div
+              id="timeline-track"
+              role="slider"
+              tabindex="0"
+              aria-label="session timeline"
+            ></div>
+          </div>
+        </div>
       </div>
     </section>
 
