@@ -11,70 +11,38 @@
 // at the same path, and the same shell fragment to source. What differs
 // is the plumbing:
 //
-//   the share is unkernel's MemoryFs, which the SDK serves to the guest
-//   over 9p on a vsock, so nothing is copied into an emulator's heap;
+//   the kernel runs in a worker of the page's own, the guest worker
+//   (unkernel-worker.js, machine.js), with the share's file system
+//   beside it, so nothing is copied into an emulator's heap and a busy
+//   guest leaves this thread alone;
 //
-//   the terminal is a real pty inside the guest rather than a serial
-//   console, so a resize is one call and the guest's own line
-//   discipline does the echo.
+//   the guest can be taken back in time. The worker keeps keyframes of
+//   the whole machine (keyframes.js), and the timeline under the
+//   terminal (timeline.js) goes back to one. This side keeps what the
+//   console drew between keyframes (screen.js), because the terminal's
+//   screen is page state that no snapshot of the guest holds.
 //
 // startUnkernel returns the same handle boot.js's startVM does, and
 // app.js drives either one without knowing which engine made the
 // handle.
 
-import {
-  GUEST_BIN_DIR,
-  GUEST_STORE_DIR,
-  memoryFsCalls,
-  SHARE_DIR,
-  storeShare,
-} from "./share.js";
-import { Precedence } from "./store.js";
+import { GUEST_BIN_DIR, GUEST_STORE_DIR } from "./share.js";
+import { programsOf } from "./store.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { consoleRecorder, pause } from "./console.js";
 import { UNKERNEL_MEMORY_MIB } from "./config.js";
 import { log } from "./log.js";
+import { MOUNTED_MARKER } from "./machine.js";
+import { ScreenLog } from "./screen.js";
+import { LIVE, Timeline } from "./timeline.js";
 
-// The guest's shell: busybox ash from unkernel's base system, the same
-// shell the qemu guest runs.
+// The shell programs run through.
 const SHELL = "/bin/sh";
 
-// The file the shell sources as it starts. ash reads the file ENV names
-// when the shell is interactive, which is how PATH reaches the shell
-// without the page typing anything.
-const MANIFEST_FILE = `${SHARE_DIR}/manifest`;
-
-// What the shell prints once the manifest is sourced: the same line the
-// qemu guest's init prints, so the harnesses in tools/ wait for one
-// thing whichever engine they are pointed at.
-const MOUNTED_MARKER = "trynix: welcome to the multiverse";
-
-// What the page types once a shell has printed that line: the newline
-// the manifest is waiting to read, and Ctrl-L, which the shell's line
-// editor answers by clearing the screen and drawing its prompt.
-//
-// The pair is how a shell is brought to a clean prompt with nothing in
-// flight. ash's line editor asks the terminal where the cursor is as it
-// draws a prompt (ESC [ 6 n), and reads the terminal's answer as input,
-// sixteen bytes at a time, dropping whatever else such a read brought.
-// A command typed just behind the answer therefore loses its first
-// characters: the harnesses in tools/ type within a millisecond of the
-// boot finishing, and their first command arrived with ten of them
-// gone. The qemu engine never met this because its page waits for the
-// console to go quiet first, which costs 0.4 s of every boot.
-//
-// The editor skips the question when input is already waiting. So the
-// manifest ends by reading one line from the terminal, which holds the
-// shell short of its first prompt until this arrives; the newline ends
-// that read and the Ctrl-L is still waiting when the editor starts. No
-// question is asked, nothing is answered, and the redraw the Ctrl-L
-// causes is the one moment the page can name at which the shell is
-// ready and the screen holds a prompt and nothing else.
-const HANDSHAKE = "\n\x0c";
-
-// What the line editor prints for that Ctrl-L before the prompt: cursor
-// home, erase to the end of the screen.
+// What the line editor prints for the handshake's Ctrl-L before the
+// prompt (machine.js, HANDSHAKE): cursor home, erase to the end of the
+// screen. The shell is ready once this follows the welcome line.
 const REDRAWN = "\x1b[H\x1b[J";
 
 // How often the guest is asked whether paths added to a running guest
@@ -92,223 +60,284 @@ const VISIBLE_LIMIT_MS = 5000;
 const ALL_EXIST =
   'for path; do [ -e "$path" ] || [ -L "$path" ] || exit 1; done';
 
-// Wait until the guest can see every path in `paths`, or the limit
-// passes. Asking is what makes the answer fresh: each lookup past the
-// timeout goes back to the page's file system.
-async function visible(kernel, paths) {
-  const deadline = Date.now() + VISIBLE_LIMIT_MS;
-  for (;;) {
-    const seen = await kernel.exec(SHELL, ["-c", ALL_EXIST, SHELL, ...paths]);
-    if (seen.exitCode === 0) {
+// The guest worker, as calls that resolve with its answers and a
+// stream of its events (unkernel-worker.js describes both).
+function guestWorker() {
+  const worker = new Worker(new URL("./unkernel-worker.js", import.meta.url), {
+    type: "module",
+  });
+  const waiting = new Map();
+  let next = 0;
+  let onEvent = () => {};
+
+  worker.onmessage = ({ data }) => {
+    if (data.event !== undefined) {
+      onEvent(data.event);
       return;
     }
-    if (Date.now() >= deadline) {
-      log("added paths are not visible in the guest yet");
-      return;
+    const call = waiting.get(data.id);
+    waiting.delete(data.id);
+    if (data.ok) {
+      call.resolve(data.value);
+    } else {
+      call.reject(new Error(data.error));
     }
-    await pause(VISIBLE_POLL_MS);
-  }
-}
-
-// The shell fragment the guest's shell sources: PATH with the farm in
-// front, and the same TERM and LANG the qemu guest gets (boot.js says
-// why each is what it is, and why there is no LD_LIBRARY_PATH).
-function manifest() {
-  return [
-    `export PATH="${GUEST_BIN_DIR}:$PATH"`,
-    "export TERM=xterm-256color",
-    "export LANG=C.UTF-8",
-    `echo "${MOUNTED_MARKER}"`,
-    // Wait for the page's handshake (see HANDSHAKE).
-    "read -r _handshake",
-    "",
-  ].join("\n");
-}
-
-// The terminal's view of the guest (terminal.js, bridge), before and
-// after there is a shell to talk to.
-//
-// The terminal is attached while the kernel is still booting, so the
-// port exists before the pty does: keystrokes and sizes that arrive
-// early are dropped, which is what a terminal with nothing behind it
-// should do with them.
-function ptyPort() {
-  let pty = null;
-  let draw = () => {};
+  };
+  worker.onerror = (event) => log(`guest worker: ${event.message}`);
 
   return {
+    call(op, args = [], transfer = []) {
+      const id = next++;
+      return new Promise((resolve, reject) => {
+        waiting.set(id, { resolve, reject });
+        worker.postMessage({ id, op, args }, transfer);
+      });
+    },
+    listen(callback) {
+      onEvent = callback;
+    },
+  };
+}
+
+// The buffers behind a NAR's file contents, each once, to hand to the
+// worker rather than copy: the page drops the entries once they are
+// written.
+function buffersOf(entries) {
+  const buffers = new Set();
+  for (const entry of entries) {
+    const buffer = entry.data?.buffer;
+    if (buffer instanceof ArrayBuffer) {
+      buffers.add(buffer);
+    }
+  }
+  return [...buffers];
+}
+
+// engine: { main, kernel }, the versioned URLs of the SDK's browser
+// entry and of the kernel. timelineElement holds the timeline
+// (index.html).
+//
+// Resolves once the kernel is running and the share is writable. The
+// share lives in the worker, so the closure streams into it whether or
+// not the guest has mounted anything yet.
+export async function startUnkernel({
+  terminalElement,
+  keyBarElement,
+  timelineElement,
+  engine,
+}) {
+  const ui = await openTerminal(terminalElement, keyBarElement);
+  const terminal = ui.terminal;
+  const guest = guestWorker();
+  const console_ = consoleRecorder();
+  const screen = new ScreenLog();
+
+  // While the terminal shows a keyframe's screen rather than the live
+  // one (a preview while dragging, or a restore under way), live output
+  // is recorded but not drawn and nothing typed reaches the guest.
+  let previewing = false;
+  // While the terminal is being rebuilt from recorded bytes it answers
+  // the queries in them (the line editor's cursor question), and those
+  // answers belong to a guest long gone.
+  let replaying = false;
+
+  let draw = () => {};
+  const port = {
     send(data) {
-      pty?.write(data).catch(() => {});
+      if (previewing || replaying) {
+        return;
+      }
+      guest.call("input", [data]).catch(() => {});
     },
     onOutput(callback) {
       draw = callback;
     },
     resize(rows, cols) {
-      pty?.resize(cols, rows);
+      guest.call("resize", [cols, rows]).catch(() => {});
     },
-
-    // The shell this port talks to from now on.
-    connect(shell) {
-      pty = shell;
-    },
-    draw: (data) => draw(data),
   };
-}
-
-// Read the shell's output until the shell ends, handing each piece to
-// the record and then to the terminal. The stream is pulled: the guest
-// is only given room to print as fast as this loop reads.
-//
-// The first thing a shell prints is the welcome line, and the loop
-// answers that line with the handshake, once per shell, so a shell
-// started after an `exit` comes up the same way the first one did.
-async function pump(shell, port, console_) {
-  const reader = shell.output.getReader();
-
-  // What this shell has said so far, as text, until the welcome line
-  // has been seen in it; null from then on.
-  const decoder = new TextDecoder();
-  let awaitingWelcome = "";
-
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) {
-      return;
-    }
-    console_.hear(value);
-    port.draw(value);
-    if (awaitingWelcome === null) {
-      continue;
-    }
-
-    awaitingWelcome += decoder.decode(value, { stream: true });
-    if (awaitingWelcome.includes(MOUNTED_MARKER)) {
-      awaitingWelcome = null;
-      shell.write(HANDSHAKE).catch(() => {});
-    }
-  }
-}
-
-// engine: { main, kernel }, the versioned URLs of the SDK's browser
-// entry and of the kernel.
-//
-// Resolves once the kernel is running and the share is writable. The
-// share is page-side memory, so the closure streams into the share
-// whether or not the guest has mounted anything yet.
-export async function startUnkernel({
-  terminalElement,
-  keyBarElement,
-  engine,
-}) {
-  const ui = await openTerminal(terminalElement, keyBarElement);
-  const port = ptyPort();
   ui.attach(port);
 
-  const console_ = consoleRecorder();
-
-  const { createKernel, MemoryFs } = await import(`../${engine.main}`);
-  const files = new MemoryFs();
-  const FS = memoryFsCalls(files);
-  const share = storeShare(FS);
-
-  // The kernel runs in a worker where the page may share memory with
-  // one, which keeps a busy guest from stalling the page; without
-  // cross-origin isolation the kernel runs on the page's own thread
-  // and yields to it between slices.
-  const kernel = await createKernel({
-    kernel: new URL(engine.kernel, location.href).href,
-    memoryMiB: UNKERNEL_MEMORY_MIB,
-    worker: globalThis.crossOriginIsolated === true,
-  });
-  kernel.exited.then(({ kind, reason }) =>
-    log(`unkernel exited: ${kind}${reason ? ` (${reason})` : ""}`),
-  );
-
-  // One shell on a pty of the terminal's size, and another whenever
-  // one exits: `exit` at the prompt should leave the reader at a
-  // prompt, as it does in the qemu guest, where init starts the next
-  // shell.
-  async function shells() {
-    for (;;) {
-      const shell = await kernel.spawn(SHELL, [], {
-        cols: ui.terminal.cols,
-        rows: ui.terminal.rows,
-        env: { ENV: MANIFEST_FILE },
-      });
-      port.connect(shell);
-      await pump(shell, port, console_);
+  // Rebuild the screen from bytes the console drew.
+  function redraw(bytes) {
+    replaying = true;
+    try {
+      terminal.reset();
+      terminal.write(bytes);
+    } finally {
+      replaying = false;
     }
   }
 
+  // The keyframe tree as the page knows it, and the keyframe the live
+  // machine continues from.
+  const frames = new Map();
+  let current = null;
+
+  // Show position `id` (a keyframe, or LIVE) without moving the
+  // machine.
+  function preview(id) {
+    if (id === LIVE) {
+      previewing = false;
+      redraw(screen.live());
+      return;
+    }
+    previewing = true;
+    redraw(screen.screenAt(id));
+  }
+
+  // Move the machine to keyframe `id`. The terminal keeps showing the
+  // keyframe's screen while the restore runs; the restored kernel's
+  // first output is drawn on it.
+  async function go(id) {
+    if (id === LIVE) {
+      preview(LIVE);
+      return;
+    }
+    preview(id);
+    timeline.setBusy(true);
+    const startedAt = performance.now();
+    try {
+      await guest.call("restore", [id]);
+      log(
+        `went to keyframe ${id} in ${Math.round(performance.now() - startedAt)} ms`,
+      );
+    } catch (err) {
+      log(`could not go to keyframe ${id}: ${err.message}`);
+      preview(LIVE);
+    } finally {
+      timeline.setBusy(false);
+      timeline.update(frames, current);
+      terminal.focus();
+    }
+  }
+
+  const timeline = new Timeline(timelineElement, { preview, go });
+
+  guest.listen((event) => {
+    switch (event.type) {
+      case "output":
+        console_.hear(event.bytes);
+        screen.append(event.bytes);
+        if (!previewing) {
+          draw(event.bytes);
+        }
+        return;
+      case "frame":
+        screen.frame(event.frame.id, event.frame.parent);
+        frames.set(event.frame.id, { ...event.frame, failed: false });
+        current = event.frame.id;
+        timeline.update(frames, current);
+        return;
+      case "frame-failed":
+        frames.get(event.id).failed = true;
+        timeline.update(frames, current);
+        return;
+      case "restored":
+        // Sent before the restored kernel says anything, so what it
+        // says next is drawn on the keyframe's screen.
+        screen.restored(event.id);
+        current = event.id;
+        previewing = false;
+        redraw(screen.screenAt(event.id));
+        return;
+      case "exited":
+        log(
+          `unkernel exited: ${event.kind}${event.reason ? ` (${event.reason})` : ""}`,
+        );
+        return;
+      case "log":
+        log(event.message);
+    }
+  });
+
+  await guest.call("boot", [
+    {
+      sdk: new URL(engine.main, location.href).href,
+      kernel: new URL(engine.kernel, location.href).href,
+      memoryMiB: UNKERNEL_MEMORY_MIB,
+      cols: terminal.cols,
+      rows: terminal.rows,
+    },
+  ]);
+  addEventListener("pagehide", () => guest.call("close").catch(() => {}));
+
+  // Wait until the guest can see every path in `paths`, or the limit
+  // passes. Asking is what makes the answer fresh: each lookup past the
+  // timeout goes back to the page's file system.
+  async function visible(paths) {
+    const deadline = Date.now() + VISIBLE_LIMIT_MS;
+    for (;;) {
+      const seen = await guest.call("exec", [
+        SHELL,
+        ["-c", ALL_EXIST, SHELL, ...paths],
+      ]);
+      if (seen.exitCode === 0) {
+        return;
+      }
+      if (Date.now() >= deadline) {
+        log("added paths are not visible in the guest yet");
+        return;
+      }
+      await pause(VISIBLE_POLL_MS);
+    }
+  }
+
+  // The share as app.js writes it: each parsed NAR goes to the worker,
+  // and the programs it offers are noted here, where app.js asks.
+  const programs = new Map();
+  const share = {
+    write(basename, entries) {
+      if (programs.has(basename)) {
+        return;
+      }
+      programs.set(basename, programsOf(entries));
+      guest
+        .call("write", [basename, entries], buffersOf(entries))
+        .catch((err) => log(`could not write ${basename}: ${err.message}`));
+    },
+  };
+
   // The handle everything outside the page reaches the guest through
-  // (boot.js says who uses it). The driver is the supported surface;
-  // the kernel is there for what the driver cannot do.
+  // (boot.js says who uses it). `scrub` is the timeline from code: the
+  // keyframes, where the machine is, going to one, and what keyframes
+  // and restores have cost.
   window.trynix = {
     ...guestDriver({
       send: (data) => port.send(data),
       transcript: console_.transcript,
     }),
-    terminal: ui.terminal,
-    kernel,
+    terminal,
+    scrub: {
+      frames: () => [...frames.values()],
+      current: () => current,
+      go,
+      stats: () => guest.call("stats"),
+    },
   };
 
   return {
-    terminal: ui.terminal,
+    terminal,
     share,
 
     // Finish the share, mount it, and start the shell. `roots` are the
     // basenames the reader selected, in selection order. Resolves when
     // the guest is at its prompt.
     async run(roots) {
-      share.linkAll(share.written(), roots, Precedence.KEEP);
-      FS.writeFile(MANIFEST_FILE, manifest());
-
-      // The share is read-only to the guest: a store is immutable, and
-      // everything the page adds later arrives from this side.
-      await kernel.mount(SHARE_DIR, files, { readOnly: true });
-
-      // Every nix binary names its loader and libraries by /nix/store
-      // paths, so the guest needs the store at /nix as well as where
-      // the share is mounted.
-      const linked = await kernel.exec("/bin/ln", [
-        "-s",
-        `${SHARE_DIR}/nix`,
-        "/nix",
-      ]);
-      if (linked.exitCode !== 0) {
-        throw new Error(
-          `could not link /nix in the guest: ${linked.stderr.trim()}`,
-        );
-      }
-
-      shells().catch((err) => log(`guest shell failed: ${err.message ?? err}`));
-
-      // Read the programs ahead of the first command, as the qemu
-      // guest's init does. A first run is slowed by its binary coming
-      // in over 9p a piece at a time, and reading it once puts it in
-      // the guest's page cache: measured on unkernel, a cold
-      // `jj --version` went from 0.27 s to 0.19 s with the binary read
-      // first. The read runs at the lowest priority and is not waited
-      // for, so a command typed at once still goes ahead of it.
-      kernel
-        .exec(SHELL, [
-          "-c",
-          `nice -n 19 cat ${GUEST_BIN_DIR}/* > /dev/null 2>&1`,
-        ])
-        .catch(() => {});
+      await guest.call("run", [roots]);
 
       // The shell is ready once it has sourced the manifest, taken the
-      // handshake and redrawn its prompt on a cleared screen (see
-      // HANDSHAKE for why that moment and no earlier one).
+      // handshake and redrawn its prompt on a cleared screen
+      // (machine.js, HANDSHAKE).
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
     },
 
     // Add store paths to a guest that is already running. The share is
-    // page-side memory the guest reads through 9p, so writing a path
-    // here is enough: no remount, no reboot. Resolves once the guest
-    // sees the new paths and the roots' programs (see visible), so
-    // "added" is true by the time the page says so.
+    // memory the guest reads through 9p, so writing a path is enough:
+    // no remount, no reboot. Resolves once the guest sees the new paths
+    // and the roots' programs (see visible), so "added" is true by the
+    // time the page says so.
     async add(unpacked, roots) {
       const basenames = [];
       while (unpacked.length > 0) {
@@ -316,18 +345,20 @@ export async function startUnkernel({
         share.write(basename, entries);
         basenames.push(basename);
       }
-      share.linkAll(basenames, roots, Precedence.REPLACE);
+      await guest.call("link", [basenames, roots]);
 
       const added = roots.filter((basename) => basenames.includes(basename));
-      await visible(kernel, [
+      await visible([
         ...basenames.map((basename) => `${GUEST_STORE_DIR}/${basename}`),
         ...added.flatMap((basename) =>
-          share.programsOf(basename).map((name) => `${GUEST_BIN_DIR}/${name}`),
+          (programs.get(basename) ?? []).map(
+            (name) => `${GUEST_BIN_DIR}/${name}`,
+          ),
         ),
       ]);
     },
 
     // The programs a written path offers, by basename.
-    programsOf: (basename) => share.programsOf(basename),
+    programsOf: (basename) => programs.get(basename) ?? [],
   };
 }

@@ -86,6 +86,7 @@ const bootButton = document.getElementById("boot-button");
 const bootSection = document.getElementById("boot");
 const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
+const timelineElement = document.getElementById("timeline");
 const keyBarElement = document.getElementById("keybar");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
@@ -805,10 +806,11 @@ function unkernelEngine(panel) {
       described: "booted on unkernel",
       verb: "booting",
     });
-    consoleTty.textContent = "pts/0";
+    consoleTty.textContent = "hvc0";
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
+      timelineElement,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
