@@ -113,17 +113,26 @@ The guest side is unkernel's base system, with no distro image:
 - the share is a MemoryFs the SDK serves over 9p on a vsock, mounted
   read-only at `/share`, with `/nix` linked into it, the same layout
   the qemu guest sees ([site/js/share.js](../site/js/share.js));
-- the shell is busybox ash on a real pty, started with `ENV` pointing
-  at `/share/manifest`, which sets PATH, TERM and LANG. A resize is a
-  call on the pty, so there is no `stty` loop;
+- the shell is busybox ash on the kernel's console (hvc0): the base
+  system's own console shell is ended once, and the login shell init
+  starts in its place reads `/root/.profile`, a link to
+  `/share/manifest`, which sets PATH, TERM, LANG and the prompt. A
+  resize is a call on the console, so there is no `stty` loop. It used
+  to be a pty from the SDK's spawn(), which is a vsock session, and a
+  restore resets every vsock session but the share's
+  ([scrub.md](./scrub.md));
 - a package added to a running guest is written into the MemoryFs. The
   mount has a one-second attribute timeout that also covers names that
   did not exist, so the page waits until the guest reports the new
   paths before saying they were added.
 
-The kernel runs in a worker when the page is cross-origin isolated and
-on the page's thread when it is not. Unlike qemu it does not need
-isolation to run at all.
+The kernel runs inline in a worker of the page's own
+([site/js/unkernel-worker.js](../site/js/unkernel-worker.js)), with the
+share's MemoryFs beside it. The SDK's own worker mode would keep the
+guest off the page's thread just as well, but it cannot snapshot while
+a host file system is mounted, and the timeline under the terminal is
+built on snapshots ([scrub.md](./scrub.md)). Unlike qemu it does not
+need isolation to run at all.
 
 ## Where a boot's time goes now
 

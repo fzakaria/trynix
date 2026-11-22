@@ -141,7 +141,8 @@ The docs are [design.md](docs/design.md) for the architecture and what
 was measured, [engine.md](docs/engine.md) for building and publishing
 the engine and the snapshot, and [performance.md](docs/performance.md)
 for where a first run's time goes and which optimisations were dead
-ends, [unkernel.md](docs/unkernel.md) for the second engine, and
+ends, [unkernel.md](docs/unkernel.md) for the second engine,
+[scrub.md](docs/scrub.md) for the timeline under its terminal, and
 [webmcp.md](docs/webmcp.md) for driving the page from code. [trynix.dev/bench/](https://trynix.dev/bench/) charts every engine
 release against the same probes and packages, and says what moved each
 number.
