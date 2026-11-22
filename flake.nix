@@ -170,6 +170,18 @@
               pkgs.chromium
             ];
 
+          # measure the unkernel timeline in a real browser: the guest's
+          # pause per keyframe, keyframe sizes, restore latency
+          # (docs/scrub.md). The tools directory as a whole, since this
+          # imports boot-test.py
+          scrub-bench =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "scrub-bench" "${python}/bin/python3 ${./tools}/scrub-bench.py" [
+              pkgs.chromium
+            ];
+
           # compose a trynix link for a flake attribute already in some
           # cache, so a build someone published is a link they can send.
           # This is what the GitHub action in action/ runs; nix is not a
