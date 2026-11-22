@@ -1,10 +1,10 @@
 // Page diffs, the unit a keyframe of the unkernel guest is stored in.
 //
-// A keyframe is the guest's whole memory at one moment (scrub.js says
+// A keyframe is the guest's whole memory at one moment (machine.js says
 // when those moments are). Stored whole, a 512 MiB guest would cost
 // tens of megabytes a keyframe even compressed. Between two shell
-// prompts only a few hundred 4 KiB pages change (docs/scrub.md has the
-// counts), so a keyframe is stored as the pages that differ from the
+// prompts a few hundred to a few thousand 4 KiB pages change
+// (docs/scrub.md has the counts), so a keyframe is stored as the pages that differ from the
 // one before it.
 //
 // The page keeps a shadow: a copy of the memory as of the latest

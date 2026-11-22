@@ -80,7 +80,7 @@ export class KeyframeStore {
 
   // Take a keyframe of `live`, the guest's memory, as a child of the
   // current one, and make it current. Called at the snapshot point
-  // (scrub.js), so this is the guest's pause: the diff, and a copy of
+  // (machine.js), so this is the guest's pause: the diff, and a copy of
   // the pages that changed. Compression happens afterwards.
   //
   // `free` and `freePages` are the kernel's free-page bitmap, as
