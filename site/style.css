@@ -628,6 +628,127 @@ code {
   border-color: var(--accent);
 }
 
+/* The timeline under the console (site/js/timeline.js): a bar with
+   what the strip is pointing at, and the strip of marks, one per
+   command, with running keyframes as small dots between them. The
+   accent marks where the machine is; marks after it, the future that
+   going back left, are dimmed; a ringed mark has another branch
+   leaving it. The strip scrolls sideways when the marks outgrow it. */
+#timeline {
+  background: var(--console-bar);
+  border-top: 1px solid #2a2d35;
+  color: var(--console-fg);
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+}
+#timeline[hidden] {
+  display: none;
+}
+#timeline-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.75rem 0;
+}
+#timeline-caption {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #c8c8c8;
+}
+#timeline-branches {
+  max-width: 40%;
+  padding: 0.1rem 0.3rem;
+  font: inherit;
+  color: var(--console-fg);
+  background: var(--console-bg);
+  border: 1px solid #2a2d35;
+  border-radius: 4px;
+}
+#timeline-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+#timeline-track {
+  position: relative;
+  height: 1.8rem;
+  min-width: 100%;
+  cursor: pointer;
+  /* A drag on the strip scrubs; it must not pan or scroll the page. */
+  touch-action: none;
+}
+#timeline-track.labelled {
+  height: 2.8rem;
+}
+#timeline-track:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+#timeline-track::before {
+  content: "";
+  position: absolute;
+  top: 0.9rem;
+  left: 0.6rem;
+  right: 0.6rem;
+  height: 1px;
+  background: #2a2d35;
+}
+.timeline-mark {
+  position: absolute;
+  top: 0.9rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--console-fg);
+  transform: translate(-50%, -50%);
+}
+.timeline-mark.minor {
+  width: 5px;
+  height: 5px;
+}
+.timeline-mark.future {
+  opacity: 0.35;
+}
+.timeline-mark.forks {
+  box-shadow:
+    0 0 0 2px var(--console-bar),
+    0 0 0 3px var(--console-fg);
+}
+.timeline-mark.live {
+  background: transparent;
+  border: 2px solid var(--console-fg);
+}
+.timeline-mark.here {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.timeline-label {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+.timeline-handle {
+  position: absolute;
+  top: 0.9rem;
+  width: 3px;
+  height: 1.2rem;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.timeline-handle.away {
+  background: #e6e6e6;
+}
+
 /* The terminal itself: a fixed height, so the guest's rows are known
    before it says anything, and no padding on the right, where the
    leftover strip already is. */
