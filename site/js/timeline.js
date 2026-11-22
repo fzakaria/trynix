@@ -245,10 +245,17 @@ export class Timeline {
   }
 
   // Draw the tree as the machine continues from `current`.
+  // A position the reader is looking at, while dragging or while a
+  // restore runs, stays selected across the update.
   update(frames, current) {
+    const looking = this.positions[this.selected];
+    const keep = looking !== undefined && (!looking.here || this.busy);
     this.positions = positionsOf(frames, current);
     this.branches = branchesOf(frames, current);
-    this.selected = this.hereIndex();
+    const kept = keep
+      ? this.positions.findIndex((position) => position.id === looking.id)
+      : -1;
+    this.selected = kept === -1 ? this.hereIndex() : kept;
     this.element.hidden = false;
     this.render();
   }
