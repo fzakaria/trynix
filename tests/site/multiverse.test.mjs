@@ -59,15 +59,32 @@ test("a built version resolves to its store path", () => {
   assert.equal(row.storePath, "/nix/store/d-hello-2.12");
 });
 
+// Checks the link for each system, named rather than taken from the
+// engine this node would pick: config.js picks unkernel, and with it
+// aarch64-linux, wherever WebAssembly has JSPI, so a test that relied
+// on the default passed or failed with the node it ran under.
 test("multiverseUrl points at the package page, system left implicit", () => {
   // x86_64-linux is the system the index's own pages default to, so a
   // link naming it would not be the canonical URL that site writes.
   assert.equal(
-    multiverseUrl({ attr: "ripgrep" }),
+    multiverseUrl({ attr: "ripgrep", system: "x86_64-linux" }),
     "https://nixmultiverse.com/?pkg=ripgrep",
   );
   assert.equal(
-    multiverseUrl({ attr: "ripgrep", version: "14.1.0" }),
+    multiverseUrl({
+      attr: "ripgrep",
+      version: "14.1.0",
+      system: "x86_64-linux",
+    }),
     "https://nixmultiverse.com/?pkg=ripgrep&ver=14.1.0",
+  );
+});
+
+// Checks that any other system is named in the link, so the index shows
+// the store paths built for the guest the page runs.
+test("multiverseUrl names a system other than the index's default", () => {
+  assert.equal(
+    multiverseUrl({ attr: "ripgrep", system: "aarch64-linux" }),
+    "https://nixmultiverse.com/?pkg=ripgrep&sys=aarch64-linux",
   );
 });

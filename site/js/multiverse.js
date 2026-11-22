@@ -250,16 +250,17 @@ export function identify(digest) {
 // route out of the query string, so the link is spelled here rather
 // than looked up.
 //
-// `sys` is left off when trynix's system is the one that site already
+// `sys` is left off when the system is the one that site already
 // shows, which makes every link the canonical URL it would write for
-// itself.
-export function multiverseUrl({ attr, version = null }) {
+// itself. `system` is the guest's (config.js), and a parameter so the
+// tests can name one.
+export function multiverseUrl({ attr, version = null, system = SYSTEM }) {
   const params = new URLSearchParams({ pkg: attr });
   if (version !== null) {
     params.set("ver", version);
   }
-  if (SYSTEM !== MULTIVERSE_SITE_SYSTEM) {
-    params.set("sys", SYSTEM);
+  if (system !== MULTIVERSE_SITE_SYSTEM) {
+    params.set("sys", system);
   }
   return `${MULTIVERSE_URL}/?${params}`;
 }
