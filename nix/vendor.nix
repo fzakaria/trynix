@@ -100,6 +100,12 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
   cp unpack/package/dist/_chunks/core.mjs $out/unkernel/_chunks/core.mjs
   cp unpack/package/dist/unkernel.wasm $out/unkernel/unkernel.wasm
+  # patches/unkernel/ lets a snapshot hand the memory to a callback
+  # instead of copying all of it, which is what keeps a keyframe of
+  # the scrubber cheap (docs/scrub.md).
+  for patch in ${../patches/unkernel}/*.patch; do
+    patch -d $out -p1 < "$patch"
+  done
   # The version, for the benchmark history: a record of the unkernel
   # engine is named after the version the site carried
   # (tools/bench-history.py).

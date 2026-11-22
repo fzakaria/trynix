@@ -1,0 +1,48 @@
+Subject: [PATCH] Let snapshot() take the memory through a callback
+
+Kernel.snapshot() copies the whole memory into a freshly allocated
+buffer at the snapshot point. For a 512 MiB guest with 220 MiB in use
+that allocation is most of a 354 ms pause (Uint8Array.slice of 220 MiB
+took 215 ms on Node 24; copying into a buffer that already exists took
+18 ms). trynix takes a keyframe at every shell prompt and keeps only
+the 4 KiB pages that changed against a shadow copy it already holds,
+so the fresh copy is waste.
+
+`capture`, when given, is called at the snapshot point in place of the
+copy, with the same arguments the copy gets (the memory, the free-page
+bitmap or null, and how many pages the bitmap covers), and what it
+returns is spread into the snapshot in place of { memory, freeBytes }.
+It runs while every task is parked, which is the moment the memory is
+consistent.
+
+---
+--- a/unkernel/_chunks/core.mjs
++++ b/unkernel/_chunks/core.mjs
+@@ -7560,7 +7560,7 @@
+ 			});
+ 		});
+ 	}
+-	snapshot({ stop = false } = {}) {
++	snapshot({ stop = false, capture } = {}) {
+ 		if (this.irqAddr === void 0 || this.result) return Promise.reject(/* @__PURE__ */ new Error("snapshot: the kernel is not running"));
+ 		if (this.snapshotWaiter) return Promise.reject(/* @__PURE__ */ new Error("snapshot: one is in progress"));
+ 		if (!this.exports?.kw_resume) return Promise.reject(/* @__PURE__ */ new Error("snapshot: this kernel cannot resume one (no kw_resume)"));
+@@ -7578,7 +7578,8 @@
+ 		const p = new Promise((resolve, reject) => this.snapshotWaiter = {
+ 			resolve,
+ 			reject,
+-			stop
++			stop,
++			capture
+ 		});
+ 		this.raiseIrq(IRQ_SNAPSHOT);
+ 		return p;
+@@ -7657,7 +7658,7 @@
+ 			version: 1,
+ 			fingerprint: this.fingerprint,
+ 			memory64: this.memory64,
+-			...copySnapshotMemory(this.u8(), freeBits ? this.u8().subarray(Number(freeMap), Number(freeMap) + Math.ceil(Number(freeBits) / 8)) : null, Number(freeBits ?? 0)),
++			...(w.capture ?? copySnapshotMemory)(this.u8(), freeBits ? this.u8().subarray(Number(freeMap), Number(freeMap) + Math.ceil(Number(freeBits) / 8)) : null, Number(freeBits ?? 0)),
+ 			monotonicMs: this.wasi.monotonicMs(),
+ 			consoleSize: this.consoleSize,
+ 			input,
