@@ -58,3 +58,21 @@ test("a long screen keeps its end", () => {
   assert.equal(decode(log.live()), "defg");
   assert.equal(decode(log.screenAt(1)), "abc");
 });
+
+// Checks that a chatty command cannot grow the record without bound:
+// output past the limit is dropped from the front as it arrives, and
+// what is kept still rebuilds the same screen.
+test("the record keeps at most a limit's worth of output", () => {
+  const log = new ScreenLog({ limit: 8 });
+  for (let i = 0; i < 1000; i++) {
+    log.append(encode(`${i % 10}`));
+  }
+  log.frame(1, null);
+  assert.ok(log.pieces.get(1).bytes.length <= 8);
+  assert.equal(decode(log.screenAt(1)), "23456789");
+  for (let i = 0; i < 1000; i++) {
+    log.append(encode("x"));
+  }
+  assert.ok(log.tailBytes <= 2 * 8);
+  assert.equal(decode(log.live()), "xxxxxxxx");
+});

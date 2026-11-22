@@ -14,9 +14,12 @@
 // memory, on the same channel as the output, so a cut falls exactly
 // between the output from before the keyframe and from after it.
 
-// How many bytes of a screen are replayed at most. More than this is
-// past any scrollback the terminal keeps (terminal.js, 5000 lines).
-export const SCREEN_LIMIT = 8 * 1024 * 1024;
+// How many bytes of a screen are replayed at most, and kept per
+// keyframe. The terminal keeps 5000 lines of scrollback (terminal.js),
+// a few hundred KiB of text with its colours; more than this is past
+// it. A keyframe taken while a command floods the console costs up to
+// this much page memory.
+export const SCREEN_LIMIT = 2 * 1024 * 1024;
 
 export class ScreenLog {
   constructor({ limit = SCREEN_LIMIT } = {}) {
@@ -27,18 +30,27 @@ export class ScreenLog {
     // since.
     this.current = null;
     this.tail = [];
+    this.tailBytes = 0;
   }
 
-  // Output from the console, as it is drawn.
+  // Output from the console, as it is drawn. A command that prints
+  // more than the limit keeps only the end of it: nothing earlier can
+  // be on a screen rebuilt after it, and `yes` must not fill the tab.
   append(bytes) {
     this.tail.push(bytes);
+    this.tailBytes += bytes.length;
+    if (this.tailBytes > 2 * this.limit) {
+      this.tail = [this.cut(this.tail)];
+      this.tailBytes = this.tail[0].length;
+    }
   }
 
   // A keyframe was taken now, as a child of `parent`.
   frame(id, parent) {
-    this.pieces.set(id, { parent, bytes: joined(this.tail) });
+    this.pieces.set(id, { parent, bytes: this.cut(this.tail) });
     this.current = id;
     this.tail = [];
+    this.tailBytes = 0;
   }
 
   // The machine went back to keyframe `id`; what is drawn next
@@ -46,6 +58,7 @@ export class ScreenLog {
   restored(id) {
     this.current = id;
     this.tail = [];
+    this.tailBytes = 0;
   }
 
   // The bytes that rebuild the screen at keyframe `id`.
