@@ -490,9 +490,15 @@ export async function startMachine({
     restore,
 
     // What the keyframes cost, for the measurements in docs/scrub.md.
-    stats() {
+    // Each keyframe's size compressed is known once its compression
+    // is done, so this waits for that.
+    async stats() {
+      await store?.settled();
       return {
-        frames: [...frames.values()],
+        frames: [...frames.values()].map((frame) => ({
+          ...frame,
+          storedBytes: store.frame(frame.id).storedBytes,
+        })),
         store: store?.stats() ?? null,
         restores: timings.restores,
       };
