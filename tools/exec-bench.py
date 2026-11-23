@@ -15,7 +15,11 @@ closure in over 9p and translating everything, the second is warm.
 --guest-engine picks which of the page's two engines runs the guest:
 unkernel (aarch64 guest, the page's default) or qemu (x86_64 guest). The
 link names the engine outright, so a record never depends on what the
-page would have chosen. --engine overlays a locally built qemu engine
+page would have chosen. --fetch says when the closure downloads, and is
+named outright too: `all` (the default here, though not the page's)
+downloads everything before the shell starts, so the cold execution
+measures the engine and not the network; `lazy` measures a first run
+that fetches store paths as the guest opens them (site/js/lazy.js). --engine overlays a locally built qemu engine
 over the site's qemu/ files in a scratch copy. --baseline prints the
 ratio of every number against an earlier run. --only picks entries by
 name. The suite is the table below; every entry is a `pkg=` the page's
@@ -76,6 +80,11 @@ SUITE = [
 # The page's engines (site/js/engine.js), by the name a link carries.
 GUEST_ENGINES = ["unkernel", "qemu"]
 DEFAULT_GUEST_ENGINE = "unkernel"
+
+# When the page downloads a closure (site/js/downloads.js), by the name
+# a link carries.
+FETCH_MODES = ["all", "lazy"]
+DEFAULT_FETCH = "all"
 
 ITERATIONS = ["cold", "warm"]
 COMMAND_LIMIT_SECONDS = 1800
@@ -219,17 +228,17 @@ def group_usage(pgid):
     return cpu_ticks / CLOCK_TICKS, rss
 
 
-def page_query(entry, guest_engine):
+def page_query(entry, guest_engine, fetch=DEFAULT_FETCH):
     """The link's parameters for one entry: what to boot, on which
-    engine, and to start without a click."""
+    engine, when its closure downloads, and to start without a click."""
     kind, value = entry["spec"].split("=", 1)
-    return {kind: value, "engine": guest_engine, "boot": "1"}
+    return {kind: value, "engine": guest_engine, "fetch": fetch, "boot": "1"}
 
 
-def run_entry(entry, base, browser_binary, runs_dir, guest_engine):
+def run_entry(entry, base, browser_binary, runs_dir, guest_engine, fetch=DEFAULT_FETCH):
     """Boot a fresh guest with the entry's package, run its command cold
     then warm, and return the measurements."""
-    query = urllib.parse.urlencode(page_query(entry, guest_engine))
+    query = urllib.parse.urlencode(page_query(entry, guest_engine, fetch))
     url = f"{base}/?{query}"
     profile = tempfile.mkdtemp(prefix="exec-bench-", dir=runs_dir)
     browser = cpu.Browser(browser_binary, profile)
@@ -356,6 +365,12 @@ def main():
         default=DEFAULT_GUEST_ENGINE,
         help="which of the page's engines runs the guest",
     )
+    parser.add_argument(
+        "--fetch",
+        choices=FETCH_MODES,
+        default=DEFAULT_FETCH,
+        help="when the closure downloads: all before the shell starts, or as the guest opens it",
+    )
     parser.add_argument("--json", help="write the measurements here")
     parser.add_argument("--baseline", help="an earlier --json file to print ratios against")
     parser.add_argument("--only", action="append", help="run only this entry (repeatable)")
@@ -391,11 +406,12 @@ def main():
     try:
         for entry in suite:
             print(f"== {entry['name']}: {entry['command']}", flush=True)
-            results.append(run_entry(entry, base, args.browser, runs_dir, args.guest_engine))
+            results.append(run_entry(entry, base, args.browser, runs_dir, args.guest_engine, args.fetch))
             if args.json:
                 record = {
                     "engine": args.engine or "site",
                     "guest_engine": args.guest_engine,
+                    "fetch": args.fetch,
                     "results": results,
                 }
                 with open(args.json, "w") as f:

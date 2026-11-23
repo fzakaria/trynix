@@ -90,15 +90,25 @@ class PageTimer(unittest.TestCase):
 
 class PageQuery(unittest.TestCase):
     """Tests the link an entry is booted with: the entry's spec, the
-    engine named outright so a record never depends on the page's
-    default, and boot=1. Called directly with suite-shaped entries."""
+    engine and when the closure downloads named outright so a record
+    never depends on the page's defaults, and boot=1. Called directly
+    with suite-shaped entries."""
 
     def test_package(self):
         bench = load()
         entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
         self.assertEqual(
             bench.page_query(entry, "unkernel"),
-            {"pkg": "hello", "engine": "unkernel", "boot": "1"},
+            {"pkg": "hello", "engine": "unkernel", "fetch": "all", "boot": "1"},
+        )
+
+    def test_downloads_on_first_use(self):
+        """--fetch lazy measures a first run that downloads as it goes."""
+        bench = load()
+        entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
+        self.assertEqual(
+            bench.page_query(entry, "unkernel", "lazy"),
+            {"pkg": "hello", "engine": "unkernel", "fetch": "lazy", "boot": "1"},
         )
 
     def test_engine_is_always_named(self):
@@ -106,7 +116,7 @@ class PageQuery(unittest.TestCase):
         entry = {"name": "x", "spec": "path=/nix/store/abc-x-1", "command": "x"}
         self.assertEqual(
             bench.page_query(entry, "qemu"),
-            {"path": "/nix/store/abc-x-1", "engine": "qemu", "boot": "1"},
+            {"path": "/nix/store/abc-x-1", "engine": "qemu", "fetch": "all", "boot": "1"},
         )
 
     def test_suite_runs_on_either_engine(self):

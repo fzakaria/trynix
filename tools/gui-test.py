@@ -14,6 +14,7 @@ take a frame from it.
     nix run .#gui-test -- --site <a built site directory>
     nix run .#gui-test -- --site <site> --case foot --screenshots /tmp/gui
     nix run .#gui-test -- --site <site> --with firefox
+    nix run .#gui-test -- --site <site> --fetch all
 
 The cases:
 
@@ -24,6 +25,11 @@ The cases:
            by Mesa's virgl driver through the page's WebGL2
            (SwiftShader by default, so the frame rate it prints is a
            floor, not a measurement of a GPU).
+
+--fetch says when the closure downloads (site/js/downloads.js): `lazy`
+fetches store paths as the program opens them, `all` before the shell
+starts. Without it the link leaves the choice to the page, whose
+default is lazy.
 
 The browser is Chromium, driven over the DevTools protocol as the other
 tools here drive it, or with `--with firefox`, Firefox over WebDriver
@@ -384,10 +390,19 @@ GPU_HARDWARE = "hardware"
 GPUS = {GPU_SOFTWARE: cpu.Gpu.SOFTWARE, GPU_HARDWARE: cpu.Gpu.HARDWARE}
 
 
-def page_url(base, packages):
-    """The link that boots `packages` on unkernel without a click."""
+# When the closure downloads, by the name a link carries
+# (site/js/downloads.js).
+FETCH_MODES = ["lazy", "all"]
+
+
+def page_url(base, packages, fetch):
+    """The link that boots `packages` on unkernel without a click,
+    naming when the closure downloads if `fetch` is not None."""
     query = [("pkg", name) for name in packages]
-    query += [("engine", ENGINE), ("boot", "1")]
+    query += [("engine", ENGINE)]
+    if fetch is not None:
+        query += [("fetch", fetch)]
+    query += [("boot", "1")]
     return f"{base}/?{urllib.parse.urlencode(query)}"
 
 
@@ -406,10 +421,10 @@ def wait_for(browser, expression, limit, label):
     raise SystemExit(f"FAIL {label}: nothing after {limit} s\n{tail}")
 
 
-def boot(browser, base, packages):
+def boot(browser, base, packages, fetch):
     """Boot `packages` and wait for the shell; returns the seconds taken."""
     browser.set_viewport(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-    browser.navigate(page_url(base, packages))
+    browser.navigate(page_url(base, packages, fetch))
     _, seconds = wait_for(
         browser,
         f"(window.trynix?.transcript?.() ?? '').includes({json.dumps(cpu.SHELL_MARKER)})",
@@ -473,10 +488,10 @@ def guest_has(browser, path):
     return found is True
 
 
-def run_foot(browser, base, screenshots):
+def run_foot(browser, base, screenshots, fetch):
     """foot: boot it, start it, wait for its window, type into it."""
     print("foot")
-    seconds = boot(browser, base, FOOT_PACKAGES)
+    seconds = boot(browser, base, FOOT_PACKAGES, fetch)
     print(f"  shell after {seconds:.1f} s")
 
     browser.type(FOOT_COMMAND)
@@ -500,11 +515,11 @@ def run_foot(browser, base, screenshots):
     raise SystemExit("FAIL keys typed into foot's window never reached it")
 
 
-def run_gl(browser, base, screenshots):
+def run_gl(browser, base, screenshots, fetch):
     """gl: boot es2gears with Mesa, wait for its window and its frame
     rate, and check that the frames came through the GL renderer."""
     print("gl")
-    seconds = boot(browser, base, GL_PACKAGES)
+    seconds = boot(browser, base, GL_PACKAGES, fetch)
     print(f"  shell after {seconds:.1f} s")
     added = DRIVER_ADDED.search(
         browser.evaluate("document.getElementById('debug-log').textContent")
@@ -572,6 +587,11 @@ def main():
     parser.add_argument("--case", action="append", choices=CASES)
     parser.add_argument("--screenshots", help="a directory to save the windows in")
     parser.add_argument(
+        "--fetch",
+        choices=FETCH_MODES,
+        help="when the closure downloads (default: the page's choice, lazy)",
+    )
+    parser.add_argument(
         "--gpu",
         choices=[GPU_SOFTWARE, GPU_HARDWARE],
         default=GPU_SOFTWARE,
@@ -595,7 +615,7 @@ def main():
                 binary, os.path.join(workdir, case), GPUS[args.gpu]
             )
             try:
-                RUNNERS[case](browser, base, args.screenshots)
+                RUNNERS[case](browser, base, args.screenshots, args.fetch)
             finally:
                 browser.close()
     finally:
