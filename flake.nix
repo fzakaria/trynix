@@ -75,6 +75,13 @@
           # (nix/native-qemu.nix)
           native-qemu = import ./nix/native-qemu.nix { inherit pkgs; };
         }
+        # the GL driver the unkernel guest's GL programs load, Mesa with
+        # the virgl driver alone (nix/mesa-virgl.nix). An aarch64 build,
+        # so it is only offered there; tools/make-gl-cache.py builds it
+        # (on x86_64 through binfmt) into site/gl/
+        // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
+          mesa-virgl = import ./nix/mesa-virgl.nix { inherit pkgs; };
+        }
       );
 
       apps = forAllSystems (
@@ -214,6 +221,14 @@
             pkgs.nix
           ];
 
+          # build the unkernel guest's GL driver and write it into the
+          # site's binary cache, site/gl/ (docs/gui.md)
+          make-gl-cache = tool "make-gl-cache" "${pkgs.python3}/bin/python3 ${./tools/make-gl-cache.py}" [
+            pkgs.binutils
+            pkgs.git
+            pkgs.nix
+          ];
+
           # publish engine and snapshot as a dated release and repin.
           # git is here to find the checkout whose pins are rewritten:
           # run this way the script itself sits in the store, nowhere
@@ -309,6 +324,10 @@
         {
           # the site assembles: the entry page and the hashed module tree
           # are where the build put them
+          # the site's GL driver asks for no newer glibc than its manifest
+          # says, which is what the page decides by (nix/gl-check.nix)
+          gl-driver = import ./nix/gl-check.nix { inherit pkgs; };
+
           site = pkgs.runCommand "trynix-site-check" { } ''
             test -f ${self.packages.${system}.site}/index.html
             test -f ${self.packages.${system}.site}/js.*/app.js
