@@ -1,0 +1,10 @@
+StorePath: /nix/store/7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134
+URL: nar/1zwvylcmhw13y4lrjv4jrlr5qay0376avjv8f2yyw23v628a2ihp.nar.xz
+Compression: xz
+FileHash: sha256:1zwvylcmhw13y4lrjv4jrlr5qay0376avjv8f2yyw23v628a2ihp
+FileSize: 113744
+NarHash: sha256:11k4ynbsabwa2w71cd3gh9c0r7c1mnlf3lzafr15kqy6h4zvdh4k
+NarSize: 776472
+References: 6wjykzqf6w3kzfhjc4z7dcd84j0dzsgm-glibc-2.42-84 7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134
+Deriver: qcwh9z52f3b30z9h004aksn4i76fd5km-libdrm-2.4.134.drv
+Sig: nixbuild.net/CTXWZJ-1:RCZxqbKmkm0PCZOMZoAJ7Cj5cfr1YgaNmRd5N4NyHIKZgzz8eEYCDBz68Q/e93ATRfWEkMc0bnW+2f6A0Q3MCg==

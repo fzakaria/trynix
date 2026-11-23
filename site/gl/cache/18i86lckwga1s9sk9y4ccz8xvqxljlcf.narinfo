@@ -1,0 +1,10 @@
+StorePath: /nix/store/18i86lckwga1s9sk9y4ccz8xvqxljlcf-mesa-libgbm-26.1.3
+URL: nar/0x22fynyzqagwspfiv4h9vw2b08svn6zsk9jx221vfbsbrxp6235.nar.xz
+Compression: xz
+FileHash: sha256:0x22fynyzqagwspfiv4h9vw2b08svn6zsk9jx221vfbsbrxp6235
+FileSize: 12744
+NarHash: sha256:008hrmywn8dlvj3gvksjmndszb6gzpwv4fd3id374i6jrr4mvf93
+NarSize: 107184
+References: 18i86lckwga1s9sk9y4ccz8xvqxljlcf-mesa-libgbm-26.1.3 6wjykzqf6w3kzfhjc4z7dcd84j0dzsgm-glibc-2.42-84 7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134
+Deriver: 8n5mrsx2rs01l302fh2q3i8j1rbsbw0l-mesa-libgbm-26.1.3.drv
+Sig: nixbuild.net/CTXWZJ-1:rQZv6baEgUt5tWfJkOxeS0lgqFuypgGeFoAnPxvrxk2oajLEPnbN7ZuEwNrjxVfKKZY3Pvoc2tpL19d8lEWnBw==
