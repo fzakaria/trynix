@@ -96,6 +96,9 @@ A few things the guest lacks, the page supplies:
   takes a compiled `.go` only when it is no older than its source.
   The share used to stamp files with the time the page wrote them,
   and aisleriot, whose card games are guile, drew nothing in 90 s.
+- **A machine id.** D-Bus reads `/etc/machine-id`, which unkernel's
+  base system does not have, and GTK programs and firefox warn without
+  one. The GUI session writes one from the kernel's random UUID.
 - **The handshake.** foot starts a shell that inherits `ENV` and
   sources the manifest; the manifest now reads the page's handshake
   line only in the shell on the page's terminal.
@@ -255,6 +258,50 @@ starts warning.
 Each driver update adds its NAR to the repository's history for good:
 removing a file from the tree does not remove it from the clones that
 already have it.
+
+## Firefox and whole compositors
+
+nixpkgs' `firefox` runs in the guest, as a Wayland client, loading GL
+through libglvnd with `dlopen`, so the page adds the GL driver for it.
+Its closure with the driver is 322 paths, 457 MB compressed and 1.7 GB
+unpacked. It needs memory: in a 512 MiB guest the kernel ran out of
+contiguous 128 KiB blocks (`page allocation failure: order:5`) while
+firefox started, and of five runs one ended in SIGILL, one in SIGSEGV
+and one left the guest unable to start a process; the other two
+survived with 35 MiB to spare. In a 2 GiB guest, the computer's
+default (docs/unkernel.md, "Memory"), it runs and draws its pages. The
+signal a run died of was not caught with its address; that the fault
+follows the allocation failures is what the runs show, and why the
+allocation failures turn into SIGILL is not known.
+
+Measured in headless Chromium on a laptop, 2026-11-23, from typing
+`firefox` to its window, in a 2 GiB guest with a new profile:
+
+| start  | 1 CPU  | 4 CPUs |
+| ------ | ------ | ------ |
+| first  | 37.3 s | 28.9 s |
+| second | 32.7 s | 23.7 s |
+
+A compositor can run as one window on the page, with its own windows
+inside it:
+
+- **weston** runs with nothing set: it finds `WAYLAND_DISPLAY`, uses
+  its Wayland backend and opens its socket as `wayland-1`. A program
+  started with `WAYLAND_DISPLAY=wayland-1` opens inside it; foot and
+  weston-terminal there take keys (0.1 to 0.7 s from the keys to the
+  program's effect, measured by polling). First frame 2.0 to 3.3 s.
+  Its closure is 313 paths, 372 MB.
+- **sway** runs with `WLR_BACKENDS=wayland WLR_RENDERER=pixman`, a
+  config path (`sway -c <sway's store path>/etc/sway/config`: nixpkgs
+  sway looks in `/etc/sway`, which the guest does not have) and
+  `DBUS_SESSION_BUS_ADDRESS` set to anything: nixpkgs wraps sway in
+  `dbus-run-session` when it is unset, which fails without
+  `/etc/dbus-1/session.conf`. First frame 1.5 s; foot inside takes
+  keys. Closure 155 paths, 119 MB.
+- **labwc** does not start: its wlroots asks the parent compositor for
+  a DRM render node, which wland does not name, and gives up ("Failed
+  to get DRM render node from remote Wayland compositor"). sway's
+  wlroots goes on without one.
 
 ## What it costs
 
