@@ -83,3 +83,31 @@ test("the guest's CPU count travels in the link", () => {
     "/?pkg=firefox&mem=2048&cpus=4",
   );
 });
+
+// Checks that a link can say when the closure downloads, and that a
+// link that does not, or names something else, says so.
+test("when the closure downloads is read from the link", () => {
+  at("?pkg=aisleriot&fetch=all");
+  assert.equal(readUrl().downloads, "all");
+
+  at("?pkg=aisleriot&fetch=lazy");
+  assert.equal(readUrl().downloads, "lazy");
+
+  at("?pkg=aisleriot");
+  assert.equal(readUrl().downloads, null);
+
+  at("?pkg=aisleriot&fetch=some");
+  assert.equal(readUrl().downloads, null);
+});
+
+// Checks that the choice is written only when the caller passes it,
+// after the memory and the CPUs and ahead of boot=1.
+test("when the closure downloads is written only when given", () => {
+  at("");
+  const state = { pkgs: [{ attr: "aisleriot", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=aisleriot");
+  assert.equal(
+    writeUrl(state, { memory: 2048, cpus: 4, downloads: "all", boot: true }),
+    "/?pkg=aisleriot&mem=2048&cpus=4&fetch=all&boot=1",
+  );
+});

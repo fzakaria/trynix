@@ -8,6 +8,8 @@
 //   &engine=qemu                           the engine, when not the default
 //   &mem=2048                              the unkernel guest's memory, MiB
 //   &cpus=4                                the unkernel guest's CPUs
+//   &fetch=all                             download the closure before the
+//                                          shell starts (or fetch=lazy)
 //   &boot=1                                start without a click
 //
 // Everything is written back with replaceState as it changes, so the
@@ -15,21 +17,26 @@
 // from someone's cachix and the key that vouches for it travel in the
 // same link as the selection.
 
+import { downloadsOf } from "./downloads.js";
+
 const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
 const PARAM_CACHE = "cache";
 const PARAM_ENGINE = "engine";
 const PARAM_MEMORY = "mem";
 const PARAM_CPUS = "cpus";
+const PARAM_DOWNLOADS = "fetch";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
 //   caches: [{url, key}], engine: string|null, memory: number|null,
-//   cpus: number|null, boot: boolean }
+//   cpus: number|null, downloads: string|null, boot: boolean }
 //
 // The engine is handed back as written, or null when the link names
-// none: engine.js decides what a missing or unknown name means.
+// none: engine.js decides what a missing or unknown name means. The
+// downloads choice is null unless the link names one downloads.js
+// knows.
 export function readUrl() {
   const params = new URLSearchParams(location.search);
 
@@ -65,6 +72,7 @@ export function readUrl() {
     engine: params.get(PARAM_ENGINE),
     memory: countOf(params.get(PARAM_MEMORY)),
     cpus: countOf(params.get(PARAM_CPUS)),
+    downloads: downloadsOf(params.get(PARAM_DOWNLOADS)),
     boot: params.get(PARAM_BOOT) === "1",
   };
 }
@@ -83,11 +91,17 @@ function countOf(value) {
 // stays out unless asked for: a shared link should offer the boot, and
 // only the reload path wants it automatic. `engine` stays out unless
 // the caller names one, which keeps a link for the default engine as
-// short as a link was before there were two; `memory` and `cpus`
-// likewise.
+// short as a link was before there were two; `memory`, `cpus` and
+// `downloads` likewise.
 export function writeUrl(
   { pkgs, paths, caches = [] },
-  { boot = false, engine = null, memory = null, cpus = null } = {},
+  {
+    boot = false,
+    engine = null,
+    memory = null,
+    cpus = null,
+    downloads = null,
+  } = {},
 ) {
   const params = new URLSearchParams();
   for (const { attr, version } of pkgs) {
@@ -110,6 +124,9 @@ export function writeUrl(
   }
   if (cpus !== null) {
     params.set(PARAM_CPUS, String(cpus));
+  }
+  if (downloads !== null) {
+    params.set(PARAM_DOWNLOADS, downloads);
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");
