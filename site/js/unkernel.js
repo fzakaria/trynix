@@ -462,12 +462,23 @@ export async function startUnkernel({
       // `jj --version` went from 0.27 s to 0.19 s with the binary read
       // first. The read runs at the lowest priority and is not waited
       // for, so a command typed at once still goes ahead of it.
-      kernel
-        .exec(SHELL, [
-          "-c",
-          `nice -n 19 cat ${GUEST_BIN_DIR}/* > /dev/null 2>&1`,
-        ])
-        .catch(() => {});
+      //
+      // On a lazily served share the farm also links the programs of
+      // paths still to come, and reading one downloads its path, so
+      // only the selected packages' own programs are read. Reading the
+      // whole farm downloaded gcc for solitaire.
+      const readahead =
+        store === null
+          ? `${GUEST_BIN_DIR}/*`
+          : share
+              .programFiles(roots)
+              .map((file) => `'${file.replaceAll("'", "'\\''")}'`)
+              .join(" ");
+      if (readahead !== "") {
+        kernel
+          .exec(SHELL, ["-c", `nice -n 19 cat ${readahead} > /dev/null 2>&1`])
+          .catch(() => {});
+      }
 
       // The shell is ready once it has sourced the manifest, taken the
       // handshake and redrawn its prompt on a cleared screen (see

@@ -136,3 +136,18 @@ test("a listed path's programs are linked before it is written", () => {
   assert.deepEqual(share.written(), [HELLO]);
   assert.deepEqual(share.programsOf(HELLO), ["hello", "hi"]);
 });
+
+// Checks the programs a set of paths offers, as files the guest can
+// read: by each path's own bin directory rather than through the farm,
+// whose links may name another package.
+test("a path's programs are named as its own files", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  share.write(HELLO, ENTRIES);
+  share.offer("xyz-figlet-2.2.5", ["figlet"]);
+  assert.deepEqual(share.programFiles([HELLO]), [
+    `/nix/store/${HELLO}/bin/hello`,
+    `/nix/store/${HELLO}/bin/hi`,
+  ]);
+  assert.deepEqual(share.programFiles(["nothing-here"]), []);
+});

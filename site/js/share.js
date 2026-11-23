@@ -81,6 +81,16 @@ export function storeShare(FS) {
     },
 
     programsOf: (basename) => programs.get(basename) ?? [],
+
+    // The programs of `basenames` as files the guest can read, each in
+    // its own path's bin directory: a farm link of the same name may
+    // name another package's.
+    programFiles: (basenames) =>
+      basenames.flatMap((basename) =>
+        (programs.get(basename) ?? []).map(
+          (name) => `${GUEST_STORE_DIR}/${basename}/bin/${name}`,
+        ),
+      ),
     written: () => [...written],
     // Every path whose programs are known: written or offered.
     known: () => [...programs.keys()],
