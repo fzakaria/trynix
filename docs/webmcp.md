@@ -46,6 +46,13 @@ benchmark harnesses in `tools/` call it over CDP.
 - `run(command, { timeoutMs })` resolves to `{ status, output, timedOut }`
 - `transcript()` returns everything the guest has said
 - `type(text)` sends raw bytes, for an interrupt or a partial line
+- `downloads()` returns what the guest's closure has cost so far:
+  `{ mode, paths, bytes, writtenPaths, writtenBytes, streamedBytes }`,
+  the closure in paths and compressed bytes, what of it is in the
+  guest's store, and the compressed bytes read for it (from the
+  network, or on a return visit the Cache API). With `mode` `"lazy"`
+  the last three grow as the guest opens paths
+  ([unkernel.md](./unkernel.md#downloads-on-first-use))
 
 `run` resolves whether the command succeeded, failed or outlived its
 timeout. Each run is fenced between two lines the guest prints itself,

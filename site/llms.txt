@@ -23,6 +23,11 @@ link you can construct or send:
 - `?path=/nix/store/<digest>-name` a store path, verbatim
 - `&cache=https://x.cachix.org x-1:<key>` an extra binary cache and the
   key that vouches for it
+- `&fetch=all` download the whole closure before the shell starts. On
+  the aarch64 guest the default is `fetch=lazy`: the shell starts once
+  the selected packages are in, and every other store path downloads
+  the first time a program opens it, so a command's first run can
+  wait on the network
 - `&boot=1` start the boot without a click
 
 Repeat `pkg` and `path` for more than one. A package with no version
@@ -57,6 +62,8 @@ over the DevTools protocol:
 - `window.trynix.transcript()` returns everything the guest has said
 - `window.trynix.type(text)` sends raw bytes, for an interrupt or a
   partial line
+- `window.trynix.downloads()` says how much of the closure is in the
+  guest's store and how many bytes have been downloaded
 
 Wait for the boot to finish before typing. The page hides the element
 with id `console-veil` when the guest reaches its prompt, and it sends

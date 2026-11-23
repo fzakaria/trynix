@@ -14,8 +14,13 @@ invocation about ten times faster than the other
 ([docs/unkernel.md](docs/unkernel.md) has the measurements). The other
 is [qemu-wasm], a whole x86_64 machine, which the page uses for
 x86_64 store paths and for browsers without JSPI, and which a link
-selects with `engine=qemu`. The rest of this page describes the qemu
-engine, which is the one built in this repository.
+selects with `engine=qemu`. On unkernel the shell starts once the
+selected packages are in, and the rest of the closure downloads as the
+guest opens it, so a GUI program never fetches the compiler its
+libraries were built with ([docs/unkernel.md](docs/unkernel.md#downloads-on-first-use);
+`fetch=all` in a link, or Settings, downloads everything first). The
+rest of this page describes the qemu engine, which is the one built in
+this repository.
 
 trynix is glue between existing pieces. The [nixpkgs-multiverse]
 index resolves any `(attribute, version)` in nixpkgs history to the

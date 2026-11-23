@@ -332,7 +332,11 @@ which can pick a newer build; its Mesa was 26.3.1 against the lock's
 The unpacked closure is held in the page's memory. With nixpkgs' Mesa
 a GL boot asked the browser for 1.5 GB before the guest did anything;
 with the site's driver it is 541 MB, 458 MB of it mesa-demos' own
-closure.
+closure. These numbers, and the times below, are for a boot that
+downloads the whole closure first, which is no longer the default:
+with downloads on first use the page fetches and holds only what the
+program opens ([unkernel.md](./unkernel.md#downloads-on-first-use) has
+the comparison).
 
 Time and frame rate:
 

@@ -98,6 +98,8 @@ for what is on screen:
 | `path=/nix/store/<digest>-name`    | a store path, verbatim                    |
 | `cache=https://x.cachix.org x-1:…` | an extra binary cache and its public key  |
 | `engine=qemu`                      | the engine, when not the default          |
+| `mem=2048`                         | the unkernel guest's memory, in MiB       |
+| `fetch=all`                        | download the closure before the shell     |
 | `boot=1`                           | start without a click                     |
 
 Each parameter may repeat. `cache` is what makes a store path from
@@ -124,6 +126,13 @@ same path, with `/nix` a symlink into it:
 /share/bin/<program> -> /nix/store/<basename>/bin/<program>
 /share/manifest                   PATH, TERM, LANG, and `resize`
 ```
+
+On the unkernel engine the store can be served before it has arrived
+(the default; [unkernel.md](./unkernel.md#downloads-on-first-use)):
+every path of the closure is listed from its narinfo, and a lookup
+inside one waits while its NAR downloads. The farm below then starts
+with the selected packages' programs, and a dependency's join it when
+the dependency arrives.
 
 `/share/bin` is a farm of symlinks, one per program in the closure, and
 the one directory the guest keeps on PATH. What the reader selected is
