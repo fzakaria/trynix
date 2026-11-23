@@ -157,6 +157,15 @@ code {
   word-break: break-all;
 }
 
+/* The asterisk on the GUI line, and the note it points at. */
+.footnote-mark {
+  text-decoration: none;
+  padding-left: 0.1em;
+}
+.footnote {
+  font-size: 0.85em;
+}
+
 /* Example links under the intro. */
 .examples a {
   white-space: nowrap;

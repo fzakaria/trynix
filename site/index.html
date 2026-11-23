@@ -96,6 +96,17 @@
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
+    <!-- GUI programs (docs/gui.md). The footnote names the limits,
+         since the claim is narrower than the lede's. -->
+    <p>
+      GUI programs open as windows on the page too.<a
+        href="#gui-limits"
+        class="footnote-mark"
+        aria-describedby="gui-limits"
+        >*</a
+      >
+    </p>
+
     <p class="examples muted">
       Try:
       <a href="?pkg=hello">hello</a> ·
@@ -123,6 +134,11 @@
       >
         benchmark the emulator
       </a>
+    </p>
+
+    <p id="gui-limits" class="muted footnote">
+      * On the aarch64 guest (unkernel) only, for Wayland programs (no X11). Tested in Chrome. A GL
+      program also downloads a GL driver.
     </p>
 
     <section id="pick">
