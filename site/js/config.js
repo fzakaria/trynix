@@ -111,3 +111,11 @@ export const GUI_DIR = "gui";
 export const GUI_WLAND = "client.mjs";
 export const GUI_RELAY = "wlandr";
 export const GUI_FONTS = ["DejaVuSansMono.ttf", "DejaVuSans.ttf"];
+
+// The GL drivers the site serves for the unkernel guest (gldriver.js,
+// docs/gui.md): the binary cache that holds them, same-origin with the
+// page, and the manifest naming each driver with the glibc and gcc it
+// was built against. Both are files in the repository, under site/gl/,
+// written by tools/make-gl-cache.py.
+export const GL_CACHE = "gl/cache";
+export const GL_DRIVERS = "gl/drivers.json";

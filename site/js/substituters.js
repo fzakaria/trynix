@@ -13,7 +13,7 @@
 // kept in the browser: a link is the way to share a cachix store path,
 // and the key that vouches for it has to travel with it.
 
-import { CACHE_URL } from "./config.js";
+import { CACHE_URL, GL_CACHE } from "./config.js";
 import { parseNarinfo } from "./closure.js";
 import { cachedResponse, storeInCache } from "./cache.js";
 
@@ -21,13 +21,38 @@ import { cachedResponse, storeInCache } from "./cache.js";
 // none holds, in the walk's error and on the selection.
 export const NOT_FOUND = "not found in any configured cache";
 
+// What vouches for a substituter's narinfos.
+export const Trust = Object.freeze({
+  // A signature by the substituter's key.
+  KEY: "key",
+  // Being served from the page's own origin. Whoever can change a file
+  // there can change the page's JavaScript, which is what checks
+  // signatures, so a key would vouch for nothing the origin does not
+  // already. The files are committed to the repository like the page's
+  // own source (site/gl/), and each NAR is still checked against its
+  // narinfo's NarHash on arrival (store.js).
+  SITE: "site",
+});
+
+// The site's own binary cache, which serves the GL driver the page
+// adds for GL programs (gldriver.js) and nothing cache.nixos.org has.
+// An absolute URL, since it is joined to NAR paths and kept as a key
+// in the Cache API.
+export const SITE_CACHE_URL = globalThis.location
+  ? new URL(GL_CACHE, globalThis.location.href).href
+  : GL_CACHE;
+
 // Nix's own key for cache.nixos.org, so the default path verifies
-// without the reader configuring anything.
+// without the reader configuring anything, then the site's cache. The
+// order is the lookup order: a path cache.nixos.org holds never costs a
+// request to the site.
 export const DEFAULT_SUBSTITUTERS = [
   {
     url: CACHE_URL,
     key: "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
+    trust: Trust.KEY,
   },
+  { url: SITE_CACHE_URL, key: null, trust: Trust.SITE },
 ];
 
 // The extra caches in effect, as the page last set them.
@@ -52,7 +77,7 @@ export function parseSubstituters(text) {
       if (url === undefined || key === undefined) {
         throw new Error(`each line needs a URL and a public key: "${line}"`);
       }
-      return { url: url.replace(/\/$/, ""), key };
+      return { url: url.replace(/\/$/, ""), key, trust: Trust.KEY };
     });
 }
 
@@ -70,6 +95,10 @@ function fingerprint(info) {
 // Safari and Chrome before 137) — a third state, because "unverifiable
 // here" is not the same claim as "forged".
 export async function verify(info, substituters) {
+  const served = substituters.find((s) => s.url === info.substituter);
+  if (served?.trust === Trust.SITE) {
+    return true;
+  }
   if (info.sigs.length === 0) {
     return false;
   }
@@ -79,7 +108,7 @@ export async function verify(info, substituters) {
 
   for (const sig of info.sigs) {
     const [name, signature] = sig.split(":");
-    const match = substituters.find((s) => s.key.startsWith(`${name}:`));
+    const match = substituters.find((s) => s.key?.startsWith(`${name}:`));
     if (match === undefined) {
       continue;
     }

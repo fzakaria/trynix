@@ -1,0 +1,4 @@
+{
+  "comment": "The GL drivers site/gl/cache serves, written by tools/make-gl-cache.py: each Mesa store path with the newest GLIBC_ symbol version anything in its closure asks for and the gcc it was built with, which site/js/gldriver.js compares with a program's.",
+  "drivers": []
+}
