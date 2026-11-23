@@ -28,17 +28,30 @@ export const GUEST_STORE_DIR = "/nix/store";
 // The store share, as the page maintains it: which paths have been
 // written, what programs each one offers, and the farm of links.
 export function storeShare(FS) {
+  // Programs by basename, for every path written or offered.
   const programs = new Map();
+  const written = new Set();
 
   return {
     // Materialise one parsed NAR. A path already there is left alone —
     // a store path is immutable, so there is nothing to update.
     write(basename, entries) {
-      if (programs.has(basename)) {
+      if (written.has(basename)) {
         return;
       }
       writeEntries(FS, `${STORE_DIR}/${basename}`, entries);
+      written.add(basename);
       programs.set(basename, programsOf(entries));
+    },
+
+    // A path's programs before it is written, from its NAR listing
+    // (listing.js), so they can be linked while the path is still to
+    // come. The guest runs one through the link, which fetches the path
+    // (lazy.js).
+    offer(basename, names) {
+      if (!programs.has(basename)) {
+        programs.set(basename, names);
+      }
     },
 
     // Offer a written path's programs in the farm.
@@ -68,7 +81,9 @@ export function storeShare(FS) {
     },
 
     programsOf: (basename) => programs.get(basename) ?? [],
-    written: () => [...programs.keys()],
+    written: () => [...written],
+    // Every path whose programs are known: written or offered.
+    known: () => [...programs.keys()],
   };
 }
 

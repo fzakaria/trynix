@@ -12,7 +12,11 @@
 // Two pieces. lazyStore knows the closure and fetches a path once
 // however many lookups wait on it. lazyFs is the file system the guest
 // is served: unkernel's MemoryFs, which holds what has been written,
-// with each lookup under the store held until its path is in.
+// and before that each path's NAR listing (listing.js), which answers a
+// stat, a directory listing or a symlink without the NAR. Reading a
+// regular file's bytes is what downloads the path. A path the cache has
+// no listing for is downloaded whole the first time the guest looks in
+// it.
 //
 // unkernel's 9p server keeps answering other requests while one
 // handler waits, so a lookup that waits for a download stalls the one
@@ -40,7 +44,9 @@
 //   about to run it.
 
 import { loaderStorePaths } from "./elf.js";
+import { listingAttr, listingEntries, nodeAt, rootType } from "./listing.js";
 import { log } from "./log.js";
+import { absoluteTarget } from "./store.js";
 
 // How urgently a path is wanted.
 export const Priority = Object.freeze({
@@ -70,11 +76,16 @@ export const PREFETCH_LIMIT_BYTES = 2 * 1024 * 1024;
 // as an answer, so the next lookup asks again.
 const EIO = "EIO";
 
-// The type a store path is listed with before its NAR is in. Nearly
-// every store path is a directory, and a listing's type is only a hint:
-// the guest looks the name up, which waits for the NAR, before it acts
-// on what the name is.
+// The type a store path is listed with in the store before its NAR is
+// in, when it has no listing to say. Nearly every store path is a
+// directory, and a directory entry's type is only a hint: the guest
+// looks the name up before it acts on what the name is.
 const UNFETCHED_TYPE = "dir";
+
+// The modification time nix gives every file in a store, one second
+// past the epoch, in milliseconds; the share stamps its files with it
+// (share.js).
+const STORE_TIME_MS = 1000;
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -87,10 +98,14 @@ const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
 // be async. `concurrency` bounds the background fetches: a lookup the
 // guest waits on starts at once, and background fetches only start
 // while fewer than `concurrency` downloads of either kind are running.
-export function lazyStore({ fetch, write, concurrency }) {
-  // basename -> { info, written, promise, settle, queued }. `promise`
-  // is the download every lookup of the path waits on, from the moment
-  // the path is asked for until the download ends; null otherwise.
+// listing(info), when given, resolves to a path's NAR listing's root,
+// or to null when there is none to be had (listing.js).
+export function lazyStore({ fetch, write, concurrency, listing }) {
+  // basename -> { info, written, promise, settle, queued, listing }.
+  // `promise` is the download every lookup of the path waits on, from
+  // the moment the path is asked for until the download ends; null
+  // otherwise. `listing` is undefined until the listing is asked for,
+  // then a promise, then its root or null.
   const paths = new Map();
 
   // Paths the guest has touched, whose references are on their way.
@@ -193,6 +208,7 @@ export function lazyStore({ fetch, write, concurrency }) {
           promise: null,
           settle: null,
           queued: false,
+          listing: undefined,
         });
       }
     },
@@ -246,6 +262,40 @@ export function lazyStore({ fetch, write, concurrency }) {
     knows: (basename) => paths.has(basename),
     ready: (basename) => paths.get(basename)?.written === true,
 
+    // The path's listing: resolves to its root, or to null when the
+    // path has none (no listing function, or none to be had), asked for
+    // once however many lookups want it.
+    list(basename) {
+      const path = paths.get(basename);
+      if (path === undefined || listing === undefined) {
+        return Promise.resolve(null);
+      }
+      if (path.listing === undefined) {
+        path.listing = Promise.resolve(listing(path.info)).then(
+          (root) => {
+            path.listing = root ?? null;
+            return path.listing;
+          },
+          () => {
+            path.listing = null;
+            return null;
+          },
+        );
+      }
+      return Promise.resolve(path.listing);
+    },
+
+    // The path's listing if it has arrived: its root, null when there is
+    // none, undefined while it has not been asked for or is on its way.
+    // A store with no listing function has none for any path.
+    listed(basename) {
+      if (listing === undefined) {
+        return null;
+      }
+      const known = paths.get(basename)?.listing;
+      return known instanceof Promise ? undefined : known;
+    },
+
     // The closure's paths not written yet, by basename.
     pending: () =>
       [...paths.entries()]
@@ -277,48 +327,88 @@ function errno(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
-// The file system the guest is served: `fs`, unkernel's MemoryFs holding
-// what has been written, with `store` deciding when a path under
-// `storeDir` may be answered. `storeDir` is the store's path inside the
-// MemoryFs.
+// The file system the guest is served: `fs`, unkernel's MemoryFs
+// holding what has been written, with `store` deciding when a path in
+// the store may be answered and from what. `storeDir` is the store's
+// path inside the MemoryFs, and `shareDir` where the guest mounts the
+// MemoryFs, which a symlink's target is written against (store.js,
+// absoluteTarget).
 //
 // The calls are unkernel's Fs (its dist _chunks/index.d.mts): a handler
 // may return a promise, and an error with an errno name as its `code`
 // answers the guest with that errno. Only what the guest reads is here;
 // the mount is read-only, so every change is refused before it gets
 // this far.
-export function lazyFs(fs, store, storeDir) {
+//
+// A file of the closure is described the same way whether the answer
+// comes from its listing or from the MemoryFs: type, mode, size and
+// nix's one-second times, and nothing else. The MemoryFs's own inode
+// numbers and versions would change under the guest the moment a path
+// arrived; without them the 9p server derives both from the path and
+// the times, the same before and after.
+export function lazyFs(fs, store, { storeDir, shareDir }) {
   const prefix = `${storeDir}/`;
 
   // Files already read for what their loading opens, by path.
   const inspected = new Set();
 
-  // The closure path `path` is or is inside, by basename; null for a
-  // path outside the store, or a name the closure does not hold.
+  // The closure path `path` is or is inside, as { basename, rest }, rest
+  // being the part inside it ("" for the path itself); null for a path
+  // outside the store, or a name the closure does not hold.
   function closurePathOf(path) {
     if (!path.startsWith(prefix)) {
       return null;
     }
-    const rest = path.slice(prefix.length);
-    const slash = rest.indexOf("/");
-    const basename = slash === -1 ? rest : rest.slice(0, slash);
-    return store.knows(basename) ? basename : null;
+    const inside = path.slice(prefix.length);
+    const slash = inside.indexOf("/");
+    const basename = slash === -1 ? inside : inside.slice(0, slash);
+    if (!store.knows(basename)) {
+      return null;
+    }
+    return { basename, rest: slash === -1 ? "" : inside.slice(slash + 1) };
   }
 
-  // Run `call` once the closure path `path` is in has been written: at
+  // How the share writes a symlink's target at `path`.
+  const targetOf = (path, target) =>
+    absoluteTarget(`${shareDir}${path}`, target);
+
+  // Run `call` once the closure path `basename` has been written: at
   // once for a path already there, so a warm lookup costs no more than
-  // the MemoryFs does, and after the download otherwise.
-  function after(path, call) {
-    const basename = closurePathOf(path);
-    if (basename === null) {
-      return call();
-    }
+  // the MemoryFs does, and after its download otherwise. Touching it is
+  // what fetches its references (lazyStore.touch).
+  function whole(path, basename, call) {
     const arrived = store.touch(basename);
     if (store.ready(basename)) {
       return call();
     }
     return arrived.then(call, (err) => {
       throw errno(EIO, `${path}: ${err.message}`);
+    });
+  }
+
+  // Answer a lookup at `path`, inside the closure path `at`: from the
+  // MemoryFs once the path is written, from its listing until then, and
+  // for a path with no listing, from the MemoryFs once the path is
+  // downloaded. fromListing(root) and fromShare() give the answer.
+  function answer(path, at, fromListing, fromShare) {
+    if (store.ready(at.basename)) {
+      return fromShare();
+    }
+    const listed = store.listed(at.basename);
+    if (listed === null) {
+      return whole(path, at.basename, fromShare);
+    }
+    if (listed !== undefined) {
+      return fromListing(listed);
+    }
+    return store.list(at.basename).then((root) => {
+      if (store.ready(at.basename)) {
+        return fromShare();
+      }
+      if (root === null) {
+        return whole(path, at.basename, fromShare);
+      }
+      return fromListing(root);
     });
   }
 
@@ -341,34 +431,121 @@ export function lazyFs(fs, store, storeDir) {
     }
   }
 
-  return {
-    getattr: (path) => after(path, () => fs.getattr(path)),
+  // Open a written file of the closure path `basename`, describing it as
+  // every file of the closure is described.
+  function openWritten(path, basename, flags) {
+    const file = fs.open(path, flags);
+    expectLoads(path, basename, file);
+    return {
+      read: (offset, length) => file.read(offset, length),
+      getattr: () => storeAttr(file.getattr?.() ?? fs.getattr(path)),
+    };
+  }
 
-    // The store itself lists every path of the closure, fetched or not.
-    // Listing it fetches nothing; looking any of the names up does.
-    readdir(path) {
-      if (path !== storeDir) {
-        return after(path, () => fs.readdir(path));
+  return {
+    getattr(path) {
+      const at = closurePathOf(path);
+      if (at === null) {
+        return fs.getattr(path);
       }
-      const listed = fs.readdir(path);
-      const names = new Set(listed.map((entry) => entry.name));
-      const unfetched = store
-        .pending()
-        .filter((basename) => !names.has(basename))
-        .map((name) => ({ name, type: UNFETCHED_TYPE }));
-      return [...listed, ...unfetched];
+      return answer(
+        path,
+        at,
+        (root) => storeAttr(listingAttr(nodeAt(root, at.rest), path, targetOf)),
+        () => storeAttr(fs.getattr(path)),
+      );
     },
 
-    open: (path, flags) =>
-      after(path, () => {
-        const file = fs.open(path, flags);
-        const basename = closurePathOf(path);
-        if (basename !== null) {
-          expectLoads(path, basename, file);
-        }
-        return file;
-      }),
-    readlink: (path) => after(path, () => fs.readlink(path)),
+    // The store itself lists every path of the closure, fetched or not,
+    // typed by its listing where it has one. Listing it fetches nothing.
+    readdir(path) {
+      if (path === storeDir) {
+        const written = fs.readdir(path).map(entryOf);
+        const names = new Set(written.map((entry) => entry.name));
+        const unfetched = store
+          .pending()
+          .filter((basename) => !names.has(basename))
+          .map((name) => {
+            const listed = store.listed(name);
+            return {
+              name,
+              type: listed ? rootType(listed) : UNFETCHED_TYPE,
+            };
+          });
+        return [...written, ...unfetched];
+      }
+      const at = closurePathOf(path);
+      if (at === null) {
+        return fs.readdir(path);
+      }
+      return answer(
+        path,
+        at,
+        (root) => listingEntries(nodeAt(root, at.rest)),
+        () => fs.readdir(path).map(entryOf),
+      );
+    },
+
+    // Reading a file is what needs its bytes: a listed regular file
+    // downloads its path, and anything else the listing names is not a
+    // file to open.
+    open(path, flags) {
+      const at = closurePathOf(path);
+      if (at === null) {
+        return fs.open(path, flags);
+      }
+      const opened = () => openWritten(path, at.basename, flags);
+      return answer(
+        path,
+        at,
+        (root) => {
+          if (nodeAt(root, at.rest).type !== "regular") {
+            throw errno("EISDIR", `${path}: not a regular file`);
+          }
+          return whole(path, at.basename, opened);
+        },
+        () => whole(path, at.basename, opened),
+      );
+    },
+
+    readlink(path) {
+      const at = closurePathOf(path);
+      if (at === null) {
+        return fs.readlink(path);
+      }
+      return answer(
+        path,
+        at,
+        (root) => {
+          const node = nodeAt(root, at.rest);
+          if (node.type !== "symlink") {
+            throw errno("EINVAL", `${path}: not a symlink`);
+          }
+          return targetOf(path, node.target);
+        },
+        () => fs.readlink(path),
+      );
+    },
+
     statfs: () => fs.statfs(),
   };
 }
+
+// A closure file's attributes as the guest is told them: type, mode and
+// size, with nix's times (see lazyFs). `attr` may be a promise.
+function storeAttr(attr) {
+  if (attr instanceof Promise) {
+    return attr.then(storeAttr);
+  }
+  return {
+    type: attr.type,
+    mode: attr.mode,
+    size: attr.size,
+    atimeMs: STORE_TIME_MS,
+    mtimeMs: STORE_TIME_MS,
+    ctimeMs: STORE_TIME_MS,
+  };
+}
+
+// A directory entry without the MemoryFs's inode number (see lazyFs).
+const entryOf = ({ name, type }) => ({ name, type });

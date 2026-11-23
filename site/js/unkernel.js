@@ -289,6 +289,16 @@ export async function startUnkernel({
     }
   };
 
+  // The same for a path's programs offered from its listing, which can
+  // arrive after the shell started too.
+  const offer = share.offer.bind(share);
+  share.offer = (basename, names) => {
+    offer(basename, names);
+    if (linkArrivals) {
+      share.link(basename, Precedence.KEEP);
+    }
+  };
+
   // The kernel runs in a worker where the page may share memory with
   // one, which keeps a busy guest from stalling the page; without
   // cross-origin isolation the kernel runs on the page's own thread
@@ -405,7 +415,7 @@ export async function startUnkernel({
     // the closure in its store, and a lookup inside one that has not
     // arrived waits for it.
     async run(roots, { store = null } = {}) {
-      share.linkAll(share.written(), roots, Precedence.KEEP);
+      share.linkAll(share.known(), roots, Precedence.KEEP);
       FS.writeFile(MANIFEST_FILE, manifest());
 
       // The share is read-only to the guest: a store is immutable, and
@@ -418,7 +428,10 @@ export async function startUnkernel({
         FS.mkdir(STORE_DIR);
         await kernel.mount(
           SHARE_DIR,
-          lazyFs(files, store, MEMORY_FS_STORE_DIR),
+          lazyFs(files, store, {
+            storeDir: MEMORY_FS_STORE_DIR,
+            shareDir: SHARE_DIR,
+          }),
           {
             readOnly: true,
             requestTimeout: LAZY_REQUEST_TIMEOUT_MS,

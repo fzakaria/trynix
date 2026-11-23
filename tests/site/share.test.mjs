@@ -118,3 +118,21 @@ test("programs are linked into the farm, and precedence decides a collision", ()
     `/nix/store/${other}/bin/hello`,
   );
 });
+
+// Checks programs offered from a listing before the path is written: they
+// are linked like a written path's, the path does not count as written,
+// and writing it later changes neither.
+test("a listed path's programs are linked before it is written", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  share.offer(HELLO, ["hello", "hi"]);
+
+  assert.deepEqual(share.written(), []);
+  assert.deepEqual(share.known(), [HELLO]);
+  share.link(HELLO, Precedence.KEEP);
+  assert.equal(fs.nodes.get("/bin/hi").target, `/nix/store/${HELLO}/bin/hi`);
+
+  share.write(HELLO, ENTRIES);
+  assert.deepEqual(share.written(), [HELLO]);
+  assert.deepEqual(share.programsOf(HELLO), ["hello", "hi"]);
+});

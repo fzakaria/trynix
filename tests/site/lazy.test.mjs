@@ -267,8 +267,14 @@ test("the store counts what it has written against the closure", async () => {
   assert.deepEqual(store.pending(), ["l-two"]);
 });
 
+// The modification time nix gives every file in a store, which the
+// guest is told for every file of the closure (share.js).
+const STORE_TIME_MS = 1000;
+
 // The part of unkernel's MemoryFs the lazy file system calls, over a
-// Map of paths, which the store's write fills.
+// Map of paths, which the store's write fills. Its attributes carry
+// what the MemoryFs's do beyond type, mode and size: an inode number,
+// a version, and times from when the file was written.
 function fakeShare() {
   const nodes = new Map([
     ["/", { type: "dir" }],
@@ -285,12 +291,37 @@ function fakeShare() {
     return found;
   };
 
+  const WRITTEN_AT_MS = 1700000000000;
+  const inodes = new Map();
+  const inode = (path) => {
+    if (!inodes.has(path)) {
+      inodes.set(path, inodes.size + 2);
+    }
+    return inodes.get(path);
+  };
+  const MODES = { dir: 0o755, symlink: 0o777, file: 0o644 };
+  const SIZES = {
+    dir: () => 4096,
+    symlink: (n) => new TextEncoder().encode(n.target).length,
+    file: (n) => n.data?.length ?? 0,
+  };
+  const attr = (path) => {
+    const n = node(path);
+    return {
+      type: n.type,
+      mode: n.mode ?? MODES[n.type],
+      size: SIZES[n.type](n),
+      ino: inode(path),
+      version: 1,
+      atimeMs: WRITTEN_AT_MS,
+      mtimeMs: n.type === "file" ? STORE_TIME_MS : WRITTEN_AT_MS,
+      ctimeMs: WRITTEN_AT_MS,
+    };
+  };
+
   return {
     nodes,
-    getattr: (path) => ({
-      type: node(path).type,
-      size: node(path).data?.length,
-    }),
+    getattr: attr,
     readdir(path) {
       node(path);
       const prefix = path === "/" ? "/" : `${path}/`;
@@ -298,11 +329,16 @@ function fakeShare() {
         .filter((p) => p.startsWith(prefix) && p !== path)
         .map((p) => p.slice(prefix.length))
         .filter((name) => !name.includes("/"))
-        .map((name) => ({ name, type: nodes.get(prefix + name).type }));
+        .map((name) => ({
+          name,
+          type: nodes.get(prefix + name).type,
+          ino: inode(prefix + name),
+        }));
     },
     open: (path) => ({
       read: (offset, length) =>
         node(path).data.subarray(offset, offset + length),
+      getattr: () => attr(path),
     }),
     readlink: (path) => node(path).target,
     statfs: () => ({ bsize: 4096 }),
@@ -311,12 +347,24 @@ function fakeShare() {
 
 // A lazy file system over a fake share, with downloads the test
 // controls; finishing a download writes `files` (path -> node) for it.
-function servedLazily(infos, files) {
+// `listings` gives a path's listing by basename: a root node, null for
+// a path the cache has none for, or a promise of either. Without it no
+// path has a listing, as before there were any.
+function servedLazily(infos, files, listings = null) {
   const share = fakeShare();
   const downloads = new Map();
   const started = [];
+  const listed = [];
   const store = lazyStore({
     concurrency: 4,
+    listing:
+      listings === null
+        ? undefined
+        : (narinfo) => {
+            const basename = narinfo.storePath.slice(STORE.length + 1);
+            listed.push(basename);
+            return Promise.resolve(listings[basename] ?? null);
+          },
     fetch(narinfo) {
       const basename = narinfo.storePath.slice(STORE.length + 1);
       started.push(basename);
@@ -332,8 +380,9 @@ function servedLazily(infos, files) {
   });
   store.add(infos);
   return {
-    fs: lazyFs(share, store, STORE),
+    fs: lazyFs(share, store, { storeDir: STORE, shareDir: SHARE }),
     started,
+    listed,
     finish: async (basename) => {
       downloads.get(basename).resolve([]);
       await settle();
@@ -344,6 +393,14 @@ function servedLazily(infos, files) {
     },
   };
 }
+
+// Where the guest mounts the share; a symlink's target is written
+// against it (store.js, absoluteTarget).
+const SHARE = "/share";
+
+// Type and size, which are what the tests below look at in an
+// attribute unless they say otherwise.
+const brief = (attr) => ({ type: attr.type, size: attr.size });
 
 const LIBC = "m-glibc-2.42";
 const LIBC_FILES = {
@@ -376,13 +433,13 @@ test("a lookup inside a path waits for its download", async () => {
   assert.deepEqual(started, [LIBC]);
 
   await finish(LIBC);
-  assert.deepEqual(await lookup, { type: "file", size: 1 });
+  assert.deepEqual(brief(await lookup), { type: "file", size: 1 });
   assert.deepEqual((await opened).read(0, 1), new Uint8Array([7]));
 
   // Written, the path is answered without waiting for anything.
-  assert.deepEqual(fs.getattr(`${STORE}/${LIBC}`), {
+  assert.deepEqual(brief(fs.getattr(`${STORE}/${LIBC}`)), {
     type: "dir",
-    size: undefined,
+    size: 4096,
   });
 });
 
@@ -405,14 +462,14 @@ test("a failed download answers EIO, and the next lookup retries", async () => {
   const again = fs.getattr(`${STORE}/${LIBC}/lib`);
   assert.deepEqual(started, [LIBC, LIBC]);
   await finish(LIBC);
-  assert.deepEqual(await again, { type: "dir", size: undefined });
+  assert.deepEqual(brief(await again), { type: "dir", size: 4096 });
 });
 
 // Checks that what is not a path of the closure goes straight to the
 // share: the share's own files, and a store name nothing listed.
 test("paths outside the closure go straight to the share", async () => {
   const { fs, started } = servedLazily([info(LIBC)], {});
-  assert.deepEqual(fs.getattr("/nix"), { type: "dir", size: undefined });
+  assert.deepEqual(brief(fs.getattr("/nix")), { type: "dir", size: 4096 });
   assert.throws(
     () => fs.getattr(`${STORE}/o-elsewhere`),
     (err) => err.code === "ENOENT",
@@ -445,4 +502,198 @@ test("opening a program fetches what its loader will open", async () => {
   await finish(program);
   await opened;
   assert.deepEqual(started, [program, LIBC, "v-gtk"]);
+});
+
+// libc's listing as the cache publishes it: the library, a relative
+// symlink beside it, and the loader.
+const LIBC_LISTING = {
+  type: "directory",
+  entries: {
+    lib: {
+      type: "directory",
+      entries: {
+        "libc.so.6": { type: "regular", size: 1, narOffset: 1 },
+        "libc.so": { type: "symlink", target: "libc.so.6" },
+        "ld-linux-aarch64.so.1": {
+          type: "regular",
+          size: 1,
+          executable: true,
+        },
+      },
+    },
+  },
+};
+
+const LIBC_FILES_WITH_LINK = {
+  ...LIBC_FILES,
+  [`${STORE}/${LIBC}/lib/libc.so`]: {
+    type: "symlink",
+    target: `${SHARE}${STORE}/${LIBC}/lib/libc.so.6`,
+  },
+  [`${STORE}/${LIBC}/lib/ld-linux-aarch64.so.1`]: {
+    type: "file",
+    mode: 0o755,
+    data: new Uint8Array([8]),
+  },
+};
+
+// Checks that a listed path answers stat, a directory listing and a
+// symlink's target from its listing, and downloads nothing: `ls -l` in
+// a path is free. The symlink's target is the one the share will hold.
+test("a listed path answers stat, readdir and readlink with no download", async () => {
+  const { fs, started } = servedLazily(
+    [info(LIBC)],
+    {},
+    { [LIBC]: LIBC_LISTING },
+  );
+  const lib = `${STORE}/${LIBC}/lib`;
+
+  assert.deepEqual(brief(await fs.getattr(`${lib}/libc.so.6`)), {
+    type: "file",
+    size: 1,
+  });
+  assert.deepEqual((await fs.readdir(lib)).map((entry) => entry.name).sort(), [
+    "ld-linux-aarch64.so.1",
+    "libc.so",
+    "libc.so.6",
+  ]);
+  assert.equal(
+    await fs.readlink(`${lib}/libc.so`),
+    `${SHARE}${STORE}/${LIBC}/lib/libc.so.6`,
+  );
+  assert.deepEqual(started, []);
+});
+
+// Checks the loader's case: a library looked for in a directory that
+// does not have it is ENOENT at once, from the listing, with no
+// download of the path it was looked for in.
+test("a name a listing lacks is ENOENT, with no download", async () => {
+  const { fs, started } = servedLazily(
+    [info(LIBC)],
+    {},
+    { [LIBC]: LIBC_LISTING },
+  );
+  await assert.rejects(
+    async () => fs.getattr(`${STORE}/${LIBC}/lib/libgtk-3.so.0`),
+    (err) => err.code === "ENOENT",
+  );
+  assert.deepEqual(started, []);
+});
+
+// Checks that reading a listed regular file downloads its path, and
+// that the open is answered once the path is written.
+test("reading a listed file downloads its path", async () => {
+  const { fs, started, finish } = servedLazily(
+    [info(LIBC)],
+    { [LIBC]: LIBC_FILES_WITH_LINK },
+    { [LIBC]: LIBC_LISTING },
+  );
+  const opened = fs.open(`${STORE}/${LIBC}/lib/libc.so.6`, { read: true });
+  await settle();
+  assert.deepEqual(started, [LIBC]);
+  await finish(LIBC);
+  assert.deepEqual((await opened).read(0, 1), new Uint8Array([7]));
+});
+
+// Checks that the guest is told the same thing about a file before its
+// path arrives, from the listing, and after, from the share: type,
+// mode, size and nix's one-second times, and no inode number or version
+// of the share's own, which the 9p server then derives from the path
+// and the times the same way both times.
+test("a file's attributes are the same before and after its path arrives", async () => {
+  const { fs, finish } = servedLazily(
+    [info(LIBC)],
+    { [LIBC]: LIBC_FILES_WITH_LINK },
+    { [LIBC]: LIBC_LISTING },
+  );
+  const paths = [
+    "",
+    "/lib",
+    "/lib/libc.so.6",
+    "/lib/libc.so",
+    "/lib/ld-linux-aarch64.so.1",
+  ].map((rest) => `${STORE}/${LIBC}${rest}`);
+
+  const before = [];
+  for (const path of paths) {
+    before.push(await fs.getattr(path));
+  }
+  const listingBefore = await fs.readdir(`${STORE}/${LIBC}/lib`);
+
+  const opened = fs.open(`${STORE}/${LIBC}/lib/libc.so.6`, { read: true });
+  await settle();
+  await finish(LIBC);
+  const file = await opened;
+
+  const after = [];
+  for (const path of paths) {
+    after.push(await fs.getattr(path));
+  }
+  assert.deepEqual(after, before);
+  assert.deepEqual(file.getattr(), before[2]);
+  assert.deepEqual(before[2], {
+    type: "file",
+    mode: 0o644,
+    size: 1,
+    atimeMs: STORE_TIME_MS,
+    mtimeMs: STORE_TIME_MS,
+    ctimeMs: STORE_TIME_MS,
+  });
+  const sorted = (entries) =>
+    [...entries].sort((a, b) => a.name.localeCompare(b.name));
+  assert.deepEqual(
+    sorted(await fs.readdir(`${STORE}/${LIBC}/lib`)),
+    sorted(listingBefore),
+  );
+});
+
+// Checks the fallback: a path the cache has no listing for is downloaded
+// whole the first time the guest touches it, as before there were
+// listings.
+test("a path with no listing downloads on first touch", async () => {
+  const { fs, started, finish } = servedLazily(
+    [info(LIBC)],
+    { [LIBC]: LIBC_FILES },
+    { [LIBC]: null },
+  );
+  const lookup = fs.getattr(`${STORE}/${LIBC}/lib`);
+  await settle();
+  assert.deepEqual(started, [LIBC]);
+  await finish(LIBC);
+  assert.equal((await lookup).type, "dir");
+});
+
+// Checks that a lookup made while a path's listing is on its way waits
+// for the listing, not for the NAR, and that one listing serves every
+// lookup.
+test("a lookup waits for a listing on its way, and one serves all", async () => {
+  const arriving = deferred();
+  const { fs, started, listed } = servedLazily(
+    [info(LIBC)],
+    {},
+    { [LIBC]: arriving.promise },
+  );
+  const first = fs.getattr(`${STORE}/${LIBC}/lib/libc.so.6`);
+  const second = fs.getattr(`${STORE}/${LIBC}/lib`);
+  arriving.resolve(LIBC_LISTING);
+  assert.equal((await first).type, "file");
+  assert.equal((await second).type, "dir");
+  assert.deepEqual(listed, [LIBC]);
+  assert.deepEqual(started, []);
+});
+
+// Checks that the store directory lists a listed path with the type its
+// listing gives, so a store path that is one file is not called a
+// directory.
+test("the store lists a listed path with its listed type", async () => {
+  const { fs } = servedLazily(
+    [info(LIBC), info("p-script")],
+    {},
+    { [LIBC]: LIBC_LISTING, "p-script": { type: "regular", size: 3 } },
+  );
+  await fs.getattr(`${STORE}/p-script`);
+  const types = Object.fromEntries(
+    (await fs.readdir(STORE)).map((entry) => [entry.name, entry.type]),
+  );
+  assert.deepEqual(types, { [LIBC]: "dir", "p-script": "file" });
 });
