@@ -247,6 +247,7 @@ build out of band. Change the version and hash in
 site=$(nix build .#site --no-link --print-out-paths)
 nix run .#boot-test -- --site "$site" --engine unkernel
 nix run .#webmcp-test -- --site "$site"
+nix run .#gui-test -- --site "$site"
 nix run .#exec-bench -- --site "$site" --guest-engine unkernel
 ```
 
