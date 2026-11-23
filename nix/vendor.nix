@@ -34,8 +34,8 @@ let
   ghostty =
     npm "ghostty-web" "0.4.0-next.20.g1858a59"
       "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
-  unkernelVersion = "0.2.0-261119-040e142";
-  unkernel = npm "unkernel" unkernelVersion "0qg1giyy1r7lgyrb4skdn2cf21lqjc2v12f23x2gskfrh7s445h0";
+  unkernelVersion = "0.2.0-261123-8f039c5";
+  unkernel = npm "unkernel" unkernelVersion "15klkpxgyxsdlxs86kmn79x5pgq856hgcd6p47kj1v5pnbd5vw0l";
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
@@ -93,8 +93,10 @@ pkgs.runCommand "trynix-js-vendor" { } ''
 
   # The SDK's browser entry, the chunk the entry imports by relative
   # path, and the kernel. The Node entry and the CLI stay behind: the
-  # page never loads them. The workers the SDK starts are inlined in
-  # the entry as blobs, so there is no worker file to place.
+  # page never loads them. So does the guest GL renderer (virgl.mjs,
+  # virgl.wasm), which the SDK fetches only for createKernel({ gl }).
+  # The workers the SDK starts are inlined in the entry as blobs, so
+  # there is no worker file to place.
   tar -xzf ${unkernel} -C unpack
   mkdir -p $out/unkernel/_chunks
   cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
