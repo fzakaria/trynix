@@ -27,6 +27,14 @@ let
     "DejaVuSansMono.ttf"
     "DejaVuSans.ttf"
   ];
+
+  # The fonts' license, which asks to travel with them; nixpkgs'
+  # dejavu_fonts installs the fonts alone. The tag is the release
+  # nixpkgs builds.
+  fontsLicense = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/LICENSE";
+    sha256 = "14wajpjybsk1l5dzw261chphvlbxbhg7a69l9iwn9l34dq9kn23s";
+  };
 in
 pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mkdir -p $out
@@ -59,10 +67,12 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   # module that names it is rewritten to match. That happens before
   # js/ is hashed, so the new name is part of js/'s hash.
   mv $out/vendor/wland $out/gui
+  mv $out/gui/LICENSE $out/gui/LICENSE-wland
   cp ${wlandr}/bin/wlandr $out/gui/wlandr
   for font in ${pkgs.lib.concatStringsSep " " fonts}; do
     cp ${pkgs.dejavu_fonts}/share/fonts/truetype/$font $out/gui/
   done
+  cp ${fontsLicense} $out/gui/LICENSE-dejavu
   hash=$(find $out/gui -type f | LC_ALL=C sort |
     xargs sha256sum | sha256sum | cut -c1-12)
   mv $out/gui "$out/gui.$hash"
