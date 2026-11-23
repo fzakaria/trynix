@@ -271,6 +271,11 @@ export async function startUnkernel({
   // Neither costs a download until a program uses it: the GL renderer
   // is fetched on the guest's first GL use, the compositor on the
   // relay's first dial.
+  //
+  // The SDK's own notes (the GL renderer loading, its link connecting)
+  // go to the page's log with the rest of the boot. Without a `log` the
+  // SDK prints them with console.error, and every boot showed the
+  // reader a column of red lines that were not errors.
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
     memoryMiB: memory.mib,
@@ -279,6 +284,7 @@ export async function startUnkernel({
     shm: true,
     gpu: true,
     gl: { module: new URL(engine.gl, location.href).href },
+    log,
   });
   if (kernel.memoryMiB !== memory.mib) {
     log(
