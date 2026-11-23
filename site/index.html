@@ -164,6 +164,21 @@
         title="prints the window's input events to the terminal: type `wev &` at the shell"
         >wev</a
       >
+      ·
+      <!-- A browser in the guest. 2 GiB because firefox runs the guest
+           out of memory at 512 MiB, which is a phone's default
+           (docs/gui.md). -->
+      <a
+        href="?pkg=firefox&engine=unkernel&mem=2048"
+        title="a web browser: type `firefox &` at the shell; its window takes about half a minute"
+        >firefox</a
+      >
+      ·
+      <a
+        href="?pkg=weston&engine=unkernel"
+        title="a whole compositor in one window: type `weston &` at the shell, then `WAYLAND_DISPLAY=wayland-1 weston-terminal &` for a terminal inside it"
+        >weston</a
+      >
     </p>
 
     <section id="pick">
