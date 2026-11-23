@@ -27,9 +27,11 @@ import {
   GUEST_STORE_DIR,
   memoryFsCalls,
   SHARE_DIR,
+  STORE_DIR,
   storeShare,
 } from "./share.js";
 import { Precedence } from "./store.js";
+import { lazyFs } from "./lazy.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { consoleRecorder, pause } from "./console.js";
@@ -46,6 +48,18 @@ import {
 // The guest's shell: busybox ash from unkernel's base system, the same
 // shell the qemu guest runs.
 const SHELL = "/bin/sh";
+
+// The store's directory inside the MemoryFs, whose root the guest
+// mounts at SHARE_DIR.
+const MEMORY_FS_STORE_DIR = STORE_DIR.slice(SHARE_DIR.length);
+
+// How long a request on a lazily served share may take before the
+// guest is told it timed out: never. A lookup that waits for a download
+// takes as long as the download, which for gcc's 82 MiB on a slow line
+// is minutes, and the SDK's default of 30 s would fail it, three times over
+// as the guest retries. A download that cannot finish fails on its own,
+// and the lookup is then answered EIO (lazy.js).
+const LAZY_REQUEST_TIMEOUT_MS = 0;
 
 // The file the shell sources as it starts. ash reads the file ENV names
 // when the shell is interactive, which is how PATH reaches the shell
@@ -246,10 +260,20 @@ export async function startUnkernel({
   const FS = memoryFsCalls(files);
   const share = storeShare(FS);
 
+  // The closure's lazily served paths (lazy.js), once run() is given
+  // them; null when every path is written before the shell starts. From
+  // then on, a path that arrives is linked as it is written.
+  let lazyStore = null;
+  let linkArrivals = false;
+
   // Watch the paths as they are written. A Wayland library in the
   // closure starts the download of the GUI session's files, while the
   // rest of the closure is still arriving, and a Mesa store path
   // becomes the guest's /run/opengl-driver once the guest is up.
+  //
+  // A path served lazily that arrives after the shell started offers
+  // its programs at once, behind any program of the same name already
+  // there, so a dependency never shadows a selection.
   const glDrivers = [];
   const write = share.write.bind(share);
   share.write = (basename, entries) => {
@@ -260,6 +284,9 @@ export async function startUnkernel({
       glDrivers.push(basename);
     }
     write(basename, entries);
+    if (linkArrivals) {
+      share.link(basename, Precedence.KEEP);
+    }
   };
 
   // The kernel runs in a worker where the page may share memory with
@@ -319,6 +346,13 @@ export async function startUnkernel({
   const sh = (command) => kernel.exec(SHELL, ["-c", command]);
   const session = guestSession({ FS, exec: sh });
 
+  // Every path of the closure the guest sees: the written ones, and on a
+  // lazily served share the ones still to come.
+  const closure = () => [
+    ...share.written(),
+    ...(lazyStore === null ? [] : lazyStore.pending()),
+  ];
+
   // Start the GUI session where `basenames` hold a Wayland program,
   // and link the newest GL driver written. Resolves once both are done,
   // so a GUI program typed at the prompt finds the relay running. A
@@ -365,13 +399,32 @@ export async function startUnkernel({
     // Finish the share, mount it, and start the shell. `roots` are the
     // basenames the reader selected, in selection order. Resolves when
     // the guest is at its prompt.
-    async run(roots) {
+    //
+    // `store` is the closure served lazily (lazy.js), or null when every
+    // path has been written. Served lazily, the guest sees every path of
+    // the closure in its store, and a lookup inside one that has not
+    // arrived waits for it.
+    async run(roots, { store = null } = {}) {
       share.linkAll(share.written(), roots, Precedence.KEEP);
       FS.writeFile(MANIFEST_FILE, manifest());
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
-      await kernel.mount(SHARE_DIR, files, { readOnly: true });
+      if (store === null) {
+        await kernel.mount(SHARE_DIR, files, { readOnly: true });
+      } else {
+        lazyStore = store;
+        linkArrivals = true;
+        FS.mkdir(STORE_DIR);
+        await kernel.mount(
+          SHARE_DIR,
+          lazyFs(files, store, MEMORY_FS_STORE_DIR),
+          {
+            readOnly: true,
+            requestTimeout: LAZY_REQUEST_TIMEOUT_MS,
+          },
+        );
+      }
 
       // Every nix binary names its loader and libraries by /nix/store
       // paths, so the guest needs the store at /nix as well as where
@@ -407,7 +460,7 @@ export async function startUnkernel({
       // handshake and redrawn its prompt on a cleared screen (see
       // HANDSHAKE for why that moment and no earlier one). The GUI
       // session comes up meanwhile, and is waited for as well.
-      const gui = guiSetup(share.written());
+      const gui = guiSetup(closure());
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
       await gui;
@@ -418,15 +471,20 @@ export async function startUnkernel({
     // here is enough: no remount, no reboot. Resolves once the guest
     // sees the new paths and the roots' programs (see visible), so
     // "added" is true by the time the page says so.
-    async add(unpacked, roots) {
-      const basenames = [];
+    //
+    // `written` names paths of this addition already written into the
+    // share, which a lazily served closure does as each path arrives.
+    // The rest of a lazy addition is in the store, and is neither
+    // written nor waited for here.
+    async add(unpacked, roots, written = []) {
+      const basenames = [...written];
       while (unpacked.length > 0) {
         const { basename, entries } = unpacked.shift();
         share.write(basename, entries);
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
-      await guiSetup(basenames);
+      await guiSetup(lazyStore === null ? basenames : closure());
 
       const added = roots.filter((basename) => basenames.includes(basename));
       await visible(kernel, [

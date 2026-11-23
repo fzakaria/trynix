@@ -19,6 +19,7 @@ import {
 } from "./analytics.js";
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
+import { lazyStore, Priority } from "./lazy.js";
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
 import {
@@ -92,8 +93,15 @@ import {
   chooseDriver,
   DriverChoice,
   driverNote,
+  isGlDriverPath,
   publishedDrivers,
 } from "./gldriver.js";
+import {
+  Downloads,
+  pickDownloads,
+  rememberDownloads,
+  rememberedDownloads,
+} from "./downloads.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -123,6 +131,8 @@ const memorySizes = document.getElementById("memory-sizes");
 const memoryStatus = document.getElementById("memory-status");
 const cpuCounts = document.getElementById("cpu-counts");
 const cpuStatus = document.getElementById("cpu-status");
+const downloadsChoice = document.getElementById("downloads");
+const downloadsStatus = document.getElementById("downloads-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -289,6 +299,17 @@ let cpus = pickCpus({
   device: cpuHost,
 });
 
+// When the next boot downloads its closure (downloads.js, url.js
+// `fetch`): the link's choice, then this browser's, then on first use.
+// A link carries the choice only when it was opened with one, as it
+// does the memory.
+let linkedDownloads = readUrl().downloads;
+let downloads = pickDownloads({
+  linked: linkedDownloads,
+  remembered: rememberedDownloads(),
+  engine: ENGINE,
+});
+
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
   const state = urlState();
@@ -297,6 +318,7 @@ function link({ boot = false } = {}) {
     engine: linkEngine(state),
     memory: linkedMemory,
     cpus: linkedCpus,
+    downloads: linkedDownloads,
   });
 }
 
@@ -513,6 +535,37 @@ function wireCpuChoice() {
   });
 }
 wireCpuChoice();
+
+// The downloads choice under Settings: on first use, or everything
+// before the shell starts. The x86_64 guest has only the second, and
+// says why. A choice is remembered by this browser, replaces the link's
+// when the link named one, and takes effect at the next boot.
+function wireDownloadsChoice() {
+  const option = (mode) =>
+    downloadsChoice.querySelector(`input[value="${mode}"]`);
+  option(downloads.mode).checked = true;
+
+  if (ENGINE === Engine.QEMU) {
+    option(Downloads.LAZY).disabled = true;
+    downloadsStatus.textContent =
+      "The x86_64 guest downloads everything first: QEMU's 9p server reads its store synchronously and cannot wait for a download.";
+    return;
+  }
+
+  downloadsChoice.addEventListener("change", (event) => {
+    const mode = event.target.value;
+    downloads = { mode, why: "chosen in Settings" };
+    rememberDownloads(mode);
+    if (linkedDownloads !== null) {
+      linkedDownloads = mode;
+      history.replaceState(null, "", link());
+    }
+    downloadsStatus.textContent = vmStarted
+      ? "from the next boot; this guest keeps the way it started"
+      : "";
+  });
+}
+wireDownloadsChoice();
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {
@@ -852,6 +905,137 @@ function reboot() {
   location.reload();
 }
 
+// ---------- a closure served on first use ----------
+
+// The closure a guest is served lazily (lazy.js, downloads.js), for the
+// life of the guest it booted with; null for a guest that booted with
+// its whole closure downloaded.
+let served = null;
+
+// The digests selected so far, which a lazily fetched path is checked
+// against: a selected path built for another system is refused
+// (checkSystem).
+let selectedDigests = [];
+
+const digestOfInfo = (info) => basenameOf(info).slice(0, DIGEST_LENGTH);
+
+// The paths a lazily served boot or addition fetches before it is
+// done: the selected ones, whose programs are linked onto PATH from
+// their listings, and any Mesa, which the guest takes as its GL driver
+// only once it has seen the driver's files (gui.js).
+function eagerOf(infos, rootDigests) {
+  return infos.filter(
+    (info) =>
+      rootDigests.includes(digestOfInfo(info)) ||
+      isGlDriverPath(basenameOf(info)),
+  );
+}
+
+// Fetch the eager paths through the store. A selected path is touched,
+// which starts its references in the background as well, since the
+// reader is about to run it; a driver waits until a GL program asks.
+function fetchEager(store, eager, rootDigests) {
+  return Promise.all(
+    eager.map((info) =>
+      rootDigests.includes(digestOfInfo(info))
+        ? store.touch(basenameOf(info))
+        : store.ensure(basenameOf(info), Priority.DEMAND),
+    ),
+  );
+}
+
+// A store for the guest `vmPromise` resolves to, and the progress rows
+// its downloads count into. A boot sets the rows up and an addition
+// replaces them (show), since each has a panel of its own.
+function serveLazily(vmPromise) {
+  // { selected, closure, eager: Set of basenames }: the row of what the
+  // boot or addition waits for, the row of the whole closure, and the
+  // basenames that count into the first.
+  let rows = null;
+  let telemetry = null;
+  // Compressed bytes downloaded for the closure, retries taken back.
+  let streamed = 0;
+
+  // Every download counts into the closure's row, and the eager ones
+  // into the row the boot waits on as well.
+  function count(info, bytes) {
+    streamed += bytes;
+    rows.closure.add(bytes);
+    if (rows.eager.has(basenameOf(info))) {
+      rows.selected.add(bytes);
+    }
+  }
+
+  // The closure's row is done once every path is in.
+  function finished() {
+    const { paths, writtenPaths } = store.stats();
+    if (writtenPaths === paths) {
+      rows.closure.done(`all ${paths} paths`);
+    }
+  }
+
+  const store = lazyStore({
+    concurrency: NAR_CONCURRENCY,
+    async fetch(info) {
+      const entries = await fetchNar(
+        info,
+        (bytes) => count(info, bytes),
+        (result, bytes) => telemetry.cacheRead(result, bytes),
+      );
+      checkSystem(info, entries, selectedDigests);
+      return entries;
+    },
+    async write(basename, entries) {
+      (await vmPromise).share.write(basename, entries);
+      finished();
+    },
+  });
+
+  return {
+    store,
+    // The bytes downloaded so far, for window.trynix.downloads.
+    streamed: () => streamed,
+    // Count into these rows from now on: `selected` for the `eager`
+    // infos, `closure` for everything, which starts at what has been
+    // downloaded already. `loadTelemetry` hears cache reads.
+    show({ selected, closure, eager, loadTelemetry }) {
+      rows = {
+        selected,
+        closure,
+        eager: new Set(eager.map(basenameOf)),
+      };
+      telemetry = loadTelemetry;
+      selected.setTotal(eager.reduce((sum, info) => sum + info.fileSize, 0));
+      closure.setTotal(store.stats().bytes);
+      closure.add(streamed);
+      finished();
+    },
+  };
+}
+
+// What the guest's closure has cost so far, for the tools in tools/
+// (window.trynix.downloads): the closure in paths and compressed bytes,
+// what of it has been written, and the bytes downloaded. A guest that
+// booted with everything downloaded has written all of it.
+function downloadStats() {
+  if (served !== null) {
+    return {
+      mode: Downloads.LAZY,
+      ...served.store.stats(),
+      streamedBytes: served.streamed(),
+    };
+  }
+  const bytes = [...mounted.values()].reduce((sum, i) => sum + i.fileSize, 0);
+  return {
+    mode: Downloads.ALL,
+    paths: mounted.size,
+    bytes,
+    writtenPaths: mounted.size,
+    writtenBytes: bytes,
+    streamedBytes: bytes,
+  };
+}
+
 // ---------- the two engines ----------
 
 // Each of these lays an engine's rows out in the progress panel and
@@ -1066,14 +1250,21 @@ async function boot() {
   consoleNote.textContent = "fetching…";
   const panel = new ProgressPanel(bootProgress);
 
+  // Served lazily, the boot waits for the selected packages alone and
+  // the rest of the closure arrives as the guest asks for it; the last
+  // row counts the whole closure, and goes on after the shell is up.
+  const lazily = downloads.mode === Downloads.LAZY;
+  log(`downloads: ${downloads.mode} (${downloads.why})`);
+
   const walkRow = panel.row("closure walk");
   const signatureRow = panel.row("signatures");
   const startEngine =
     ENGINE === Engine.UNKERNEL
       ? unkernelEngine(panel)
       : qemuEngine(panel, telemetry);
-  const closureRow = panel.row("closure");
+  const closureRow = panel.row(lazily ? "selected packages" : "closure");
   const vmRow = panel.row("virtual machine");
+  const firstUseRow = lazily ? panel.row("closure, on first use") : null;
 
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
@@ -1124,11 +1315,29 @@ async function boot() {
     // dropped from the page's hands right after. Nothing here ever
     // holds more than the few NARs in flight.
     const infos = [...closure.values()];
-    closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
-    const closurePromise = mapConcurrent(
-      infos,
-      NAR_CONCURRENCY,
-      async (info) => {
+    let closurePromise;
+    if (lazily) {
+      // The selected packages now, and the rest of the closure as the
+      // guest touches it (lazy.js).
+      selectedDigests = rootDigests;
+      served = serveLazily(vmPromise);
+      served.store.add(infos);
+      const eager = eagerOf(infos, rootDigests);
+      served.show({
+        selected: closureRow,
+        closure: firstUseRow,
+        eager,
+        loadTelemetry: telemetry,
+      });
+      closurePromise = fetchEager(served.store, eager, rootDigests).then(() => {
+        closureRow.done();
+        log(
+          `selected packages written to the share; the other ${infos.length - eager.length} paths on first use`,
+        );
+      });
+    } else {
+      closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
+      closurePromise = mapConcurrent(infos, NAR_CONCURRENCY, async (info) => {
         const entries = await fetchNar(
           info,
           (n) => closureRow.add(n),
@@ -1137,11 +1346,11 @@ async function boot() {
         checkSystem(info, entries, rootDigests);
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);
-      },
-    ).then(() => {
-      closureRow.done();
-      log("closure written to the share");
-    });
+      }).then(() => {
+        closureRow.done();
+        log("closure written to the share");
+      });
+    }
     // A NAR that fails while the engine is still starting has nobody
     // awaiting it yet. The await below reports the failure; this keeps
     // the same failure from also being logged as unhandled.
@@ -1149,6 +1358,9 @@ async function boot() {
 
     vm = await vmPromise;
     await closurePromise;
+    if (window.trynix !== undefined) {
+      window.trynix.downloads = downloadStats;
+    }
 
     consoleNote.textContent = `${waiting} the guest…`;
     // The bar fills when the guest is at its prompt; until then the row
@@ -1158,7 +1370,9 @@ async function boot() {
     mounted = closure;
 
     stage = LoadStage.GUEST;
-    const ready = vm.run(basenamesOf(closure, rootDigests));
+    const ready = vm.run(basenamesOf(closure, rootDigests), {
+      store: served?.store ?? null,
+    });
     log("virtual machine running");
     reportSilent(vm, closure, roots);
     reportGl(gl.result);
@@ -1235,7 +1449,7 @@ async function addToRunningVM() {
     for (const [digest, info] of gl.added) {
       fresh.set(digest, info);
     }
-    if (fresh.size === 0) {
+    if (fresh.size === 0 && unfetchedSelections(rootDigests).length === 0) {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
       refreshBootButton();
@@ -1243,6 +1457,10 @@ async function addToRunningVM() {
     }
 
     stage = LoadStage.DOWNLOAD;
+    if (served !== null) {
+      await addLazily({ fresh, roots, rootDigests, gl, panel, row, telemetry });
+      return;
+    }
     const infos = [...fresh.values()];
     row.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
     const unpacked = await mapConcurrent(
@@ -1274,6 +1492,58 @@ async function addToRunningVM() {
   } finally {
     refreshBootButton();
   }
+}
+
+// Selected paths a lazily served guest lists and has not fetched: a
+// package selected after the boot that was in the closure already, as
+// something another package needs. It is fetched, and its programs
+// linked, as any new selection's are.
+function unfetchedSelections(rootDigests) {
+  if (served === null) {
+    return [];
+  }
+  return rootDigests
+    .map((digest) => mounted.get(digest))
+    .filter(
+      (info) => info !== undefined && !served.store.ready(basenameOf(info)),
+    );
+}
+
+// Add to a guest whose closure is served lazily. What the addition
+// brings joins the closure the guest lists at once; the new selections
+// are fetched before the page says they were added, and the rest
+// arrives on first use, as at the boot.
+async function addLazily({
+  fresh,
+  roots,
+  rootDigests,
+  gl,
+  panel,
+  row,
+  telemetry,
+}) {
+  const waiting = unfetchedSelections(rootDigests);
+  served.store.add(fresh.values());
+  for (const [digest, info] of fresh) {
+    mounted.set(digest, info);
+  }
+
+  selectedDigests = rootDigests;
+  const eager = [...eagerOf([...fresh.values()], rootDigests), ...waiting];
+  served.show({
+    selected: row,
+    closure: panel.row("closure, on first use"),
+    eager,
+    loadTelemetry: telemetry,
+  });
+  await fetchEager(served.store, eager, rootDigests);
+
+  await vm.add([], basenamesOf(mounted, rootDigests), eager.map(basenameOf));
+  reportSilent(vm, mounted, roots);
+  reportGl(gl.result);
+  telemetry.finish(LoadStage.READY);
+  row.done(`${fresh.size} paths added, ${eager.length} fetched`);
+  renderClosure(mounted);
 }
 
 // ---------- the report ----------

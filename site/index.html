@@ -295,6 +295,41 @@
           <p id="cpu-status" class="muted"></p>
         </fieldset>
 
+        <!-- When a boot downloads its closure (site/js/downloads.js): on
+             first use, the default, or all of it before the shell starts.
+             A choice is remembered by this browser and used at the next
+             boot; the x86_64 guest has only the second (app.js says so). -->
+        <fieldset id="downloads">
+          <legend>Downloads</legend>
+          <label>
+            <input type="radio" name="downloads" value="lazy" />
+            <span>
+              <strong>On first use</strong>
+              <span class="muted">
+                The default. The shell starts once the packages you picked are in, and everything
+                they depend on downloads the first time a program opens it, so what a program never
+                opens, like the compiler a library was built with, is never fetched. A program
+                waits the first time it reaches each one.
+              </span>
+            </span>
+          </label>
+          <label>
+            <input type="radio" name="downloads" value="all" />
+            <span>
+              <strong>All before the shell starts</strong>
+              <span class="muted">
+                The whole closure downloads first, and after that nothing a program does waits on
+                the network.
+              </span>
+            </span>
+          </label>
+          <p class="muted">
+            For the aarch64 guest; the x86_64 guest always downloads everything first. A link can ask
+            with <code>fetch=all</code> or <code>fetch=lazy</code>.
+          </p>
+          <p id="downloads-status" class="muted"></p>
+        </fieldset>
+
         <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
              always there and cost nothing until used, and the GL driver's
              opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->

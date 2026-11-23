@@ -45,6 +45,12 @@ const MESA_PATH = /^[0-9a-z]{32}-mesa-(virgl-)?\d/;
 const GLIBC_PATH = /^[0-9a-z]{32}-glibc-(\d+(?:\.\d+)*)/;
 const GCC_LIB_PATH = /^[0-9a-z]{32}-gcc-(\d+(?:\.\d+)*)-lib$/;
 
+// Whether a store basename is a Mesa, which the guest may take as its
+// GL driver. A lazily served boot fetches these with the selection
+// (app.js), since the guest links a driver only once it has seen the
+// driver's files.
+export const isGlDriverPath = (basename) => MESA_PATH.test(basename);
+
 // A dotted version as numbers, for comparing: "2.42" -> [2, 42].
 const numbers = (version) => version.split(".").map(Number);
 

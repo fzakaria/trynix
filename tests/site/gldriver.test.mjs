@@ -12,6 +12,7 @@ import {
   chooseDriver,
   DriverChoice,
   driverNote,
+  isGlDriverPath,
   publishedDrivers,
 } from "../../site/js/gldriver.js";
 import {
@@ -149,4 +150,13 @@ test("the manifest's paths are asked of the site alone", async () => {
   assert.equal(await holdsPath(served, readSubstituters()), true);
 
   assert.deepEqual(asked.slice(1), [`${SITE_CACHE_URL}/${served}.narinfo`]);
+});
+
+// Checks which store paths count as a GL driver: nixpkgs' Mesa and the
+// site's, and not the Mesa programs or libraries named after it.
+test("a Mesa is a GL driver path, and mesa-demos is not", () => {
+  assert.equal(isGlDriverPath(path("mesa-26.1.8")), true);
+  assert.equal(isGlDriverPath(path("mesa-virgl-26.2.2")), true);
+  assert.equal(isGlDriverPath(path("mesa-demos-9.0.0")), false);
+  assert.equal(isGlDriverPath(path("libglvnd-1.7.0")), false);
 });

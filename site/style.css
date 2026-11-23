@@ -242,10 +242,12 @@ code {
 
 /* The settings lane: the guest choice as a short list of radio rows,
    each option's explanation on the option's own line, then the guest's
-   memory in a box of the same kind, then the caches. */
+   memory, its CPUs and the downloads choice in boxes of the same kind,
+   then the caches. */
 #guest,
 #memory,
-#cpus {
+#cpus,
+#downloads {
   margin: 0 0 1.2rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--line);
@@ -253,18 +255,21 @@ code {
 }
 #guest legend,
 #memory legend,
-#cpus legend {
+#cpus legend,
+#downloads legend {
   padding: 0 0.3rem;
   font-weight: 600;
 }
-#guest label {
+#guest label,
+#downloads label {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   padding: 0.25rem 0;
   cursor: pointer;
 }
-#guest label .muted {
+#guest label .muted,
+#downloads label .muted {
   display: block;
   font-size: 13px;
 }
@@ -289,12 +294,14 @@ code {
   cursor: pointer;
 }
 #memory p,
-#cpus p {
+#cpus p,
+#downloads p {
   margin: 0.4rem 0 0;
   font-size: 13px;
 }
 #memory-status:empty,
-#cpu-status:empty {
+#cpu-status:empty,
+#downloads-status:empty {
   display: none;
 }
 .lane h3 {
