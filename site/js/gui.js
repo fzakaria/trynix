@@ -97,6 +97,30 @@ export const speaksWayland = (basenames) =>
 export const isGlDriver = (entries) =>
   entries.some((entry) => entry.path === MESA_EGL_VENDOR);
 
+// Whether the share holds a GL driver.
+export const DriverState = Object.freeze({
+  ABSENT: "absent",
+  PRESENT: "present",
+});
+
+// libglvnd, the dispatch library nixpkgs' GL programs link: it finds a
+// driver at run time, in /run/opengl-driver, and fails without one.
+const GLVND_PATH = /^[0-9a-z]{32}-libglvnd-\d/;
+
+// What the page tells the reader when a Wayland program in the closure
+// can load GL and nothing in the share provides a driver, or null. No
+// driver is added unasked: nixpkgs' Mesa carries LLVM for llvmpipe, and
+// its closure is 300 MB compressed.
+export function missingDriverNote(basenames, driver) {
+  if (driver === DriverState.PRESENT || !speaksWayland(basenames)) {
+    return null;
+  }
+  if (!basenames.some((basename) => GLVND_PATH.test(basename))) {
+    return null;
+  }
+  return "these programs can draw with GL, and nothing selected provides a driver: add mesa (about 300 MB) for one";
+}
+
 // The generic families programs ask fontconfig for, and the page's font
 // for each. Without these a request for "monospace" matches whichever
 // font fontconfig likes best, and foot gets a proportional one.

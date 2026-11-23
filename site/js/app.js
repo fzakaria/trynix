@@ -590,6 +590,9 @@ function basenamesOf(closure, digests) {
     .map(basenameOf);
 }
 
+// How the status line starts when it names silent selections.
+const SILENT_PREFIX = "no programs in ";
+
 // Say which selections put nothing on PATH. A root is silent when
 // neither it nor its bin sibling offers a program: nixpkgs splits many
 // packages so the binaries live in a separate output, the index
@@ -608,8 +611,18 @@ function reportSilent(vm, closure, roots) {
     return;
   }
   status.textContent =
-    `no programs in ${silent.join(", ")} — nixpkgs splits some packages so ` +
+    `${SILENT_PREFIX}${silent.join(", ")} — nixpkgs splits some packages so ` +
     `their binaries live in a separate output, and the index publishes the default one`;
+}
+
+// Say what the selection's GUI programs lack, where the engine knows
+// (unkernel.js, guiNote), unless the status names silent selections.
+function reportGui(vm) {
+  const note = vm.guiNote?.() ?? null;
+  if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
+    return;
+  }
+  status.textContent = note;
 }
 
 // The union of every selected root's runtime closure, in one map. Roots
@@ -978,6 +991,7 @@ async function boot() {
     const ready = vm.run(basenamesOf(closure, rootDigests));
     log("virtual machine running");
     reportSilent(vm, closure, roots);
+    reportGui(vm);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
     addNote.hidden = false;
