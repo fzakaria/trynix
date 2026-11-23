@@ -65,6 +65,11 @@
             guest
             ;
 
+          # wland's relay for the unkernel guest, which the site serves
+          # and the page starts in the guest for GUI programs
+          # (nix/wlandr.nix)
+          wlandr = import ./nix/wlandr.nix { inherit pkgs; };
+
           # the native QEMU the snapshot is taken on, from the fork and
           # the patches, so it is never older than the engine
           # (nix/native-qemu.nix)
