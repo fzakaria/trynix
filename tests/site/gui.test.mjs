@@ -118,6 +118,28 @@ test("a session starts the relay once", async () => {
   assert.match(command, new RegExp(`XDG_RUNTIME_DIR=${env.XDG_RUNTIME_DIR}`));
 });
 
+// Checks that a session gives the guest a machine id, which D-Bus and
+// with it GTK programs and firefox look for, and keeps one that is
+// already there: the command writes /etc/machine-id only when it is
+// missing or empty, from the kernel's random UUID with its dashes out.
+test("a session writes a machine id where there is none", async () => {
+  stubFetch();
+  const commands = [];
+  const session = guestSession({
+    FS: fakeShare(),
+    exec: async (command) => {
+      commands.push(command);
+      return { exitCode: 0 };
+    },
+  });
+  await session.start();
+
+  assert.match(
+    commands[0],
+    /\[ -s \/etc\/machine-id \] \|\| tr -d - < \/proc\/sys\/kernel\/random\/uuid > \/etc\/machine-id/,
+  );
+});
+
 // Checks that a relay the guest could not start is an error, so the
 // page logs it instead of saying the session is up.
 test("a relay that does not start is an error", async () => {

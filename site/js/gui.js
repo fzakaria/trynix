@@ -55,6 +55,13 @@ const OPENGL_DRIVER = `${RUN_DIR}/opengl-driver`;
 // The virtio-gpu render node unkernel's kernel makes with `gpu`.
 const RENDER_NODE = "/dev/dri/renderD128";
 
+// The guest's machine id, which D-Bus reads (and GTK programs and
+// firefox through it, warning without one), and where the kernel keeps
+// a random UUID to make one from. A machine id is 32 hex digits: the
+// UUID without its dashes.
+const MACHINE_ID = "/etc/machine-id";
+const RANDOM_UUID = "/proc/sys/kernel/random/uuid";
+
 // fontconfig keeps its cache somewhere writable; the share is not.
 const FONT_CACHE_DIR = "/tmp/fontconfig";
 
@@ -138,14 +145,16 @@ async function fetchGuiFile(name) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-// The shell command that starts the relay unless it runs. With the
-// render node it takes GL programs' buffers by GPU resource; without
-// one they render in software into shared memory like any other
-// program. setsid gives the relay a session of its own, so no shell's
-// hangup reaches it.
+// The shell command that gives the guest a machine id unless it has
+// one, and starts the relay unless it runs. With the render node the
+// relay takes GL programs' buffers by GPU resource; without one they
+// render in software into shared memory like any other program. setsid
+// gives the relay a session of its own, so no shell's hangup reaches
+// it.
 function relayCommand() {
   const link = `vsock:${HOST_CID}:${WAYLAND_PORT}`;
   return [
+    `[ -s ${MACHINE_ID} ] || tr -d - < ${RANDOM_UUID} > ${MACHINE_ID}`,
     `pidof wlandr > /dev/null && exit 0`,
     `mkdir -p -m 700 ${RUNTIME_DIR}`,
     `flags=--link-on-demand`,
