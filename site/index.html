@@ -96,16 +96,9 @@
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
-    <!-- GUI programs (docs/gui.md). The footnote names the limits,
-         since the claim is narrower than the lede's. -->
-    <p>
-      GUI programs open as windows on the page too.<a
-        href="#gui-limits"
-        class="footnote-mark"
-        aria-describedby="gui-limits"
-        >*</a
-      >
-    </p>
+    <!-- GUI programs (docs/gui.md); the Settings lane says where that
+         holds. -->
+    <p>GUI programs open as windows on the page too.</p>
 
     <p class="examples muted">
       Try:
@@ -171,11 +164,6 @@
         title="prints the window's input events to the terminal: type `wev &` at the shell"
         >wev</a
       >
-    </p>
-
-    <p id="gui-limits" class="muted footnote">
-      * On the aarch64 guest (unkernel) only, for Wayland programs (no X11). Tested in Chrome. A GL
-      program also downloads a GL driver.
     </p>
 
     <section id="pick">
@@ -286,9 +274,10 @@
         <h3>GUI programs</h3>
         <p class="muted">
           On the aarch64 guest a Wayland program opens a window under the terminal: type its name at
-          the shell. A GL program gets the site's GL driver, Mesa with only the virgl driver, which
-          draws through your browser's WebGL2. To use another, select a <code>mesa</code> with the
-          program and the page adds none of its own.
+          the shell. Programs that only speak X11 do not start, since the guest has no X server. A GL
+          program also downloads the site's GL driver, Mesa with only the virgl driver, which draws
+          through your browser's WebGL2; to use another, select a <code>mesa</code> with the program
+          and the page adds none of its own. Tested in Chrome and Firefox.
         </p>
 
         <h3>Binary caches</h3>
