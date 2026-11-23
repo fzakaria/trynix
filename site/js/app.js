@@ -933,8 +933,8 @@ function eagerOf(infos, rootDigests) {
 
 // Fetch the eager paths through the store. A selected path is touched,
 // which starts all its references in the background as well, since the
-// reader is about to run it; a driver's wait until a GL program loads
-// the driver.
+// reader is about to run it; a driver's references wait until a GL
+// program loads the driver.
 function fetchEager(store, eager, rootDigests) {
   return Promise.all(
     eager.map((info) =>
@@ -954,7 +954,8 @@ function serveLazily(vmPromise) {
   // basenames that count into the first.
   let rows = null;
   let telemetry = null;
-  // Compressed bytes downloaded for the closure, retries taken back.
+  // Compressed bytes read for the closure, from the network or the
+  // Cache API, retries taken back.
   let streamed = 0;
 
   // Every download counts into the closure's row, and the eager ones
@@ -994,7 +995,7 @@ function serveLazily(vmPromise) {
 
   return {
     store,
-    // The bytes downloaded so far, for window.trynix.downloads.
+    // The bytes read so far, for window.trynix.downloads.
     streamed: () => streamed,
     // Count into these rows from now on: `selected` for the `eager`
     // infos, `closure` for everything, which starts at what has been
@@ -1016,7 +1017,8 @@ function serveLazily(vmPromise) {
 
 // What the guest's closure has cost so far, for the tools in tools/
 // (window.trynix.downloads): the closure in paths and compressed bytes,
-// what of it has been written, and the bytes downloaded. A guest that
+// what of it has been written, and the compressed bytes read for it,
+// from the network or, on a return visit, the Cache API. A guest that
 // booted with everything downloaded has written all of it.
 function downloadStats() {
   if (served !== null) {
