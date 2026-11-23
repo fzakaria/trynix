@@ -428,7 +428,7 @@ function wireMemoryChoice() {
     input.name = "memory";
     input.value = String(mib);
     input.checked = mib === memory.mib;
-    label.append(input, ` ${memoryLabel(mib)}`);
+    label.append(input, memoryLabel(mib));
     memorySizes.append(label);
   }
 
