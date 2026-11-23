@@ -333,10 +333,9 @@ compositor:
 - **Keyboard layout** is US, which is wland's.
 - **`/root` does not exist** in unkernel's base system, so programs
   that write settings under `$HOME` complain and carry on.
-- **Browsers.** Chromium is what `gui-test` runs. Firefox has not been
-  run here: wland's own smoke test passes on Firefox 160 headless, and
-  unkernel's GL renderer is reported to work there, but neither has
-  been checked through trynix. Safari has not been run at all.
+- **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
+  headless: foot takes keys, and es2gears draws through virgl at
+  60 FPS. Safari has not been run.
 
 ## Testing
 
@@ -344,9 +343,12 @@ compositor:
 links (es2gears alone, so the page has to add the driver), starts each at the shell and waits for the compositor's first
 frame. It types into foot's window and checks that the keys reached the
 program, and checks that es2gears' frames went through the page's GL
-renderer by GPU resource and not through llvmpipe. `--gpu hardware`
-draws WebGL with the host's GPU instead of SwiftShader, and
-`--screenshots <dir>` saves each window.
+renderer by GPU resource and not through llvmpipe. `--with firefox`
+runs the same cases in Firefox, driven over WebDriver BiDi, the
+protocol Firefox speaks since it dropped the DevTools one.
+`--gpu hardware` draws Chromium's WebGL with the host's GPU instead of
+SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
+each window.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline.

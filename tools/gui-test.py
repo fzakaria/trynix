@@ -13,6 +13,7 @@ take a frame from it.
 
     nix run .#gui-test -- --site <a built site directory>
     nix run .#gui-test -- --site <site> --case foot --screenshots /tmp/gui
+    nix run .#gui-test -- --site <site> --with firefox
 
 The cases:
 
@@ -23,6 +24,12 @@ The cases:
            by Mesa's virgl driver through the page's WebGL2
            (SwiftShader by default, so the frame rate it prints is a
            floor, not a measurement of a GPU).
+
+The browser is Chromium, driven over the DevTools protocol as the other
+tools here drive it, or with `--with firefox`, Firefox over WebDriver
+BiDi, which is the protocol Firefox speaks now that it has dropped the
+DevTools one. The cases are written against the few operations both
+offer (Chromium and Firefox below).
 
 A boot needs the network: the closures come from cache.nixos.org, and
 the driver from the site's own cache (gl/), which a site with no
@@ -35,10 +42,14 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import urllib.parse
+
+import websocket
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -92,6 +103,267 @@ KEY_CODES = {
     "\r": "Enter",
 }
 
+# The browsers --with takes, and the binary each runs by default.
+CHROMIUM = "chromium"
+FIREFOX = "firefox"
+BROWSERS = [CHROMIUM, FIREFOX]
+
+# How long a browser has to open its debugging port.
+LAUNCH_LIMIT_SECONDS = 60
+LAUNCH_POLL_SECONDS = 0.25
+
+# Firefox's preferences for a test profile: WebGL even where its
+# blocklist would refuse the host's GPU (headless on a machine with
+# no display), and no first-run pages or updates to get in the way.
+FIREFOX_PREFS = {
+    "webgl.force-enabled": True,
+    "browser.shell.checkDefaultBrowser": False,
+    "browser.startup.homepage_override.mstone": "ignore",
+    "app.update.enabled": False,
+    "datareporting.policy.dataSubmissionEnabled": False,
+}
+
+# The WebDriver code BiDi takes for the Enter key.
+WEBDRIVER_ENTER = "\ue007"
+
+
+class Chromium:
+    """Chromium over the DevTools protocol: cpu-test.py's Browser, with
+    the operations the cases use."""
+
+    def __init__(self, binary, profile, gpu):
+        self.browser = cpu.Browser(binary, profile, gpu=gpu)
+
+    def set_viewport(self, width, height):
+        self.browser.send(
+            "Emulation.setDeviceMetricsOverride",
+            width=width,
+            height=height,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+
+    def navigate(self, url):
+        self.browser.send("Page.navigate", url=url)
+
+    def evaluate(self, expression):
+        return self.browser.evaluate(expression)
+
+    def evaluate_async(self, expression):
+        reply = self.browser.send(
+            "Runtime.evaluate",
+            expression=expression,
+            returnByValue=True,
+            awaitPromise=True,
+        )
+        return reply.get("result", {}).get("result", {}).get("value")
+
+    def screenshot(self, clip):
+        reply = self.browser.send(
+            "Page.captureScreenshot",
+            format="png",
+            clip={**clip, "scale": 1},
+            captureBeyondViewport=True,
+        )
+        return base64.b64decode(reply["result"]["data"])
+
+    def click(self, x, y):
+        for kind in ("mousePressed", "mouseReleased"):
+            self.browser.send(
+                "Input.dispatchMouseEvent",
+                type=kind,
+                x=x,
+                y=y,
+                button="left",
+                clickCount=1,
+            )
+
+    def press(self, char):
+        code = KEY_CODES[char]
+        key = "Enter" if code == "Enter" else char
+        self.browser.send(
+            "Input.dispatchKeyEvent", type="keyDown", key=key, code=code, text=char
+        )
+        self.browser.send("Input.dispatchKeyEvent", type="keyUp", key=key, code=code)
+
+    def type(self, text):
+        self.browser.type(text)
+
+    def transcript(self):
+        return self.browser.transcript()
+
+    def close(self):
+        self.browser.close()
+
+
+class Firefox:
+    """Firefox over WebDriver BiDi, headless, on a profile of its own.
+
+    Results come back as BiDi's typed values, so every expression is
+    wrapped in JSON.stringify and parsed here, which gives the same
+    plain values the DevTools protocol's returnByValue does."""
+
+    def __init__(self, binary, profile, gpu):
+        del gpu  # Firefox picks its WebGL backend itself.
+        os.makedirs(profile, exist_ok=True)
+        with open(os.path.join(profile, "user.js"), "w") as f:
+            for name, value in FIREFOX_PREFS.items():
+                f.write(f"user_pref({json.dumps(name)}, {json.dumps(value)});\n")
+        self.profile = profile
+        port = cpu.free_port()
+        self.stderr = tempfile.NamedTemporaryFile(prefix="firefox-", suffix=".log")
+        self.process = subprocess.Popen(
+            [
+                binary,
+                "--headless",
+                f"--remote-debugging-port={port}",
+                "--profile",
+                profile,
+                "--no-remote",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=self.stderr,
+            start_new_session=True,
+        )
+        self.socket = self._connect(port)
+        self.message_id = 0
+        self.send("session.new", capabilities={})
+        tree = self.send("browsingContext.getTree")
+        self.context = tree["result"]["contexts"][0]["context"]
+
+    def _connect(self, port):
+        # Firefox refuses a handshake that carries an Origin header.
+        deadline = time.monotonic() + LAUNCH_LIMIT_SECONDS
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                raise SystemExit(f"firefox exited with status {self.process.returncode}")
+            try:
+                return websocket.create_connection(
+                    f"ws://127.0.0.1:{port}/session",
+                    timeout=60,
+                    suppress_origin=True,
+                    max_size=None,
+                )
+            except (OSError, websocket.WebSocketException):
+                time.sleep(LAUNCH_POLL_SECONDS)
+        raise SystemExit("firefox never opened its WebDriver BiDi port")
+
+    def send(self, method, **params):
+        self.message_id += 1
+        self.socket.send(
+            json.dumps({"id": self.message_id, "method": method, "params": params})
+        )
+        while True:
+            message = json.loads(self.socket.recv())
+            if message.get("id") != self.message_id:
+                continue
+            if message.get("type") == "error":
+                raise SystemExit(f"{method}: {message.get('error')}: {message.get('message')}")
+            return message
+
+    def _value(self, expression, wait):
+        reply = self.send(
+            "script.evaluate",
+            expression=expression,
+            target={"context": self.context},
+            awaitPromise=wait,
+        )
+        result = reply["result"]
+        if result.get("type") == "exception":
+            return None
+        text = result["result"].get("value")
+        return None if text is None else json.loads(text)
+
+    def set_viewport(self, width, height):
+        self.send(
+            "browsingContext.setViewport",
+            context=self.context,
+            viewport={"width": width, "height": height},
+        )
+
+    def navigate(self, url):
+        self.send("browsingContext.navigate", context=self.context, url=url, wait="none")
+
+    def evaluate(self, expression):
+        return self._value(f"JSON.stringify(({expression}) ?? null)", False)
+
+    def evaluate_async(self, expression):
+        return self._value(
+            f"(async () => JSON.stringify((await ({expression})) ?? null))()", True
+        )
+
+    def screenshot(self, clip):
+        reply = self.send(
+            "browsingContext.captureScreenshot",
+            context=self.context,
+            origin="document",
+            clip={"type": "box", **clip},
+        )
+        return base64.b64decode(reply["result"]["data"])
+
+    def click(self, x, y):
+        self.send(
+            "input.performActions",
+            context=self.context,
+            actions=[
+                {
+                    "type": "pointer",
+                    "id": "mouse",
+                    "parameters": {"pointerType": "mouse"},
+                    "actions": [
+                        {"type": "pointerMove", "x": round(x), "y": round(y)},
+                        {"type": "pointerDown", "button": 0},
+                        {"type": "pointerUp", "button": 0},
+                    ],
+                }
+            ],
+        )
+
+    def press(self, char):
+        value = WEBDRIVER_ENTER if KEY_CODES[char] == "Enter" else char
+        self.send(
+            "input.performActions",
+            context=self.context,
+            actions=[
+                {
+                    "type": "key",
+                    "id": "keyboard",
+                    "actions": [
+                        {"type": "keyDown", "value": value},
+                        {"type": "keyUp", "value": value},
+                    ],
+                }
+            ],
+        )
+
+    def type(self, text):
+        self.evaluate(f"window.trynix.type({json.dumps(text)})")
+
+    def transcript(self):
+        return (
+            self.evaluate(
+                "(window.trynix && window.trynix.transcript && window.trynix.transcript()) || ''"
+            )
+            or ""
+        )
+
+    def close(self):
+        try:
+            self.socket.close()
+        except Exception:
+            pass
+        for signal_number in (15, 9):
+            try:
+                os.killpg(os.getpgid(self.process.pid), signal_number)
+            except Exception:
+                pass
+            time.sleep(0.5)
+        shutil.rmtree(self.profile, ignore_errors=True)
+
+
+DRIVERS = {CHROMIUM: Chromium, FIREFOX: Firefox}
+
 # The gl case: es2gears alone; the page adds the driver, and says so in
 # its log. es2gears prints its frame rate every five seconds, as "<n>
 # frames in 5.0 seconds = <fps> FPS"; two such lines are waited for,
@@ -136,14 +408,8 @@ def wait_for(browser, expression, limit, label):
 
 def boot(browser, base, packages):
     """Boot `packages` and wait for the shell; returns the seconds taken."""
-    browser.send(
-        "Emulation.setDeviceMetricsOverride",
-        width=VIEWPORT_WIDTH,
-        height=VIEWPORT_HEIGHT,
-        deviceScaleFactor=1,
-        mobile=False,
-    )
-    browser.send("Page.navigate", url=page_url(base, packages))
+    browser.set_viewport(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+    browser.navigate(page_url(base, packages))
     _, seconds = wait_for(
         browser,
         f"(window.trynix?.transcript?.() ?? '').includes({json.dumps(cpu.SHELL_MARKER)})",
@@ -173,14 +439,11 @@ def screenshot(browser, directory, name):
     clip = browser.evaluate(
         "(() => { const r = document.getElementById('desktop')"
         ".getBoundingClientRect(); return { x: r.x + scrollX, y: r.y + scrollY,"
-        " width: r.width, height: r.height, scale: 1 }; })()"
-    )
-    reply = browser.send(
-        "Page.captureScreenshot", format="png", clip=clip, captureBeyondViewport=True
+        " width: r.width, height: r.height }; })()"
     )
     path = os.path.join(directory, f"{name}.png")
     with open(path, "wb") as f:
-        f.write(base64.b64decode(reply["result"]["data"]))
+        f.write(browser.screenshot(clip))
     print(f"  screenshot: {path}")
 
 
@@ -192,35 +455,19 @@ def type_into_window(browser, text):
         " const r = c.getBoundingClientRect();"
         f" return {{ x: r.x + r.width / 2, y: r.y + {CLICK_DEPTH} }}; }})()"
     )
-    for kind in ("mousePressed", "mouseReleased"):
-        browser.send(
-            "Input.dispatchMouseEvent",
-            type=kind,
-            x=point["x"],
-            y=point["y"],
-            button="left",
-            clickCount=1,
-        )
+    browser.click(point["x"], point["y"])
     for char in text:
-        code = KEY_CODES[char]
-        key = "Enter" if code == "Enter" else char
-        browser.send(
-            "Input.dispatchKeyEvent", type="keyDown", key=key, code=code, text=char
-        )
-        browser.send("Input.dispatchKeyEvent", type="keyUp", key=key, code=code)
+        browser.press(char)
 
 
 def guest_has(browser, path):
     """Whether `path` exists in the guest, through the page's exec."""
-    reply = browser.send(
-        "Runtime.evaluate",
-        expression="window.trynix.kernel.exec('/bin/test', ['-e', "
+    found = browser.evaluate_async(
+        "window.trynix.kernel.exec('/bin/test', ['-e', "
         + json.dumps(path)
-        + "]).then((r) => r.exitCode === 0)",
-        returnByValue=True,
-        awaitPromise=True,
+        + "]).then((r) => r.exitCode === 0)"
     )
-    return reply.get("result", {}).get("result", {}).get("value") is True
+    return found is True
 
 
 def run_foot(browser, base, screenshots):
@@ -308,7 +555,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
     parser.add_argument("--url", help="test this address instead of serving a directory")
-    parser.add_argument("--browser", default=os.environ.get("TRYNIX_BROWSER", "chromium"))
+    parser.add_argument(
+        "--with",
+        dest="kind",
+        choices=BROWSERS,
+        default=CHROMIUM,
+        help="the browser to run the page in (default chromium)",
+    )
+    parser.add_argument(
+        "--browser",
+        help="the browser's binary (default: --with's name on PATH, or $TRYNIX_BROWSER for chromium)",
+    )
     parser.add_argument("--case", action="append", choices=CASES)
     parser.add_argument("--screenshots", help="a directory to save the windows in")
     parser.add_argument(
@@ -323,12 +580,16 @@ def main():
     if args.screenshots is not None:
         os.makedirs(args.screenshots, exist_ok=True)
 
+    binary = args.browser or (
+        os.environ.get("TRYNIX_BROWSER", CHROMIUM) if args.kind == CHROMIUM else args.kind
+    )
+
     base, shutdown = (args.url, None) if args.site is None else cpu.serve(args.site)
     workdir = tempfile.mkdtemp()
     try:
         for case in args.case or CASES:
-            browser = cpu.Browser(
-                args.browser, os.path.join(workdir, case), gpu=GPUS[args.gpu]
+            browser = DRIVERS[args.kind](
+                binary, os.path.join(workdir, case), GPUS[args.gpu]
             )
             try:
                 RUNNERS[case](browser, base, args.screenshots)
