@@ -217,24 +217,28 @@ export function lazyStore({ fetch, write, concurrency }) {
 
     // The guest looked at the path: fetch it now, and, the first time,
     // its references in the background, all of them or the small ones.
+    // The largest go first: they take longest, and a download started
+    // last is the one a program ends up waiting for.
     touch(basename, references = References.SMALL) {
       const arrived = store.ensure(basename, Priority.DEMAND);
       if (touched.has(basename) || !paths.has(basename)) {
         return arrived;
       }
       touched.add(basename);
-      for (const reference of paths.get(basename).info.references) {
-        const wanted = paths.get(reference);
-        if (reference === basename || wanted === undefined) {
-          continue;
-        }
-        if (
-          references === References.SMALL &&
-          wanted.info.fileSize > PREFETCH_LIMIT_BYTES
-        ) {
-          continue;
-        }
-        store.ensure(reference, Priority.PREFETCH).catch(() => {});
+
+      const wanted = paths
+        .get(basename)
+        .info.references.filter((reference) => reference !== basename)
+        .map((reference) => paths.get(reference))
+        .filter((path) => path !== undefined)
+        .filter(
+          (path) =>
+            references === References.ALL ||
+            path.info.fileSize <= PREFETCH_LIMIT_BYTES,
+        )
+        .sort((a, b) => b.info.fileSize - a.info.fileSize);
+      for (const path of wanted) {
+        store.ensure(basenameOf(path.info), Priority.PREFETCH).catch(() => {});
       }
       return arrived;
     },

@@ -198,6 +198,23 @@ test("a touched path's large references wait, unless it was selected", async () 
   assert.deepEqual(started, ["p-guile", "r-gmp", "s-sol", "t-gtk"]);
 });
 
+// Checks the order of a touched path's references: largest first, so
+// the downloads that take longest are not the last to start. firefox's
+// wrapper references firefox itself, 98 MiB, among smaller paths, and
+// its window waited on it more than on anything else.
+test("a touched path's references start largest first", () => {
+  const { store, started } = controlled({ concurrency: 2 });
+  store.add([
+    info("x-firefox", ["y-small", "z-large", "0-middle"]),
+    info("y-small", [], 10),
+    info("z-large", [], 1000),
+    info("0-middle", [], 100),
+  ]);
+
+  store.touch("x-firefox", References.ALL);
+  assert.deepEqual(started, ["x-firefox", "z-large"]);
+});
+
 // Checks the bound: background fetches wait for room, and a lookup
 // the guest is waiting on starts at once, ahead of them, even when the
 // bound is reached. A lookup of a path still queued for the background

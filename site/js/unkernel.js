@@ -56,9 +56,9 @@ const MEMORY_FS_STORE_DIR = STORE_DIR.slice(SHARE_DIR.length);
 // How long a request on a lazily served share may take before the
 // guest is told it timed out: never. A lookup that waits for a download
 // takes as long as the download, which for gcc's 82 MiB on a slow line
-// is minutes, and the SDK's default of 30 s would fail it, three times over
-// as the guest retries. A download that cannot finish fails on its own,
-// and the lookup is then answered EIO (lazy.js).
+// is minutes, and the SDK's default of 30 s would fail it, three times
+// over as the guest retries. A download that cannot finish fails on
+// its own, and the lookup is then answered EIO (lazy.js).
 const LAZY_REQUEST_TIMEOUT_MS = 0;
 
 // The file the shell sources as it starts. ash reads the file ENV names
