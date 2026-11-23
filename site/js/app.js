@@ -20,6 +20,7 @@ import {
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { lazyStore, Priority, References } from "./lazy.js";
+import { fetchListing, listingFetcher, programsOfListing } from "./listing.js";
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
 import {
@@ -56,6 +57,7 @@ import {
   DIGEST_LENGTH,
   DIGEST_PATTERN,
   ENGINE,
+  FETCH_CONCURRENCY,
   ENGINE_NAMED,
   GUEST_FILES,
   MACHINE_URL,
@@ -73,6 +75,7 @@ import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
 import { binOutputOf } from "./outputs.js";
 import { log, onLog } from "./log.js";
+import { pause } from "./console.js";
 import {
   fallbacksBelow,
   MEMORY_SIZES_MIB,
@@ -841,7 +844,7 @@ async function walkRoots(digests, onProgress, known = new Map()) {
   for (const digest of digests) {
     const one = await walkClosure(
       digest,
-      (n) => onProgress(closure.size + n),
+      (n, info) => onProgress(closure.size + n, info),
       closure,
     );
     for (const [key, info] of one) {
@@ -945,10 +948,29 @@ function fetchEager(store, eager, rootDigests) {
   );
 }
 
+// How long a boot or an addition waits, once its selected packages are
+// in, for the listings still on their way. A listing is a few
+// kilobytes, fetched while the closure is walked, so nearly all are in
+// by then; the wait is for the farm, which takes every listed path's
+// programs (share.js, offer). One that comes later is linked when it
+// arrives, and one that never comes leaves its path to be downloaded
+// whole when the guest touches it.
+const LISTINGS_GRACE_MS = 2000;
+
+// The NAR listings of a lazily served closure (listing.js), fetched a
+// few at a time, each once, from the moment the walk finds its path.
+function newListings() {
+  return listingFetcher({
+    fetchOne: fetchListing,
+    concurrency: FETCH_CONCURRENCY,
+  });
+}
+
 // A store for the guest `vmPromise` resolves to, and the progress rows
 // its downloads count into. A boot sets the rows up and an addition
-// replaces them (show), since each has a panel of its own.
-function serveLazily(vmPromise) {
+// replaces them (show), since each has a panel of its own. `listings`
+// gives the store each path's NAR listing.
+function serveLazily(vmPromise, listings) {
   // { selected, closure, eager: Set of basenames }: the row of what the
   // boot or addition waits for, the row of the whole closure, and the
   // basenames that count into the first.
@@ -978,6 +1000,7 @@ function serveLazily(vmPromise) {
 
   const store = lazyStore({
     concurrency: NAR_CONCURRENCY,
+    listing: (info) => listings.of(info),
     async fetch(info) {
       const entries = await fetchNar(
         info,
@@ -995,8 +1018,25 @@ function serveLazily(vmPromise) {
 
   return {
     store,
+    listings,
     // The bytes read so far, for window.trynix.downloads.
     streamed: () => streamed,
+
+    // Offer each listed path's programs to the share as its listing
+    // arrives. Resolves once every listing has arrived or failed.
+    offer(infos) {
+      return Promise.all(
+        infos.map(async (info) => {
+          const root = await store.list(basenameOf(info));
+          if (root !== null) {
+            (await vmPromise).share.offer(
+              basenameOf(info),
+              programsOfListing(root),
+            );
+          }
+        }),
+      );
+    },
     // Count into these rows from now on: `selected` for the `eager`
     // infos, `closure` for everything, which starts at what has been
     // downloaded already. `loadTelemetry` hears cache reads.
@@ -1026,6 +1066,8 @@ function downloadStats() {
       mode: Downloads.LAZY,
       ...served.store.stats(),
       streamedBytes: served.streamed(),
+      listedPaths: served.listings.count(),
+      listingBytes: served.listings.bytes(),
     };
   }
   const bytes = [...mounted.values()].reduce((sum, i) => sum + i.fileSize, 0);
@@ -1272,12 +1314,19 @@ async function boot() {
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
     const rootDigests = digestsOf(roots);
-    const closure = await walkRoots(rootDigests, (n) =>
-      walkRow.note(`${n} narinfos`),
-    );
-    const gl = await glDriverPaths(closure, (n) =>
-      walkRow.note(`${closure.size + n} narinfos`),
-    );
+
+    // Served lazily, each path's listing is on its way the moment the
+    // walk finds the path.
+    const listings = lazily ? newListings() : null;
+    const found = (info) => listings?.of(info);
+    const closure = await walkRoots(rootDigests, (n, info) => {
+      walkRow.note(`${n} narinfos`);
+      found(info);
+    });
+    const gl = await glDriverPaths(closure, (n, info) => {
+      walkRow.note(`${closure.size + n} narinfos`);
+      found(info);
+    });
     for (const [digest, info] of gl.added) {
       closure.set(digest, info);
     }
@@ -1319,12 +1368,14 @@ async function boot() {
     // holds more than the few NARs in flight.
     const infos = [...closure.values()];
     let closurePromise;
+    let offered = null;
     if (lazily) {
       // The selected packages now, and the rest of the closure as the
       // guest touches it (lazy.js).
       selectedDigests = rootDigests;
-      served = serveLazily(vmPromise);
+      served = serveLazily(vmPromise, listings);
       served.store.add(infos);
+      offered = served.offer(infos);
       const eager = eagerOf(infos, rootDigests);
       served.show({
         selected: closureRow,
@@ -1361,6 +1412,7 @@ async function boot() {
 
     vm = await vmPromise;
     await closurePromise;
+    await listed(offered);
     if (window.trynix !== undefined) {
       window.trynix.downloads = downloadStats;
     }
@@ -1497,6 +1549,23 @@ async function addToRunningVM() {
   }
 }
 
+// Wait for the listings `offered` is offering, up to LISTINGS_GRACE_MS;
+// nothing to wait for when it is null.
+async function listed(offered) {
+  if (offered === null) {
+    return;
+  }
+  const late = await Promise.race([
+    offered.then(() => false),
+    pause(LISTINGS_GRACE_MS).then(() => true),
+  ]);
+  if (late) {
+    log(
+      `listings: still waiting after ${LISTINGS_GRACE_MS} ms; their programs join PATH as they arrive`,
+    );
+  }
+}
+
 // Selected paths a lazily served guest lists and has not fetched: a
 // package selected after the boot that was in the closure already, as
 // something another package needs. It is fetched, and its programs
@@ -1530,6 +1599,7 @@ async function addLazily({
   for (const [digest, info] of fresh) {
     mounted.set(digest, info);
   }
+  const offered = served.offer([...fresh.values()]);
 
   selectedDigests = rootDigests;
   const eager = [...eagerOf([...fresh.values()], rootDigests), ...waiting];
@@ -1540,6 +1610,7 @@ async function addLazily({
     loadTelemetry: telemetry,
   });
   await fetchEager(served.store, eager, rootDigests);
+  await listed(offered);
 
   await vm.add([], basenamesOf(mounted, rootDigests), eager.map(basenameOf));
   reportSilent(vm, mounted, roots);

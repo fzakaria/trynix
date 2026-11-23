@@ -60,7 +60,8 @@ async function fetchFrom(digest) {
 // Breadth-first walk from one root digest to the full runtime closure,
 // FETCH_CONCURRENCY narinfos in flight at a time. Returns a Map of
 // digest -> parsed narinfo in discovery order; onProgress hears the
-// count as it grows.
+// count as it grows, with the narinfo that grew it, so a caller can
+// start on a path before the walk is over.
 //
 // `known` is a closure already walked. Paths in it are neither fetched
 // nor returned, so walking several roots that share a glibc costs one
@@ -89,7 +90,7 @@ export async function walkClosure(
       // being fetched twice.
       for (const [j, info] of infos.entries()) {
         closure.set(batch[j], info);
-        onProgress(closure.size);
+        onProgress(closure.size, info);
 
         for (const ref of info.references) {
           const digest = digestOf(ref);
