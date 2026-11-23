@@ -450,8 +450,11 @@ def screenshot(browser, directory, name):
 def type_into_window(browser, text):
     """Click near the top of the newest window's content, which is on
     screen however tall the window is, then type `text` as key events."""
+    # Scrolled into view first: Firefox refuses a click outside the
+    # viewport, and the desktop sits under the terminal.
     point = browser.evaluate(
         "(() => { const c = [...document.querySelectorAll('#desktop canvas')].at(-1);"
+        " c.scrollIntoView({ block: 'start' });"
         " const r = c.getBoundingClientRect();"
         f" return {{ x: r.x + r.width / 2, y: r.y + {CLICK_DEPTH} }}; }})()"
     )
