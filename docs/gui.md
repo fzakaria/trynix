@@ -115,24 +115,46 @@ GLX and Wayland as the only EGL platform. nixpkgs builds Mesa with
 meson's auto features on, so every feature option is named, on or
 off. What libglvnd and a Wayland client need stays: `libEGL_mesa`
 with its `50_mesa.json`, GLES, and GBM's backend `dri_gbm.so`.
-The build refuses to finish if LLVM or python3 is in its closure.
+Mesa is also built against a libdrm without Intel support, since
+that support links libpciaccess, which carries hwdata's PCI id tables
+(10 MB) and virtio-gpu has no PCI ids to look up; and against a libgbm
+without the file nixpkgs' libgbm uses to propagate libdrm, which put
+libdrm's headers and test programs in the runtime closure. The build
+refuses to finish if LLVM, python3, hwdata, libpciaccess or libdrm's
+dev and bin outputs are in its closure.
 
 The result is Mesa 26.2.2 with `libgallium` holding the one driver:
 
 | Mesa            | closure paths | compressed | unpacked | only on the site |
 | --------------- | ------------- | ---------- | -------- | ---------------- |
 | nixpkgs' `mesa` | 60            | 301 MB     | 1.12 GB  | none             |
-| `mesa-virgl`    | 17            | 21 MB      | 96 MB    | one NAR, 3.0 MB  |
+| `mesa-virgl`    | 13            | 18 MB      | 83 MB    | 3 NARs, 3.1 MB   |
 
-Mesa itself is the only path no public cache has; the other 16
-(libdrm, expat, zstd, libwayland, libgbm, glibc, gcc's runtime) are
-nixpkgs' own builds, and a GL program's closure holds most of them
-already. With mesa-demos the driver adds one path and 3.0 MB:
+Three paths are the site's own: Mesa (3.0 MB) and the libdrm (114 KB)
+and libgbm (13 KB) it is built against. The other ten (expat, zstd,
+libwayland, libffi, glibc, gcc's runtime and their dependencies) are
+nixpkgs' own builds from cache.nixos.org.
 
-| selection                 | paths | compressed | unpacked |
-| ------------------------- | ----- | ---------- | -------- |
-| mesa-demos + `mesa`       | 133   | 380 MB     | 1.47 GB  |
-| mesa-demos + `mesa-virgl` | 112   | 110 MB     | 479 MB   |
+None of those ten is shared with a program the index resolves today:
+the index picks each program's newest build, from a newer nixpkgs
+than the one this flake locks, so mesa-demos 9.0.0 comes with glibc
+2.44 and gcc 16 where the driver has 2.42 and 15. The whole driver
+closure comes along, and the guest holds two glibcs, of which the
+program's is the one loaded:
+
+| selection                          | paths | compressed | unpacked |
+| ---------------------------------- | ----- | ---------- | -------- |
+| mesa-demos + `mesa`                | 133   | 380 MB     | 1.47 GB  |
+| mesa-demos, with the site's driver | 124   | 123 MB     | 541 MB   |
+
+A program that never draws with GL pays the same when its closure
+holds libglvnd and Wayland, because the page cannot tell from the
+closure whether the program will load the driver: GTK 3 programs and
+mpv get it. For galculator, mousepad, aisleriot and mpv the driver
+adds 13 paths, 14.7 MB from cache.nixos.org and 3.1 MB from the site,
+83 MB unpacked in the page's memory. The page adds it anyway rather
+than guess from the binaries: SDL, GTK 4, Qt and Firefox load GL with
+`dlopen`, so no `NEEDED` entry says they will.
 
 ### Which glibc it is built against
 
@@ -197,8 +219,9 @@ No public cache holds this build, so the site carries a binary cache
 of its own: `site/gl/cache/`, committed to the repository and served
 by Pages with the page, as the example cache under `site/examples/`
 is. It is a `nix-cache-info`, one narinfo and one NAR per store path,
-and it holds only what cache.nixos.org does not, which is Mesa
-itself; the rest of Mesa's closure is nixpkgs' own builds. Beside it,
+and it holds only what cache.nixos.org does not: Mesa and the libdrm
+and libgbm built for it. The rest of Mesa's closure is nixpkgs' own
+builds. Beside it,
 `site/gl/drivers.json` names the driver and its two floors.
 
 The cache is the second default substituter in
@@ -221,7 +244,8 @@ nix run .#make-gl-cache    # build mesa-virgl, rewrite site/gl/, print the sizes
 The build is `packages.aarch64-linux.mesa-virgl`; on an x86_64 host
 it runs through binfmt (`extra-platforms = aarch64-linux`), and only
 Mesa itself compiles under emulation, since its inputs come from
-cache.nixos.org. That build took 25 minutes on a 16-core laptop. jj
+cache.nixos.org. That build took 25 minutes on a 16-core laptop
+through binfmt and 10 minutes on a native aarch64 remote builder. jj
 refuses to snapshot a new file over 1 MiB unless told otherwise, so
 commit the NAR with `jj --config snapshot.max-new-file-size=<bytes>`.
 The tool replaces whatever driver the
@@ -256,12 +280,12 @@ which can pick a newer build; its Mesa was 26.3.1 against the lock's
 | ----------------------------- | ----- | ---------- | -------- |
 | foot                          | 36    | 29 MB      | 115 MB   |
 | mesa-demos + `mesa`           | 133   | 380 MB     | 1.47 GB  |
-| mesa-demos, the site's driver | 112   | 110 MB     | 479 MB   |
+| mesa-demos, the site's driver | 124   | 123 MB     | 541 MB   |
 
 The unpacked closure is held in the page's memory. With nixpkgs' Mesa
 a GL boot asked the browser for 1.5 GB before the guest did anything;
-with the site's driver it is a third of that, nearly all of it
-mesa-demos' own GTK closure.
+with the site's driver it is 541 MB, 458 MB of it mesa-demos' own
+closure.
 
 Time and frame rate:
 
