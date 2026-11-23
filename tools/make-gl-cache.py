@@ -89,10 +89,11 @@ ELF_MAGIC = b"\x7fELF"
 
 DRIVERS_COMMENT = (
     "The GL drivers site/gl/cache serves, written by tools/make-gl-cache.py: "
-    "each Mesa store path with the newest GLIBC_ symbol version anything in "
-    "its closure asks for, and the oldest gcc whose libstdc++ has every "
-    "GLIBCXX_ version it asks for, which site/js/gldriver.js compares with "
-    "a program's."
+    "paths, every store path the cache serves, which the page asks of the "
+    "site and of no other cache; and each Mesa store path with the newest "
+    "GLIBC_ symbol version anything in its closure asks for, and the oldest "
+    "gcc whose libstdc++ has every GLIBCXX_ version it asks for, which "
+    "site/js/gldriver.js compares with a program's."
 )
 
 
@@ -187,14 +188,17 @@ def upstream_has(path):
 def write_cache(mesa, closure, cache):
     """nix copy the closure into a scratch cache, keep what upstream
     lacks, and check the sizes before anything reaches the tree.
-    Returns the kept files, relative to the cache, with their sizes."""
+    Returns the kept files, relative to the cache, with their sizes, and
+    the store paths they serve."""
     scratch = tempfile.mkdtemp(prefix="trynix-gl-")
     run("nix", "copy", "--to", f"file://{scratch}?compression=xz", mesa)
 
     kept = {}
+    served = []
     for path in closure:
         if upstream_has(path):
             continue
+        served.append(path)
         digest = os.path.basename(path)[:DIGEST_LENGTH]
         narinfo = f"{digest}.narinfo"
         with open(os.path.join(scratch, narinfo)) as f:
@@ -215,7 +219,7 @@ def write_cache(mesa, closure, cache):
     for relative in kept:
         shutil.copy(os.path.join(scratch, relative), os.path.join(cache, relative))
     shutil.rmtree(scratch)
-    return kept
+    return kept, sorted(served)
 
 
 def main():
@@ -227,11 +231,12 @@ def main():
     mesa = args.mesa or build_mesa(root)
     closure = run("nix", "path-info", "--recursive", mesa).split()
 
-    kept = write_cache(mesa, closure, os.path.join(root, CACHE_IN_TREE))
+    kept, served = write_cache(mesa, closure, os.path.join(root, CACHE_IN_TREE))
     glibc, gcc = floors(closure)
     driver = {"storePath": mesa, "glibc": glibc, "gcc": gcc}
+    manifest = {"comment": DRIVERS_COMMENT, "paths": served, "drivers": [driver]}
     with open(os.path.join(root, DRIVERS_IN_TREE), "w") as f:
-        json.dump({"comment": DRIVERS_COMMENT, "drivers": [driver]}, f, indent=2)
+        json.dump(manifest, f, indent=2)
         f.write("\n")
 
     print(f"{len(kept) // 2} of {len(closure)} paths are not on {UPSTREAM}; wrote {CACHE_IN_TREE}:")

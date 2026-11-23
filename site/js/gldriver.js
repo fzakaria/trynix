@@ -22,6 +22,7 @@
 
 import { GL_DRIVERS } from "./config.js";
 import { speaksWayland } from "./gui.js";
+import { setSitePaths } from "./substituters.js";
 
 // What the chooser decided.
 export const DriverChoice = Object.freeze({
@@ -134,14 +135,18 @@ export function driverNote(result) {
 
 // The drivers the site publishes (site/gl/drivers.json, served as
 // GL_DRIVERS), or none when the site has none or the file cannot be
-// had: a page without a driver still boots everything else.
+// had: a page without a driver still boots everything else. The store
+// paths the site's cache serves come with them, and the substituters
+// learn them here, before any of them is looked up.
 export async function publishedDrivers() {
   try {
     const res = await fetch(GL_DRIVERS);
     if (!res.ok) {
       return [];
     }
-    return (await res.json()).drivers ?? [];
+    const manifest = await res.json();
+    setSitePaths(manifest.paths ?? []);
+    return manifest.drivers ?? [];
   } catch {
     return [];
   }

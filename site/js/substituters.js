@@ -14,8 +14,10 @@
 // and the key that vouches for it has to travel with it.
 
 import { CACHE_URL, GL_CACHE } from "./config.js";
-import { parseNarinfo } from "./closure.js";
+import { digestOf, parseNarinfo } from "./closure.js";
 import { cachedResponse, storeInCache } from "./cache.js";
+
+const STORE_PREFIX = "/nix/store/";
 
 // How the page words a path that every configured cache answered for and
 // none holds, in the walk's error and on the selection.
@@ -42,9 +44,17 @@ export const SITE_CACHE_URL = globalThis.location
   ? new URL(GL_CACHE, globalThis.location.href).href
   : GL_CACHE;
 
+// The digests of the store paths the site's cache serves, as
+// drivers.json lists them (setSitePaths). The site is asked for these
+// and for nothing else, and asked first: cache.nixos.org has never held
+// them, and asking it anyway puts a 404 per path in the reader's
+// console.
+const sitePaths = new Set();
+
 // Nix's own key for cache.nixos.org, so the default path verifies
-// without the reader configuring anything, then the site's cache. The
-// order is the lookup order: a path cache.nixos.org holds never costs a
+// without the reader configuring anything, then the site's cache. A
+// cache with `holds` is asked only for the digests in it, ahead of the
+// rest (lookupOrder), so a path cache.nixos.org holds never costs a
 // request to the site.
 export const DEFAULT_SUBSTITUTERS = [
   {
@@ -52,8 +62,25 @@ export const DEFAULT_SUBSTITUTERS = [
     key: "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
     trust: Trust.KEY,
   },
-  { url: SITE_CACHE_URL, key: null, trust: Trust.SITE },
+  { url: SITE_CACHE_URL, key: null, trust: Trust.SITE, holds: sitePaths },
 ];
+
+// Name the store paths the site's cache serves (gldriver.js, from
+// drivers.json).
+export function setSitePaths(storePaths) {
+  sitePaths.clear();
+  for (const storePath of storePaths) {
+    sitePaths.add(digestOf(storePath.slice(STORE_PREFIX.length)));
+  }
+}
+
+// The caches to ask for one digest, in order: those that list what they
+// hold and list this digest, then every cache that does not list.
+function lookupOrder(digest, substituters) {
+  const listing = substituters.filter((s) => s.holds?.has(digest));
+  const unlisted = substituters.filter((s) => s.holds === undefined);
+  return [...listing, ...unlisted];
+}
 
 // The extra caches in effect, as the page last set them.
 let extra = [];
@@ -154,7 +181,7 @@ export async function verify(info, substituters) {
 // does.
 export async function fetchNarinfo(digest, substituters) {
   const failures = [];
-  for (const substituter of substituters) {
+  for (const substituter of lookupOrder(digest, substituters)) {
     const url = `${substituter.url}/${digest}.narinfo`;
     let text;
     try {
@@ -194,7 +221,7 @@ export async function fetchNarinfo(digest, substituters) {
 export async function holdsPath(digest, substituters) {
   let asked = false;
 
-  for (const substituter of substituters) {
+  for (const substituter of lookupOrder(digest, substituters)) {
     let text;
     try {
       text = await fetchNarinfoText(`${substituter.url}/${digest}.narinfo`);

@@ -3,7 +3,8 @@
 // built against a glibc and a libstdc++ no newer than the program's own;
 // these tests hand the chooser closures as lists of store basenames,
 // the way the closure walk produces them, and the drivers the site
-// publishes as the records its manifest holds.
+// publishes as the records its manifest holds. Reading the manifest runs
+// against a fake fetch.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -11,7 +12,13 @@ import {
   chooseDriver,
   DriverChoice,
   driverNote,
+  publishedDrivers,
 } from "../../site/js/gldriver.js";
+import {
+  holdsPath,
+  readSubstituters,
+  SITE_CACHE_URL,
+} from "../../site/js/substituters.js";
 
 const DIGEST = "0123456789abcdfghijklmnpqrsvwxyz";
 const path = (name) => `${DIGEST}-${name}`;
@@ -116,4 +123,30 @@ test("a driver with no gcc floor is judged by glibc alone", () => {
   const plain = { ...NEW, gcc: null };
   const result = chooseDriver(glProgram("2.42-84", "9.3.0"), [plain]);
   assert.equal(result.choice, DriverChoice.ADD);
+});
+
+// Checks that reading the manifest tells the substituters which paths
+// the site serves: afterwards a listed path is asked of the site and
+// of nothing else.
+test("the manifest's paths are asked of the site alone", async () => {
+  const served = "y3ihj0ilpkn4ib3rh7y021l3nrvjii97";
+  const driver = {
+    storePath: `/nix/store/${served}-mesa-virgl-26.2.2`,
+    glibc: "2.38",
+    gcc: "11.1",
+  };
+  const asked = [];
+  globalThis.caches = { open: () => Promise.resolve(null) };
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    if (String(url).endsWith("drivers.json")) {
+      return Response.json({ paths: [driver.storePath], drivers: [driver] });
+    }
+    return new Response("StorePath: x\n");
+  };
+
+  assert.deepEqual(await publishedDrivers(), [driver]);
+  assert.equal(await holdsPath(served, readSubstituters()), true);
+
+  assert.deepEqual(asked.slice(1), [`${SITE_CACHE_URL}/${served}.narinfo`]);
 });

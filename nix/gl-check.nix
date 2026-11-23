@@ -10,10 +10,15 @@
 # this recomputes it over the NAR the site serves, from the committed
 # bytes, which is what drifts if either file is edited by hand. Runs on
 # any system: readelf reads aarch64 ELF files from x86_64.
+#
+# It also checks that drivers.json's paths are exactly the store paths
+# the cache has narinfos for. The page asks the site for those paths and
+# no others (site/js/substituters.js), so a path missing from the list
+# is fetched from nowhere, and a listed path with no narinfo is a 404.
 { pkgs }:
 let
   gl = ../site/gl;
-  inherit ((builtins.fromJSON (builtins.readFile (gl + "/drivers.json")))) drivers;
+  inherit ((builtins.fromJSON (builtins.readFile (gl + "/drivers.json")))) paths drivers;
 
   checkDriver =
     driver:
@@ -44,6 +49,14 @@ pkgs.runCommand "trynix-gl-check"
     ];
   }
   ''
+    listed=$(printf '%s\n' ${pkgs.lib.escapeShellArgs paths} | sort)
+    served=$(sed -n 's/^StorePath: //p' ${gl}/cache/*.narinfo | sort)
+    if [ "$listed" != "$served" ]; then
+      echo "drivers.json's paths are not the store paths site/gl/cache serves:" >&2
+      diff <(echo "$listed") <(echo "$served") >&2 || true
+      exit 1
+    fi
+
     ${pkgs.lib.concatMapStringsSep "\n" checkDriver drivers}
     touch $out
   ''
