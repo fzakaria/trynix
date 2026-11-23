@@ -74,6 +74,21 @@ test("a NAR is written under the share's store directory", () => {
   assert.deepEqual(share.programsOf(HELLO), ["hello", "hi"]);
 });
 
+// Checks that a store file carries the modification time nix gives
+// every file in a store, one second past the epoch. Guile, for one,
+// compares a .scm source with its compiled .go by mtime; files stamped
+// with the moment they were written make the source look newer, and
+// guile then ignores every compiled file and interprets the source.
+test("store files carry nix's one-second modification time", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  share.write(HELLO, ENTRIES);
+
+  const root = `/nix/store/${HELLO}`;
+  assert.equal(fs.nodes.get(`${root}/bin/hello`).mtimeMs, 1000);
+  assert.equal(fs.nodes.get(`${root}/share/README`).mtimeMs, 1000);
+});
+
 // Checks the farm: a root's programs are linked by the guest's store
 // path, a second package keeps or replaces a name as the caller says.
 test("programs are linked into the farm, and precedence decides a collision", () => {

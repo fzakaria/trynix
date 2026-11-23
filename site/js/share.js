@@ -76,6 +76,14 @@ export function storeShare(FS) {
 // executables.
 const MODE_FILE = 0o644;
 
+// The modification time nix gives every file in a store, one second
+// past the epoch, in milliseconds. Programs compare mtimes inside the
+// store: guile takes a compiled .go only when it is no older than its
+// .scm source, and files stamped with the moment the page wrote them
+// make some sources look newer, so guile ignores the compiled files and
+// interprets everything (aisleriot did not open a window in 90 s).
+const STORE_MTIME_MS = 1000;
+
 // unkernel's MemoryFs behind the emscripten FS calls the share makes.
 //
 // The MemoryFs is the share itself: the guest mounts its root at
@@ -91,8 +99,10 @@ export function memoryFsCalls(fs) {
     // callers swallow that; mkdirp has nothing to throw.
     mkdir: (path) => fs.mkdirp(inside(path)),
 
-    writeFile: (path, data) =>
-      fs.writeFile(inside(path), data, { mode: MODE_FILE }),
+    writeFile(path, data) {
+      fs.writeFile(inside(path), data, { mode: MODE_FILE });
+      fs.setattr(inside(path), { mtimeMs: STORE_MTIME_MS });
+    },
 
     chmod: (path, mode) => fs.setattr(inside(path), { mode }),
 
