@@ -66,3 +66,20 @@ test("the guest's memory is written only when one is given", () => {
     "/?pkg=firefox&engine=unkernel&mem=2048&boot=1",
   );
 });
+
+// Checks that a link can ask for a CPU count, written after the memory
+// and only when given.
+test("the guest's CPU count travels in the link", () => {
+  at("?pkg=firefox&mem=2048&cpus=4");
+  assert.equal(readUrl().cpus, 4);
+
+  at("?pkg=hello");
+  assert.equal(readUrl().cpus, null);
+
+  at("");
+  const state = { pkgs: [{ attr: "firefox", version: null }], paths: [] };
+  assert.equal(
+    writeUrl(state, { memory: 2048, cpus: 4 }),
+    "/?pkg=firefox&mem=2048&cpus=4",
+  );
+});

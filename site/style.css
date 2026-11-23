@@ -244,14 +244,16 @@ code {
    each option's explanation on the option's own line, then the guest's
    memory in a box of the same kind, then the caches. */
 #guest,
-#memory {
+#memory,
+#cpus {
   margin: 0 0 1.2rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--line);
   border-radius: 4px;
 }
 #guest legend,
-#memory legend {
+#memory legend,
+#cpus legend {
   padding: 0 0.3rem;
   font-weight: 600;
 }
@@ -272,23 +274,27 @@ code {
 }
 /* The memory sizes on one row, wrapping on a narrow screen, with room
    between one size's label and the next size's radio. */
-#memory-sizes {
+#memory-sizes,
+#cpu-counts {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1.6rem;
   padding: 0.25rem 0;
 }
-#memory-sizes label {
+#memory-sizes label,
+#cpu-counts label {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   cursor: pointer;
 }
-#memory p {
+#memory p,
+#cpus p {
   margin: 0.4rem 0 0;
   font-size: 13px;
 }
-#memory-status:empty {
+#memory-status:empty,
+#cpu-status:empty {
   display: none;
 }
 .lane h3 {

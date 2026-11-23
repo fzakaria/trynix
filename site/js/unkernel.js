@@ -220,7 +220,9 @@ async function pump(shell, port, console_) {
 // browser entry, of the kernel and of the GL renderer's module.
 // desktopElement is where GUI programs' windows go (gui.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
-// if the browser cannot allocate it (memory.js).
+// if the browser cannot allocate it (memory.js). cpus is how many CPUs
+// to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
+// CPU in a worker, which needs the kernel in a worker too.
 //
 // Resolves once the kernel is running and the share is writable. The
 // share is page-side memory, so the closure streams into the share
@@ -230,6 +232,7 @@ export async function startUnkernel({
   keyBarElement,
   desktopElement,
   memory,
+  cpus,
   engine,
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
@@ -280,6 +283,7 @@ export async function startUnkernel({
     kernel: new URL(engine.kernel, location.href).href,
     memoryMiB: memory.mib,
     memoryFallbackMiB: memory.fallbacks,
+    cpus,
     worker: globalThis.crossOriginIsolated === true,
     shm: true,
     gpu: true,
@@ -436,6 +440,13 @@ export async function startUnkernel({
     // The memory the guest booted with, in MiB: the size asked for, or
     // a fallback when the browser could not allocate it.
     memoryMiB: kernel.memoryMiB,
+
+    // The CPUs the guest runs on: the count asked for, or one where the
+    // browser could not start CPU threads. Read from the kernel's stats,
+    // which a kernel in a worker sends after it starts.
+    get cpus() {
+      return kernel.stats().cpus;
+    },
 
     // The programs a written path offers, by basename.
     programsOf: (basename) => share.programsOf(basename),

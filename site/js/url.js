@@ -7,6 +7,7 @@
 //   &cache=https://x.cachix.org x-1:key=   an extra binary cache
 //   &engine=qemu                           the engine, when not the default
 //   &mem=2048                              the unkernel guest's memory, MiB
+//   &cpus=4                                the unkernel guest's CPUs
 //   &boot=1                                start without a click
 //
 // Everything is written back with replaceState as it changes, so the
@@ -19,12 +20,13 @@ const PARAM_PATH = "path";
 const PARAM_CACHE = "cache";
 const PARAM_ENGINE = "engine";
 const PARAM_MEMORY = "mem";
+const PARAM_CPUS = "cpus";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
 //   caches: [{url, key}], engine: string|null, memory: number|null,
-//   boot: boolean }
+//   cpus: number|null, boot: boolean }
 //
 // The engine is handed back as written, or null when the link names
 // none: engine.js decides what a missing or unknown name means.
@@ -61,15 +63,16 @@ export function readUrl() {
     paths,
     caches,
     engine: params.get(PARAM_ENGINE),
-    memory: memoryOf(params.get(PARAM_MEMORY)),
+    memory: countOf(params.get(PARAM_MEMORY)),
+    cpus: countOf(params.get(PARAM_CPUS)),
     boot: params.get(PARAM_BOOT) === "1",
   };
 }
 
-// A memory size as a link writes it, in MiB, or null when the link
-// names none or names something that is not a whole number. Whether the
-// page offers that size is memory.js's question.
-function memoryOf(value) {
+// A memory size (MiB) or CPU count as a link writes it, or null when
+// the link names none or names something that is not a whole number.
+// Whether the page offers it is memory.js's and cpus.js's question.
+function countOf(value) {
   if (value === null || !/^\d+$/.test(value)) {
     return null;
   }
@@ -80,10 +83,11 @@ function memoryOf(value) {
 // stays out unless asked for: a shared link should offer the boot, and
 // only the reload path wants it automatic. `engine` stays out unless
 // the caller names one, which keeps a link for the default engine as
-// short as a link was before there were two; `memory` likewise.
+// short as a link was before there were two; `memory` and `cpus`
+// likewise.
 export function writeUrl(
   { pkgs, paths, caches = [] },
-  { boot = false, engine = null, memory = null } = {},
+  { boot = false, engine = null, memory = null, cpus = null } = {},
 ) {
   const params = new URLSearchParams();
   for (const { attr, version } of pkgs) {
@@ -103,6 +107,9 @@ export function writeUrl(
   }
   if (memory !== null) {
     params.set(PARAM_MEMORY, String(memory));
+  }
+  if (cpus !== null) {
+    params.set(PARAM_CPUS, String(cpus));
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");

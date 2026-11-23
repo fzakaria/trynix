@@ -268,6 +268,18 @@
           <p id="memory-status" class="muted"></p>
         </fieldset>
 
+        <!-- The aarch64 guest's CPUs (site/js/cpus.js), written and wired
+             like the memory sizes above. -->
+        <fieldset id="cpus">
+          <legend>Guest CPUs</legend>
+          <div id="cpu-counts"></div>
+          <p class="muted">
+            For the aarch64 guest, each CPU in a worker of its own. The default leaves half your
+            machine's threads to the browser. A link can ask for a count with <code>cpus=</code>.
+          </p>
+          <p id="cpu-status" class="muted"></p>
+        </fieldset>
+
         <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
              always there and cost nothing until used, and the GL driver's
              opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->

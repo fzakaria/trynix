@@ -192,6 +192,42 @@ The difference is inside the run-to-run noise. What a large guest
 does cost is address space, which a phone may not have to give; that
 is what the smaller default and the fallbacks are for.
 
+## CPUs
+
+The guest runs on several CPUs where the page can give them
+([site/js/cpus.js](../site/js/cpus.js)). unkernel runs each guest CPU
+in a Web Worker on one shared memory, with its SMP kernel, so this
+needs the page cross-origin isolated (it is, on the deployed site and
+under `nix run .#serve`) and the kernel in a worker, which is how the
+page runs it there. A page that is not isolated runs the kernel on its
+own thread, on one CPU.
+
+- The default is unkernel's own page's: 4 in a desktop browser, 2 in
+  Firefox and on a touch screen, and never more than half of
+  `navigator.hardwareConcurrency`, since a guest CPU whose thread the
+  host deschedules stalls the CPUs that wait for it.
+- A link can ask for a count, `cpus=1`, `2` or `4`, and the Settings
+  lane offers the same three, remembered by this browser.
+- The page reports the count the guest runs on (the kernel's
+  `stats().cpus`), and says so under Settings when that is fewer than
+  asked for.
+
+Measured in headless Chromium on a laptop (16 threads, Radeon 780M),
+2026-11-23, with a 2 GiB guest:
+
+| program                         | 1 CPU         | 4 CPUs        |
+| ------------------------------- | ------------- | ------------- |
+| firefox, first start, to window | 37.3 s        | 28.9 s        |
+| firefox, second start           | 32.7 s        | 23.7 s        |
+| es2gears_wayland, first frame   | 2.9 s, 60 FPS | 3.0 s, 60 FPS |
+| glmark2-es2-wayland score       | 766           | 730           |
+
+A program with threads gains: firefox's parent and content processes
+and their threads spread over the CPUs. A GL program does not; its
+rendering is the page's, on one WebGL2 context. GUI programs, the
+compositor's in-place reads of their buffers and the GL driver behave
+the same on four CPUs as on one.
+
 ## Where a boot's time goes now
 
 The kernel is up 0.3 to 0.8 s after the click. Everything after that

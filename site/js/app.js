@@ -82,6 +82,13 @@ import {
   thisDevice,
 } from "./memory.js";
 import {
+  CPU_COUNTS,
+  pickCpus,
+  rememberCpus,
+  rememberedCpus,
+  thisDevice as cpuDevice,
+} from "./cpus.js";
+import {
   chooseDriver,
   DriverChoice,
   driverNote,
@@ -114,6 +121,8 @@ const guestChoice = document.getElementById("guest");
 const guestStatus = document.getElementById("guest-status");
 const memorySizes = document.getElementById("memory-sizes");
 const memoryStatus = document.getElementById("memory-status");
+const cpuCounts = document.getElementById("cpu-counts");
+const cpuStatus = document.getElementById("cpu-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -263,10 +272,21 @@ let linkedMemory = readUrl().memory;
 // The unkernel guest's memory for the next boot (memory.js): the link's
 // size, then this browser's choice in Settings, then the device's
 // default.
+const device = thisDevice();
 let memory = pickMemory({
   linked: linkedMemory,
   remembered: rememberedMemory(),
-  device: thisDevice(),
+  device,
+});
+
+// The CPU count the page's link names (url.js, `cpus`), or null, and
+// the count for the next boot (cpus.js), chosen the way memory is.
+let linkedCpus = readUrl().cpus;
+const cpuHost = cpuDevice(device);
+let cpus = pickCpus({
+  linked: linkedCpus,
+  remembered: rememberedCpus(),
+  device: cpuHost,
 });
 
 // The link for what is on screen, as a URL relative to this page.
@@ -276,6 +296,7 @@ function link({ boot = false } = {}) {
     boot,
     engine: linkEngine(state),
     memory: linkedMemory,
+    cpus: linkedCpus,
   });
 }
 
@@ -417,6 +438,18 @@ function wireGuestChoice() {
 }
 wireGuestChoice();
 
+// Say under Settings when the guest runs on fewer CPUs than it asked
+// for: the browser could not start the CPU threads. Only the unkernel
+// guest reports a count.
+function reportCpus(vm) {
+  const ran = vm.cpus;
+  if (ran === undefined || ran === cpus.count) {
+    return;
+  }
+  log(`unkernel: asked for ${cpus.count} CPUs, runs on ${ran}`);
+  cpuStatus.textContent = `This guest runs on ${ran} CPU${ran === 1 ? "" : "s"}: the browser could not start ${cpus.count}.`;
+}
+
 // The memory choice under Settings: one radio per size memory.js offers,
 // the size the next boot will ask for checked. A choice is remembered by
 // this browser, and replaces the link's size when the link named one.
@@ -446,6 +479,40 @@ function wireMemoryChoice() {
   });
 }
 wireMemoryChoice();
+
+// The CPU choice under Settings, wired as the memory choice is. A page
+// without shared memory boots one CPU whatever is chosen, and says so.
+function wireCpuChoice() {
+  for (const count of CPU_COUNTS) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "cpus";
+    input.value = String(count);
+    input.checked = count === cpus.count;
+    input.disabled = !cpuHost.shared && count > 1;
+    label.append(input, String(count));
+    cpuCounts.append(label);
+  }
+  if (!cpuHost.shared) {
+    cpuStatus.textContent =
+      "This page is not cross-origin isolated, so the guest runs on one CPU.";
+  }
+
+  cpuCounts.addEventListener("change", (event) => {
+    const count = Number(event.target.value);
+    cpus = { count, why: "chosen in Settings" };
+    rememberCpus(count);
+    if (linkedCpus !== null) {
+      linkedCpus = count;
+      history.replaceState(null, "", link());
+    }
+    cpuStatus.textContent = vmStarted
+      ? `${count} from the next boot; this guest keeps what it booted with`
+      : "";
+  });
+}
+wireCpuChoice();
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {
@@ -911,11 +978,13 @@ function unkernelEngine(panel) {
     });
     consoleTty.textContent = "pts/0";
     log(`unkernel memory: ${memory.mib} MiB (${memory.why})`);
+    log(`unkernel CPUs: ${cpus.count} (${cpus.why})`);
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
       desktopElement,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
+      cpus: cpus.count,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
@@ -1099,6 +1168,7 @@ async function boot() {
     bootButton.disabled = false;
 
     await ready;
+    reportCpus(vm);
     telemetry.finish(LoadStage.READY, mode);
     log("guest at its prompt");
     vmRow.done("running");
