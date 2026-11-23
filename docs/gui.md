@@ -1,8 +1,9 @@
 # GUI programs
 
 A Wayland program from nixpkgs, run in the unkernel guest, opens a
-window on the page. foot, GTK 3 programs and GL programs through Mesa
-have been run this way. Everything runs in the tab: the guest, the
+window on the page. foot, GTK 3 programs (galculator, mousepad,
+aisleriot), mpv, wev and GL programs through Mesa have been run this
+way. Everything runs in the tab: the guest, the
 relay that carries the program's protocol, the compositor that draws
 its windows and the GL renderer. There is no server, and the host's
 own display is never involved.
@@ -23,16 +24,19 @@ The first window opens a desktop under the terminal, and every window
 after it goes there too. Windows move by their title bar or by
 Alt+drag, and take the keyboard when clicked.
 
-GL programs need a driver, and the page does not add one unasked:
-nixpkgs' Mesa carries LLVM for llvmpipe, and Mesa's closure is 300 MB
-compressed. Select `mesa` beside the program:
+GL programs need a driver, and the page adds one: when the closure
+holds a Wayland program that links libglvnd and no Mesa, the page
+walks in the site's own Mesa, built with the virgl driver alone (see
+[The GL driver](#the-gl-driver)).
 
 ```
-https://trynix.dev/?pkg=mesa-demos&pkg=mesa&boot=1  then: es2gears_wayland &
+https://trynix.dev/?pkg=mesa-demos&boot=1  then: es2gears_wayland &
 ```
 
-When the closure holds a Wayland program that links libglvnd and no
-Mesa, the status line says so.
+Selecting a Mesa is how to opt out: with `pkg=mesa` in the link the
+page adds nothing, and the guest uses nixpkgs' Mesa (380 MB with its
+closure). When no driver the site serves fits the program, the status
+line says why.
 
 ## How it works
 
@@ -83,12 +87,150 @@ A few things the guest lacks, the page supplies:
   nixpkgs' fontconfig reads `/etc/fonts`, which the guest does not
   have. The site ships DejaVu Sans and Sans Mono and a `fonts.conf`
   that names them and maps `monospace`, `sans-serif` and `serif`.
-- **The GL driver link.** nixpkgs' libglvnd and libgbm look for the
-  driver in `/run/opengl-driver`, as on NixOS. A NAR holding Mesa's
+- **The GL driver** and its link. nixpkgs' libglvnd and libgbm look
+  for the driver in `/run/opengl-driver`, as on NixOS. The page adds
+  the site's Mesa to a GL program's closure, and a NAR holding Mesa's
   `50_mesa.json` becomes that link in the guest.
+- **Store mtimes.** Every file in a nix store has a modification time
+  of one second past the epoch, and some programs compare them: guile
+  takes a compiled `.go` only when it is no older than its source.
+  The share used to stamp files with the time the page wrote them,
+  and aisleriot, whose card games are guile, drew nothing in 90 s.
 - **The handshake.** foot starts a shell that inherits `ENV` and
   sources the manifest; the manifest now reads the page's handshake
   line only in the shell on the page's terminal.
+
+## The GL driver
+
+nixpkgs' Mesa builds every driver it can. Its closure is 380 MB
+compressed and 1.47 GB unpacked, held in the page's memory: LLVM for
+llvmpipe and the OpenCL frontend (145 MB), python3 for two Vulkan
+layer scripts Mesa installs in `bin/` (61 MB; mesa-demos does not
+need it), and Vulkan, video and X11 libraries. The guest has one GPU,
+virtio-gpu, and one driver that can use it.
+
+[nix/mesa-virgl.nix](../nix/mesa-virgl.nix) is nixpkgs' Mesa with
+`gallium-drivers=virgl`, no Vulkan drivers or layers, LLVM off, no
+GLX and Wayland as the only EGL platform. nixpkgs builds Mesa with
+meson's auto features on, so every feature option is named, on or
+off. What libglvnd and a Wayland client need stays: `libEGL_mesa`
+with its `50_mesa.json`, GLES, and GBM's backend `dri_gbm.so`.
+The build refuses to finish if LLVM or python3 is in its closure.
+
+The result is Mesa 26.2.2 with `libgallium` holding the one driver:
+
+| Mesa            | closure paths | compressed | unpacked | only on the site |
+| --------------- | ------------- | ---------- | -------- | ---------------- |
+| nixpkgs' `mesa` | 60            | 301 MB     | 1.12 GB  | none             |
+| `mesa-virgl`    | 17            | 21 MB      | 96 MB    | one NAR, 3.0 MB  |
+
+Mesa itself is the only path no public cache has; the other 16
+(libdrm, expat, zstd, libwayland, libgbm, glibc, gcc's runtime) are
+nixpkgs' own builds, and a GL program's closure holds most of them
+already. With mesa-demos the driver adds one path and 3.0 MB:
+
+| selection                 | paths | compressed | unpacked |
+| ------------------------- | ----- | ---------- | -------- |
+| mesa-demos + `mesa`       | 133   | 380 MB     | 1.47 GB  |
+| mesa-demos + `mesa-virgl` | 112   | 110 MB     | 479 MB   |
+
+### Which glibc it is built against
+
+Mesa is not a program of its own. libglvnd loads it into the
+program's process with `dlopen`, so it runs against the program's
+glibc, and against the program's libstdc++ when the program has
+already loaded one. A Mesa that asks glibc for a symbol version newer
+than the program's fails to load (`version GLIBC_2.xx not found`).
+
+The index does not resolve a link against one nixpkgs. The
+multiverse holds 1,581 nixpkgs revisions from 2012 to 2026, and each
+`(attribute, version)` resolves to the one store path Hydra built for
+it in whichever revision shipped it. For aarch64-linux the programs
+it serves link glibc from 2.25 to 2.44, and libglvnd from April 2018 on. A link can also mix revisions: `pkg=a@1&pkg=b@2`
+may name two glibcs.
+
+So there is no single right base. Building Mesa against the oldest
+glibc a GL program in the index uses would mean a 2019 nixpkgs and
+the Mesa of its day; building one per revision would mean hundreds.
+What the page does instead:
+
+- each driver the site publishes carries two floors in its manifest
+  (`gl/drivers.json`): the newest `GLIBC_` symbol version anything in
+  its closure asks for, computed from the binaries by
+  [tools/publish-gl.py](../tools/publish-gl.py), and the gcc whose
+  libstdc++ it was built with;
+- the page reads the program's own floors from its closure, the
+  version in its glibc and gcc runtime store paths, taking the oldest
+  when a selection mixes revisions;
+- it adds the newest driver whose floors are no newer than the
+  program's ([site/js/gldriver.js](../site/js/gldriver.js)), and when
+  none fits it says so and suggests a Mesa from the program's own
+  nixpkgs, which the reader can select with `pkg=mesa@<version>`.
+
+One driver is published, built on the nixpkgs this flake locks. Its
+floors are glibc 2.38 and gcc 11.1: the `GLIBC_2.38` comes from
+building against glibc 2.42 with gcc 15, which turns `strtol` and its
+kin into the `__isoc23_` versions glibc added in 2.38, and the
+`GLIBCXX_3.4.29` from libstdc++. So it serves programs from nixpkgs
+23.11 (November 2023) on. A second, older driver is the same derivation called
+with an older nixpkgs' aarch64 package set, and one more entry in the
+manifest; nothing on the page changes.
+
+The gcc floor is the first gcc whose libstdc++ has every `GLIBCXX_`
+version the driver asks for. A program that links no C++ has loaded
+no libstdc++, and Mesa then brings its own, so a closure with no gcc
+runtime is judged by glibc alone. Other libraries Mesa links,
+libwayland among them, have the same shape of problem: when the
+program has loaded an older one, Mesa gets that one. The glibc floor
+keeps the two in the same era of nixpkgs, which is what has held for
+the programs tried; it is not a proof.
+
+`checks.gl-driver` recomputes the glibc floor from the pinned NAR and
+fails when the pin claims less than the binaries ask for, and
+[tests/site/gldriver.test.mjs](../tests/site/gldriver.test.mjs)
+covers the choice: a program older than every driver gets none, a
+mixed selection is judged by its older glibc, a selected Mesa wins.
+
+### Where it is served from
+
+No public cache holds this build, so the site carries a binary cache
+of its own: `site/gl/cache/`, committed to the repository and served
+by Pages with the page, as the example cache under `site/examples/`
+is. It is a `nix-cache-info`, one narinfo and one NAR per store path,
+and it holds only what cache.nixos.org does not, which is Mesa
+itself; the rest of Mesa's closure is nixpkgs' own builds. Beside it,
+`site/gl/drivers.json` names the driver and its two floors.
+
+The cache is the second default substituter in
+[site/js/substituters.js](../site/js/substituters.js), after
+cache.nixos.org, so a path cache.nixos.org holds never costs a
+request to the site. Its narinfos are not signed. The page trusts its
+own origin, which also serves the JavaScript that checks signatures:
+whoever can replace a narinfo there can replace the check, so a key
+would vouch for nothing the origin does not already. Each NAR is
+still checked against its narinfo's `NarHash` when it arrives.
+
+The pages workflow builds the site on an x86_64 runner, which cannot
+build an aarch64 Mesa and should not have to: it copies `site/` as it
+always has. The driver is built by hand and its files committed:
+
+```sh
+nix run .#make-gl-cache    # build mesa-virgl, rewrite site/gl/, print the sizes
+```
+
+The build is `packages.aarch64-linux.mesa-virgl`; on an x86_64 host
+it runs through binfmt (`extra-platforms = aarch64-linux`), and only
+Mesa itself compiles under emulation, since its inputs come from
+cache.nixos.org. That build took 25 minutes on a 16-core laptop. jj
+refuses to snapshot a new file over 1 MiB unless told otherwise, so
+commit the NAR with `jj --config snapshot.max-new-file-size=<bytes>`.
+The tool replaces whatever driver the
+directory held, and refuses to write a file over 50 MB, where GitHub
+starts warning.
+
+Each driver update adds its NAR to the repository's history for good:
+removing a file from the tree does not remove it from the clones that
+already have it.
 
 ## What it costs
 
@@ -110,26 +252,35 @@ locks builds (the page resolves names against the multiverse index,
 which can pick a newer build; its Mesa was 26.3.1 against the lock's
 26.2.2):
 
-| selection         | paths | compressed | unpacked |
-| ----------------- | ----- | ---------- | -------- |
-| foot              | 36    | 29 MB      | 115 MB   |
-| mesa-demos + mesa | 133   | 380 MB     | 1.47 GB  |
+| selection                     | paths | compressed | unpacked |
+| ----------------------------- | ----- | ---------- | -------- |
+| foot                          | 36    | 29 MB      | 115 MB   |
+| mesa-demos + `mesa`           | 133   | 380 MB     | 1.47 GB  |
+| mesa-demos, the site's driver | 112   | 110 MB     | 479 MB   |
 
-The unpacked closure is held in the page's memory, so a GL boot asks
-the browser for 1.5 GB before the guest does anything. LLVM is 145 MB
-of the compressed size and python3 61 MB (Mesa ships two python
-scripts in `bin/`).
+The unpacked closure is held in the page's memory. With nixpkgs' Mesa
+a GL boot asked the browser for 1.5 GB before the guest did anything;
+with the site's driver it is a third of that, nearly all of it
+mesa-demos' own GTK closure.
 
 Time and frame rate:
 
-| program                 | shell after | first frame after the command |
-| ----------------------- | ----------- | ----------------------------- |
-| foot                    | 2.8–3.7 s   | 0.8–0.9 s                     |
-| galculator              | 8.0 s       | 2.8 s                         |
-| es2gears_wayland + mesa | 26–43 s     | 3.1–3.7 s                     |
+| program                       | shell after | first frame after the command |
+| ----------------------------- | ----------- | ----------------------------- |
+| foot                          | 2.8–3.7 s   | 0.8–0.9 s                     |
+| galculator                    | 8.0 s       | 2.8 s                         |
+| es2gears_wayland + mesa       | 26–43 s     | 3.1–3.7 s                     |
+| es2gears_wayland, site driver | 11.1 s      | 3.3 s                         |
+| sol (aisleriot)               | 29 s        | 16 s                          |
+| mousepad                      | 17 s        | 26 s                          |
+| mpv, a lavfi test video       | 38 s        | 28 s                          |
+| wev                           | 5.3 s       | 0.7 s                         |
 
-es2gears' first frame is mostly the guest loading Mesa (libgallium and
-libLLVM) under the emulator; the GL renderer itself loads in 0.06 s on
+The galculator to wev rows were taken while an aarch64 build ran on
+the same machine, so read them as orders of magnitude. es2gears'
+first frame is the guest loading the program and Mesa under the
+emulator, and it is no faster with the small Mesa, since the virgl
+driver was never what took the time; the GL renderer itself loads in 0.06 s on
 the GPU and 0.12 s on SwiftShader. es2gears runs at 60 FPS on both,
 paced by the compositor's frame callbacks at the page's refresh rate.
 glmark2-es2-wayland at 640x480, which does not wait for the
@@ -144,16 +295,13 @@ compositor:
 
 ## Limits
 
-- **Mesa's size.** A Mesa with only the virgl driver would need no LLVM
-  and would be a fraction of the closure, but no cache serves one for
-  aarch64. Building one and publishing it to trynix.cachix.org, as the
-  example databases are, is the way out.
-- **Mesa and the program from different nixpkgs.** `pkg=mesa` resolves
-  to the newest Mesa in the index, which may be built against a newer
-  glibc than the program. The driver is loaded into the program's
-  process, so a Mesa that needs symbols the program's glibc lacks fails
-  to load. Pinning Mesa to the program's nixpkgs revision would need
-  the multiverse to say which revision a path came from.
+- **GL programs from before nixpkgs 23.11** get no driver: the one
+  the site serves needs glibc 2.38. The page says so; a Mesa from the
+  program's own nixpkgs, selected with `pkg=mesa@<version>`, is the
+  way around it until an older driver is published.
+- **A selected `mesa`** resolves to the newest Mesa in the index,
+  which may be built against a newer glibc than the program; the page
+  does not check one the reader chose.
 - **No X11.** There is no Xwayland in the guest, so programs with only
   an X11 backend do not start.
 - **Reloads end the programs**, as they end the guest: the page boots a
@@ -169,7 +317,7 @@ compositor:
 ## Testing
 
 `nix run .#gui-test -- --site <site>` boots foot and es2gears from
-links, starts each at the shell and waits for the compositor's first
+links (es2gears alone, so the page has to add the driver), starts each at the shell and waits for the compositor's first
 frame. It types into foot's window and checks that the keys reached the
 program, and checks that es2gears' frames went through the page's GL
 renderer by GPU resource and not through llvmpipe. `--gpu hardware`
@@ -201,5 +349,6 @@ site next to the files:
   should be shipped beside it once the pin moves past it.
 - DejaVu fonts are Bitstream Vera's license with public-domain changes
   (`gui.<hash>/LICENSE-dejavu`).
-- The programs and Mesa come from cache.nixos.org and keep nixpkgs'
-  licenses, as every other package the page boots does.
+- The programs come from cache.nixos.org and keep nixpkgs' licenses,
+  as every other package the page boots does. The site's Mesa is
+  MIT, built unmodified from nixpkgs' source with fewer drivers.
