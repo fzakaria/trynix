@@ -118,25 +118,31 @@ export function lazyStore({ fetch, write, concurrency }) {
       download = Promise.reject(err);
     }
 
+    // The download is over before its lookups hear the outcome, so one
+    // that asks again on hearing of a failure starts a fresh download.
+    const settle = path.settle;
+    const over = () => {
+      path.promise = null;
+      running -= 1;
+      pump();
+    };
+
     download
       .then((entries) => write(basename, entries))
       .then(
         () => {
           path.written = true;
-          path.settle.resolve();
+          over();
+          settle.resolve();
         },
         (err) => {
           log(
             `${path.info.storePath}: not fetched (${err.message}); the next lookup tries again`,
           );
-          path.settle.reject(err);
+          over();
+          settle.reject(err);
         },
-      )
-      .finally(() => {
-        path.promise = null;
-        running -= 1;
-        pump();
-      });
+      );
   }
 
   // Start background fetches while there is room.

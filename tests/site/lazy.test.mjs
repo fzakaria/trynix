@@ -136,6 +136,20 @@ test("a failed download rejects its lookups and is retried on the next", async (
   assert.equal(store.ready("b-gcc"), true);
 });
 
+// Checks that a lookup which asks again the moment it hears of a
+// failure starts a fresh download, rather than being handed the failed
+// one a second time.
+test("asking again on hearing of a failure starts a fresh download", async () => {
+  const { store, started, fail } = controlled();
+  store.add([info("w-pixman")]);
+
+  store.ensure("w-pixman", Priority.DEMAND).catch(() => {
+    store.ensure("w-pixman", Priority.DEMAND).catch(() => {});
+  });
+  await fail("w-pixman");
+  assert.deepEqual(started, ["w-pixman", "w-pixman"]);
+});
+
 // Checks that touching a path fetches its direct references in the
 // background, and only those: a reference's own references wait until
 // the guest touches the reference. A path's reference to itself is
