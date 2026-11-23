@@ -51,7 +51,8 @@ benchmark harnesses in `tools/` call it over CDP.
   the closure in paths and compressed bytes, what of it is in the
   guest's store, and the compressed bytes read for it (from the
   network, or on a return visit the Cache API). With `mode` `"lazy"`
-  the last three grow as the guest opens paths
+  those grow as the guest reads files, and `listedPaths` and
+  `listingBytes` count the NAR listings fetched and what they came to
   ([unkernel.md](./unkernel.md#downloads-on-first-use))
 
 `run` resolves whether the command succeeded, failed or outlived its

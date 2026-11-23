@@ -267,7 +267,8 @@ firefox's is 322 paths and 450 MiB.
 So on unkernel a boot now fetches the selected packages, and any Mesa
 the guest may take as its GL driver, and starts the shell. Every other
 path of the closure is listed in the guest's store from its narinfo,
-and is fetched the first time the guest looks inside it. Settings has
+its files are described from the cache's listing of the path, and its
+NAR is fetched the first time the guest reads one of its files. Settings has
 the choice as "Downloads"; a link names it as `fetch=lazy` (the
 default) or `fetch=all`, which is the old behaviour. The qemu engine
 always downloads everything first. Its share is read by QEMU's own 9p
@@ -281,13 +282,65 @@ a download.
   checked against its NarHash and unpacked into the MemoryFs, as a
   boot always did.
 - `lazyFs` is what the SDK serves the guest: the MemoryFs, with
-  `/nix/store` listing every path of the closure and a lookup of a
-  path, or of anything inside one, held until the path is written.
+  `/nix/store` listing every path of the closure. A stat, a directory
+  listing or a symlink inside a path that has not arrived is answered
+  from the path's NAR listing (below); opening a regular file in it
+  waits until the path is written.
 
 A download that fails answers the lookup EIO, which the guest does not
 cache, and the page's log says which path and why. The next lookup
 tries again. The mount has no request timeout: the SDK's default of
 30 s would fail a lookup that waits for a large NAR on a slow line.
+
+### NAR listings
+
+A binary cache publishes a listing beside each narinfo, as
+`<digest>.ls`: every file of the path with its type, size and
+executable bit, as JSON ([site/js/listing.js](../site/js/listing.js)).
+cache.nixos.org stores them zstd-compressed and serves them with
+`Content-Encoding: zstd` whatever the request accepts, so the browser
+decodes them; Chrome 123 and Firefox 126 do, and Safari has not been
+tried. Each is fetched the moment the closure walk finds its path,
+twenty at a time, and kept in the Cache API like a NAR.
+
+For firefox the closure is 322 paths. The cache has listings for 319
+of them (the other three are the site's GL driver and its closure,
+whose cache publishes none), and they come to 362 kB compressed, 2.3
+MB of JSON: one request per path beside the walk's one per narinfo. In
+the page all 309 of firefox's own took 0.4 s twenty at a time, the
+CDN's edge holding them. Fetched while the walk ran, every one was in
+before the shell started, in every boot measured below.
+
+From a listing the page answers what the NAR used to be fetched for
+without needing its bytes:
+
+- a name that is not there is ENOENT at once. A dynamic loader looks
+  for each library in every directory of its search path in turn, and
+  each of those looks used to download the directory's path;
+- `ls -l`, `stat`, tab completion and `readlink` inside a path read
+  nothing;
+- the programs in every path's `bin/` go into `/share/bin` before the
+  shell starts, behind the selected packages' programs, so `bash` from
+  python3's closure is there at the first prompt. The boot waits up to
+  2 s after the selected packages are in for listings still on their
+  way; one that comes later is linked when it arrives.
+
+The guest is told the same about a file before and after its path
+arrives: type, mode and size come from the listing as the share will
+write them, every file of the closure carries nix's one-second times,
+and the share's own inode numbers and versions are left out, so the
+9p server derives both from the path the same way both times. A path
+whose listing cannot be had (a 404, a body the browser could not
+decode, ten seconds without an answer) is downloaded whole the first
+time the guest looks in it, as before listings.
+
+Fetching each listing only when the guest first looks in its path
+instead costs a round trip at that first look, and then the farm cannot
+list a path's programs before the guest has looked. Measured the same
+way as the table below, the two came out level, to the shell and to
+the first output, within 0.4 s on every row: solitaire 9.6 s on first
+touch against 9.5 s fetched ahead, firefox 43.4 s against 43.8 s. So
+the page fetches them all ahead, and the farm is what that buys.
 
 ### Whether a waiting lookup holds up the guest
 
@@ -326,8 +379,9 @@ Background downloads run four at a time, largest first. A download
 the guest is waiting on starts at once, whatever else is running.
 
 Starting paths early pays for itself. With all three turned off, so
-that every path waits for the guest to ask, click to output in the
-same setup as the table below (two cold runs each) went from 1.8 to
+that every path waits for the guest to ask, click to output at
+18a0294a, before listings, in the setup the table below describes
+(two cold runs each, against that build's own) went from 1.8 to
 2.2 s for hello, 3.0 to 3.5 s for jj, 11.3 to 14.0 s for solitaire
 and 49 to 61 s for firefox (50 and 72 s), and es2gears came out
 level, 12.6 against 12.7 s. Reading only what is asked for saves
@@ -346,34 +400,46 @@ after the others and was the download the first window waited on.
 ### What it costs and saves
 
 Measured 2026-11-23 on a laptop (AMD Zen 4) over a home connection
-that gave 10 to 17 MB/s from cache.nixos.org, headless Chromium 157.
-Each boot is a link with `boot=1`, the command typed the moment the
-shell is ready, and the time to its output or to the program's first
-frame on the page. Cold is a fresh browser profile, warm a second boot
-in the same one. Downloading everything first is the median of four
-runs, on first use of two, after one untimed boot of each so the
-CDN's edge held every NAR. The raw runs, with each path's download
-and first lookup for some of them, are in
+that gave 10 to 17 MB/s from cache.nixos.org, headless Chromium 157,
+before the guest had more than one CPU. Each boot is a link with
+`boot=1`, the command typed the moment the shell is ready, and the
+time to its output or to the program's first frame on the page. Cold
+is a fresh browser profile, warm a second boot in the same one. After
+one untimed boot of each, so that the CDN's edge held every NAR, each
+row is the median of three runs, the variants taking turns. "Without
+listings" is the page as of 73d5278a. The raw runs, with each path's
+download and first lookup for some of them, are in
 [experiments/lazy-downloads.json](../experiments/lazy-downloads.json).
 
 Cold:
 
-| program                    | downloads    | shell  | to output | click to output | read by output | read in all |
-| -------------------------- | ------------ | ------ | --------- | --------------- | -------------- | ----------- |
-| hello                      | all first    | 1.9 s  | 0.10 s    | 2.0 s           | 11 MB          | 11 MB       |
-|                            | on first use | 1.0 s  | 0.78 s    | 1.8 s           | 10 MB          | 10 MB       |
-| `jj --version`             | all first    | 2.8 s  | 0.22 s    | 3.0 s           | 23 MB          | 23 MB       |
-|                            | on first use | 2.6 s  | 0.46 s    | 3.0 s           | 22 MB          | 22 MB       |
-| `python3 -c 'import json'` | all first    | 7.4 s  | 0.85 s    | 8.3 s           | 86 MB          | 86 MB       |
-|                            | on first use | 7.5 s  | 0.85 s    | 8.4 s           | 85 MB          | 85 MB       |
-| sol, first frame           | all first    | 22.9 s | 3.4 s     | 26.1 s          | 311 MB         | 311 MB      |
-|                            | on first use | 3.0 s  | 8.2 s     | 11.3 s          | 98 MB          | 98 MB       |
-| es2gears, first frame      | all first    | 12.4 s | 2.9 s     | 15.4 s          | 123 MB         | 123 MB      |
-|                            | on first use | 4.3 s  | 8.3 s     | 12.6 s          | 91 MB          | 91 MB       |
-| firefox, first window      | all first    | 40.5 s | 28.7 s    | 70.1 s          | 472 MB         | 472 MB      |
-|                            | on first use | 1.9 s  | 47.4 s    | 49.4 s          | 253 MB         | 253 MB      |
+| program                    | downloads                      | shell  | to output | click to output | read by output | read in all |
+| -------------------------- | ------------------------------ | ------ | --------- | --------------- | -------------- | ----------- |
+| hello                      | all first                      | 2.0 s  | 0.09 s    | 2.1 s           | 11 MB          | 11 MB       |
+|                            | on first use, without listings | 0.93 s | 0.87 s    | 1.8 s           | 10 MB          | 10 MB       |
+|                            | on first use, with listings    | 1.0 s  | 0.85 s    | 1.9 s           | 10 MB          | 10 MB       |
+| `jj --version`             | all first                      | 2.6 s  | 0.20 s    | 2.8 s           | 23 MB          | 23 MB       |
+|                            | on first use, without listings | 2.2 s  | 0.43 s    | 2.6 s           | 22 MB          | 22 MB       |
+|                            | on first use, with listings    | 2.2 s  | 0.48 s    | 2.7 s           | 22 MB          | 22 MB       |
+| `python3 -c 'import json'` | all first                      | 6.9 s  | 0.74 s    | 7.6 s           | 86 MB          | 86 MB       |
+|                            | on first use, without listings | 6.7 s  | 0.79 s    | 7.4 s           | 85 MB          | 85 MB       |
+|                            | on first use, with listings    | 7.1 s  | 0.76 s    | 7.8 s           | 85 MB          | 85 MB       |
+| sol, first frame           | all first                      | 20.9 s | 3.0 s     | 23.9 s          | 311 MB         | 311 MB      |
+|                            | on first use, without listings | 2.7 s  | 7.2 s     | 10.0 s          | 98 MB          | 98 MB       |
+|                            | on first use, with listings    | 2.7 s  | 6.7 s     | 9.5 s           | 98 MB          | 98 MB       |
+| es2gears, first frame      | all first                      | 9.2 s  | 2.6 s     | 11.8 s          | 123 MB         | 123 MB      |
+|                            | on first use, without listings | 3.1 s  | 6.9 s     | 10.1 s          | 91 MB          | 91 MB       |
+|                            | on first use, with listings    | 3.1 s  | 6.6 s     | 9.8 s           | 91 MB          | 91 MB       |
+| firefox, first window      | all first                      | 31.9 s | 25.5 s    | 57.8 s          | 472 MB         | 472 MB      |
+|                            | on first use, without listings | 1.7 s  | 41.8 s    | 43.7 s          | 253 MB         | 253 MB      |
+|                            | on first use, with listings    | 2.0 s  | 41.8 s    | 43.8 s          | 244 MB         | 244 MB      |
 
-Warm, everything read from the Cache API:
+The listings' own bytes are not in "read": 14 kB for hello, 111 kB for
+python3, 313 kB for solitaire, 362 kB for firefox.
+
+Warm, everything read from the Cache API, measured the same way
+before listings (medians of four runs downloading everything first,
+two on first use, at 18a0294a):
 
 | program                    | downloads    | shell  | to output | click to output |
 | -------------------------- | ------------ | ------ | --------- | --------------- |
@@ -394,29 +460,31 @@ Warm, everything read from the Cache API:
 whole closure either way, as the dropped attempt below found, so the
 shell comes sooner and the first command later by about as much; jj's
 cold total is the same and python3's NAR is most of its closure. The
-GUI programs are where it pays: solitaire is on screen 15 s sooner
+GUI programs are where it pays: solitaire is on screen 14 s sooner
 from a cold cache, having read a third of its closure, and firefox
-21 s sooner, having read a little over half. A return visit costs
+14 s sooner, having read a little over half. A return visit costs
 nothing more: the decompression the boot used to do before the shell
 is now done as the program opens each path, and the totals come out
 level or ahead.
+
+Listings change what the guest can do without downloading, not how
+fast a first run is: with them each row is within the runs' spread of
+the row without, and firefox reads 9 MB less, the paths its loader
+only searched. python3's shell came 0.4 s later in two runs of three
+with listings, and level in the third; why is not known.
 
 ### What it changes
 
 - A program's first run waits for what it opens. The shell is up
   earlier, and the time moves to the first command.
-- `/share/bin` starts with the selected packages' programs. A
-  dependency's programs join it when the dependency arrives, behind
-  any program of the same name.
-- Anything that looks up every name in `/nix/store`, such as
-  `ls -l /nix/store` or completing a path there, downloads every path
-  it looks up. Listing the directory downloads nothing.
-- A path the loader only searches is downloaded too. The GL case's
-  site driver is built against an older glibc than mesa-demos, and its
-  RUNPATH names that glibc; the loader looks there for the driver's
-  other libraries and waits for a 9.5 MiB glibc it never opens. The
-  cache's NAR listings (`<hash>.ls`) would answer such a miss without
-  the NAR. Not done.
+- A dependency's program on `PATH` downloads its path when it runs,
+  and an interactive `ls` from coreutils in the closure is such a
+  program.
+- Opening a file starts the paths its ELF headers name, whether the
+  loader ends up opening them or not. The GL case's site driver is
+  built against an older glibc than mesa-demos and names that glibc in
+  its RUNPATH; the loader finds every library it needs elsewhere, and
+  no longer waits, but the 9.5 MiB glibc still downloads beside it.
 - The page holds only what was fetched: a third of solitaire's
   closure, a little over half of firefox's.
 - The boot's progress rows say what the boot waits for. "selected

@@ -129,10 +129,11 @@ same path, with `/nix` a symlink into it:
 
 On the unkernel engine the store can be served before it has arrived
 (the default; [unkernel.md](./unkernel.md#downloads-on-first-use)):
-every path of the closure is listed from its narinfo, and a lookup
-inside one waits while its NAR downloads. The farm below then starts
-with the selected packages' programs, and a dependency's join it when
-the dependency arrives.
+every path of the closure is listed from its narinfo, its files are
+described from the cache's NAR listing of it, and reading one of them
+waits while the path's NAR downloads. The farm below takes every
+path's programs from the listings, so it is the same as with the
+whole closure downloaded.
 
 `/share/bin` is a farm of symlinks, one per program in the closure, and
 the one directory the guest keeps on PATH. What the reader selected is
