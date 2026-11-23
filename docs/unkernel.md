@@ -159,6 +159,39 @@ The kernel runs in a worker when the page is cross-origin isolated and
 on the page's thread when it is not. Unlike qemu it does not need
 isolation to run at all.
 
+## Memory
+
+The guest's memory is sized per boot ([site/js/memory.js](../site/js/memory.js)):
+
+- 2 GiB on a computer, and 512 MiB on a touch screen, which is the
+  same test that shows the phone key bar (`pointer: coarse`). Where the
+  browser reports `navigator.deviceMemory` of 4 GB or less, the guest
+  gets a quarter of it, never under 512 MiB.
+- A link can ask for a size: `mem=2048`, in MiB, one of the sizes the
+  Settings lane offers. A link carries `mem` only when it was opened
+  with one.
+- The Settings lane offers 512 MiB, 1, 2 and 4 GiB, and this browser
+  remembers the choice (`localStorage`). The link's size wins over the
+  remembered one, which wins over the default.
+- When the browser cannot allocate the size, the SDK tries 1 GiB and
+  then 512 MiB, and the Settings lane says what the guest booted with.
+
+The guest was 512 MiB before, which firefox and other large programs
+outgrow. unkernel allocates a page of the guest's memory when the
+guest first touches it, so a large guest costs the host nothing it
+does not use. Measured in headless Chromium on a laptop, 2026-11-23,
+the browser's resident memory across all its processes with the guest
+at its prompt:
+
+| selection     | 512 MiB guest    | 2 GiB guest      |
+| ------------- | ---------------- | ---------------- |
+| hello         | 1,461, 1,412 MiB | 1,428, 1,482 MiB |
+| foot, running | 1,609 MiB        | 1,604 MiB        |
+
+The difference is inside the run-to-run noise. What a large guest
+does cost is address space, which a phone may not have to give; that
+is what the smaller default and the fallbacks are for.
+
 ## Where a boot's time goes now
 
 The kernel is up 0.3 to 0.8 s after the click. Everything after that
@@ -233,7 +266,7 @@ interpreter. That is the first item on unkernel's own roadmap.
   with one author and several releases a day. The version is pinned by
   hash in [nix/vendor.nix](../nix/vendor.nix).
 
-Not tested yet: phones, Firefox and Safari, memory footprint, and how
+Not tested yet: phones, Safari, and how
 many nixpkgs binaries use an instruction the emulator does not
 implement (that would show as SIGILL).
 
