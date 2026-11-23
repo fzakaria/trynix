@@ -23,6 +23,7 @@ network at all.
 """
 
 import argparse
+import enum
 import functools
 import http.server
 import json
@@ -56,6 +57,17 @@ STATUS_PREFIX = "cputest-status="
 # of a 404 inside the page.
 MANIFEST = os.path.join("examples", "cache.json")
 CACHE_PATH = "/examples/cache"
+
+
+
+class Gpu(enum.Enum):
+    """What the browser draws WebGL with. OFF is every test that runs no
+    GL; SOFTWARE is SwiftShader, which gives a headless browser on any
+    host a WebGL2 context, for tests of the guest's GL (gui-test.py)."""
+
+    OFF = ("--disable-gpu",)
+    SOFTWARE = ("--use-angle=swiftshader", "--enable-unsafe-swiftshader")
+
 
 BOOT_LIMIT_SECONDS = 180
 PROBE_LIMIT_SECONDS = 300
@@ -103,7 +115,7 @@ class Browser:
     guest.
     """
 
-    def __init__(self, binary, profile):
+    def __init__(self, binary, profile, gpu=Gpu.OFF):
         self.profile = profile
         self.port = free_port()
         self.stderr = tempfile.NamedTemporaryFile(prefix="chromium-", suffix=".log")
@@ -117,7 +129,7 @@ class Browser:
                 "--no-first-run",
                 "--no-default-browser-check",
                 f"--user-data-dir={profile}",
-                "--disable-gpu",
+                *gpu.value,
                 "--enable-features=SharedArrayBuffer",
                 "--remote-allow-origins=*",
                 "about:blank",

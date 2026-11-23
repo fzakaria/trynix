@@ -142,6 +142,18 @@
               pkgs.chromium
             ];
 
+          # run GUI programs in the unkernel guest and check that their
+          # windows reach the page: foot, and es2gears through the GL
+          # renderer. The tools directory as a whole, since this imports
+          # cpu-test.py
+          gui-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "gui-test" "${python}/bin/python3 ${./tools}/gui-test.py" [
+              pkgs.chromium
+            ];
+
           # call the page's WebMCP tools the way an agent would, through a
           # polyfill, since no headless browser ships the API yet.
           # The tools directory as a whole, since this imports cpu-test.py
