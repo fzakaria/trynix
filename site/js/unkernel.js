@@ -38,9 +38,7 @@ import { log } from "./log.js";
 import {
   attachDesktop,
   guestSession,
-  DriverState,
   isGlDriver,
-  missingDriverNote,
   linkGlDriver,
   sessionEnv,
   speaksWayland,
@@ -248,7 +246,6 @@ export async function startUnkernel({
   // rest of the closure is still arriving, and a Mesa store path
   // becomes the guest's /run/opengl-driver once the guest is up.
   const glDrivers = [];
-  let driver = DriverState.ABSENT;
   const write = share.write.bind(share);
   share.write = (basename, entries) => {
     if (speaksWayland([basename])) {
@@ -256,7 +253,6 @@ export async function startUnkernel({
     }
     if (isGlDriver(entries)) {
       glDrivers.push(basename);
-      driver = DriverState.PRESENT;
     }
     write(basename, entries);
   };
@@ -425,9 +421,5 @@ export async function startUnkernel({
 
     // The programs a written path offers, by basename.
     programsOf: (basename) => share.programsOf(basename),
-
-    // What the page should tell the reader about the share's GUI
-    // programs, or null (gui.js, missingDriverNote).
-    guiNote: () => missingDriverNote(share.written(), driver),
   };
 }

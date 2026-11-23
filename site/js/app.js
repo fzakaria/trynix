@@ -72,6 +72,12 @@ import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
 import { binOutputOf } from "./outputs.js";
 import { log, onLog } from "./log.js";
+import {
+  chooseDriver,
+  DriverChoice,
+  driverNote,
+  publishedDrivers,
+} from "./gldriver.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -615,10 +621,34 @@ function reportSilent(vm, closure, roots) {
     `their binaries live in a separate output, and the index publishes the default one`;
 }
 
-// Say what the selection's GUI programs lack, where the engine knows
-// (unkernel.js, guiNote), unless the status names silent selections.
-function reportGui(vm) {
-  const note = vm.guiNote?.() ?? null;
+// The GL driver a closure's GL programs need, on the unkernel engine
+// (gldriver.js): the driver's own closure, walked past what `known`
+// already holds, and the choice, for reportGl. Nothing is added on the
+// qemu engine, whose guest has no GPU to drive.
+async function glDriverPaths(known, onProgress) {
+  if (ENGINE !== Engine.UNKERNEL) {
+    return { added: new Map(), result: { choice: DriverChoice.NOT_NEEDED } };
+  }
+  const basenames = [...known.values()].map(basenameOf);
+  const result = chooseDriver(basenames, await publishedDrivers());
+  if (result.choice !== DriverChoice.ADD) {
+    return { added: new Map(), result };
+  }
+
+  const digest = result.driver.storePath
+    .slice(STORE_PREFIX.length)
+    .slice(0, DIGEST_LENGTH);
+  const added = await walkRoots([digest], onProgress, known);
+  log(
+    `gl: added ${result.driver.storePath} (${added.size} paths) for GL programs`,
+  );
+  return { added, result };
+}
+
+// Say what the selection's GL programs lack (gldriver.js, driverNote),
+// unless the status names silent selections.
+function reportGl(result) {
+  const note = driverNote(result);
   if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
     return;
   }
@@ -917,6 +947,12 @@ async function boot() {
     const closure = await walkRoots(rootDigests, (n) =>
       walkRow.note(`${n} narinfos`),
     );
+    const gl = await glDriverPaths(closure, (n) =>
+      walkRow.note(`${closure.size + n} narinfos`),
+    );
+    for (const [digest, info] of gl.added) {
+      closure.set(digest, info);
+    }
     log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
     walkRow.done(`${closure.size} paths`);
     renderClosure(closure);
@@ -991,7 +1027,7 @@ async function boot() {
     const ready = vm.run(basenamesOf(closure, rootDigests));
     log("virtual machine running");
     reportSilent(vm, closure, roots);
-    reportGui(vm);
+    reportGl(gl.result);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
     addNote.hidden = false;
@@ -1058,6 +1094,12 @@ async function addToRunningVM() {
       (n) => row.note(`${n} narinfos`),
       mounted,
     );
+    const gl = await glDriverPaths(new Map([...mounted, ...fresh]), (n) =>
+      row.note(`${fresh.size + n} narinfos`),
+    );
+    for (const [digest, info] of gl.added) {
+      fresh.set(digest, info);
+    }
     if (fresh.size === 0) {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
@@ -1087,6 +1129,7 @@ async function addToRunningVM() {
     }
     await vm.add(unpacked, basenamesOf(mounted, rootDigests));
     reportSilent(vm, mounted, roots);
+    reportGl(gl.result);
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);

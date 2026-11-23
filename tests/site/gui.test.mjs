@@ -8,10 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DriverState,
   guestSession,
   isGlDriver,
-  missingDriverNote,
   sessionEnv,
   speaksWayland,
 } from "../../site/js/gui.js";
@@ -132,16 +130,4 @@ test("a relay that does not start is an error", async () => {
     session.start(),
     /the relay did not start: wlandr: not found/,
   );
-});
-
-// Checks when the page tells the reader to add Mesa: a closure with a
-// Wayland program that loads GL through libglvnd and no driver gets the
-// note; one with Mesa, or with no Wayland program, does not.
-test("a GL program with no driver gets a note naming mesa", () => {
-  const wayland = `${DIGEST}-wayland-1.24.0`;
-  const glvnd = `${DIGEST}-libglvnd-1.7.0`;
-  assert.match(missingDriverNote([wayland, glvnd], DriverState.ABSENT), /mesa/);
-  assert.equal(missingDriverNote([wayland, glvnd], DriverState.PRESENT), null);
-  assert.equal(missingDriverNote([wayland], DriverState.ABSENT), null);
-  assert.equal(missingDriverNote([glvnd], DriverState.ABSENT), null);
 });

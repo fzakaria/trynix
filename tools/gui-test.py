@@ -18,12 +18,15 @@ The cases:
 
     foot   a terminal that draws into shared memory. Also types into
            its window and checks that the keys reached the program.
-    gl     es2gears from mesa-demos, rendered by Mesa's virgl driver
-           through the page's WebGL2 (SwiftShader here, so the frame
-           rate it prints is a floor, not a measurement of a GPU).
+    gl     es2gears from mesa-demos, selected alone, so the page adds
+           the site's GL driver itself (site/js/gldriver.js), rendered
+           by Mesa's virgl driver through the page's WebGL2
+           (SwiftShader by default, so the frame rate it prints is a
+           floor, not a measurement of a GPU).
 
 A boot needs the network: the closures come from cache.nixos.org, and
-the gl case's is 400 MB.
+the driver from the site's own cache (gl/), which a site with no
+published driver lacks; the gl case fails there.
 """
 
 import argparse
@@ -89,11 +92,12 @@ KEY_CODES = {
     "\r": "Enter",
 }
 
-# The gl case: es2gears, and Mesa for the driver. es2gears prints its
-# frame rate every five seconds, as "<n> frames in 5.0 seconds = <fps>
-# FPS"; two such lines are waited for, since the first includes the
-# renderer's load.
-GL_PACKAGES = ["mesa-demos", "mesa"]
+# The gl case: es2gears alone; the page adds the driver, and says so in
+# its log. es2gears prints its frame rate every five seconds, as "<n>
+# frames in 5.0 seconds = <fps> FPS"; two such lines are waited for,
+# since the first includes the renderer's load.
+GL_PACKAGES = ["mesa-demos"]
+DRIVER_ADDED = re.compile(r"gl: added (/nix/store/\S+-mesa-virgl-\S+)")
 GL_COMMAND = "es2gears_wayland &\n"
 FPS_LINE = re.compile(r"frames in [\d.]+ seconds = ([\d.]+) FPS")
 FPS_LINES = 2
@@ -252,6 +256,12 @@ def run_gl(browser, base, screenshots):
     print("gl")
     seconds = boot(browser, base, GL_PACKAGES)
     print(f"  shell after {seconds:.1f} s")
+    added = DRIVER_ADDED.search(
+        browser.evaluate("document.getElementById('debug-log').textContent")
+    )
+    if added is None:
+        raise SystemExit("FAIL the page added no GL driver for es2gears")
+    print(f"  driver added: {added.group(1)}")
 
     mark = len(browser.transcript())
     browser.type(GL_COMMAND)
