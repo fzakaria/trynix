@@ -1,0 +1,28 @@
+Subject: [PATCH] Answer a failed fetch with a network error
+
+When the worker's own fetch fails (offline, a script an ad blocker
+refuses, a navigation the reader cut short), upstream logs the error
+and resolves respondWith with undefined. The browser then throws
+"Failed to convert value to 'Response'", uncaught, so one failed
+request is two red lines in the console, neither of which says much.
+
+Response.error() is the network error the page would have seen with
+no worker in between, and nothing is thrown.
+
+---
+--- a/coi-serviceworker.js
++++ b/coi-serviceworker.js
+@@ -65,7 +65,12 @@
+                         headers: newHeaders,
+                     });
+                 })
+-                .catch((e) => console.error(e))
++                // A fetch that fails (offline, a blocked script, a
++                // navigation cut short) is a network error for the page,
++                // as it would be with no worker. Logging it and answering
++                // undefined made it two console errors, the second an
++                // uncaught "Failed to convert value to 'Response'".
++                .catch(() => Response.error())
+         );
+     });
+ 

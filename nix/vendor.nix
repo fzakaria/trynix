@@ -95,7 +95,8 @@ pkgs.runCommand "trynix-js-vendor" { } ''
 
   # The readable build, patched: patches/coi-serviceworker/ keeps the
   # worker from intercepting the engine's own .wasm, so the browser's
-  # compiled-code cache works for returning visitors.
+  # compiled-code cache works for returning visitors, and answers a
+  # failed fetch with a network error instead of an uncaught TypeError.
   tar -xzf ${coi} -C unpack
   cp unpack/package/coi-serviceworker.js $out/coi-serviceworker.js
   for patch in ${../patches/coi-serviceworker}/*.patch; do
