@@ -45,6 +45,15 @@ const SHELL = "/bin/sh";
 // without the page typing anything.
 const MANIFEST_FILE = `${SHARE_DIR}/manifest`;
 
+// Set only for the shell on the page's terminal, which is the one shell
+// that takes the page's handshake (see HANDSHAKE). Every other
+// interactive shell inherits ENV and sources the manifest too: one
+// typed at the prompt, or the shell a terminal emulator such as foot
+// starts in its window. Those must not stop to read a line nobody
+// sends, so the manifest clears this before anything else can inherit
+// it.
+const HANDSHAKE_VARIABLE = "TRYNIX_HANDSHAKE";
+
 // What the shell prints once the manifest is sourced: the same line the
 // qemu guest's init prints, so the harnesses in tools/ wait for one
 // thing whichever engine they are pointed at.
@@ -118,9 +127,13 @@ function manifest() {
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
-    `echo "${MOUNTED_MARKER}"`,
-    // Wait for the page's handshake (see HANDSHAKE).
-    "read -r _handshake",
+    // Wait for the page's handshake (see HANDSHAKE), on the page's
+    // shell alone (see HANDSHAKE_VARIABLE).
+    `if [ -n "$${HANDSHAKE_VARIABLE}" ]; then`,
+    `  unset ${HANDSHAKE_VARIABLE}`,
+    `  echo "${MOUNTED_MARKER}"`,
+    "  read -r _handshake",
+    "fi",
     "",
   ].join("\n");
 }
@@ -233,7 +246,7 @@ export async function startUnkernel({
       const shell = await kernel.spawn(SHELL, [], {
         cols: ui.terminal.cols,
         rows: ui.terminal.rows,
-        env: { ENV: MANIFEST_FILE },
+        env: { ENV: MANIFEST_FILE, [HANDSHAKE_VARIABLE]: "1" },
       });
       port.connect(shell);
       await pump(shell, port, console_);
