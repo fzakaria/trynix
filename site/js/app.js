@@ -1267,7 +1267,7 @@ async function boot() {
       : qemuEngine(panel, telemetry);
   const closureRow = panel.row(lazily ? "selected packages" : "closure");
   const vmRow = panel.row("virtual machine");
-  const firstUseRow = lazily ? panel.row("closure, on first use") : null;
+  const firstUseRow = lazily ? panel.row("on first use") : null;
 
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
@@ -1535,7 +1535,7 @@ async function addLazily({
   const eager = [...eagerOf([...fresh.values()], rootDigests), ...waiting];
   served.show({
     selected: row,
-    closure: panel.row("closure, on first use"),
+    closure: panel.row("on first use"),
     eager,
     loadTelemetry: telemetry,
   });
