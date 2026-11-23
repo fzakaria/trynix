@@ -16,8 +16,25 @@
 { pkgs }:
 let
   inherit (pkgs) lib;
+
+  # libdrm without its Intel support, which links libpciaccess, which
+  # carries hwdata's PCI id tables (10 MB, 2.3 MB compressed). The
+  # guest's GPU is virtio-gpu, which has no PCI ids to look up.
+  libdrm = pkgs.libdrm.override { withIntel = false; };
+
+  # libgbm against that libdrm. nixpkgs' libgbm also propagates libdrm
+  # to whatever builds against it, which puts libdrm's dev and bin
+  # outputs in the runtime closure of anything that links it; Mesa
+  # names libdrm itself, so the propagation file is dropped.
+  libgbm = (pkgs.libgbm.override { inherit libdrm; }).overrideAttrs {
+    postFixup = ''
+      rm $out/nix-support/propagated-build-inputs
+      rmdir --ignore-fail-on-non-empty $out/nix-support
+    '';
+  };
 in
 (pkgs.mesa.override {
+  inherit libdrm libgbm;
   galliumDrivers = [ "virgl" ];
   vulkanDrivers = [ ];
   vulkanLayers = [ ];
@@ -130,9 +147,14 @@ in
     '';
 
     # No LLVM and no python in the closure, which are what made the
-    # stock Mesa's large; checked when the package is built.
+    # stock Mesa's large, and none of what the libdrm and libgbm above
+    # leave out; checked when the package is built.
     disallowedRequisites = [
       pkgs.llvmPackages.libllvm.lib
       pkgs.python3
+      pkgs.hwdata
+      pkgs.libpciaccess
+      (lib.getDev libdrm)
+      (lib.getBin libdrm)
     ];
   })
