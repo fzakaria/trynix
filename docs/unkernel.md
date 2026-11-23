@@ -72,6 +72,40 @@ NUMA node with boost off (node 7 as of 2026-11-20:
 and do it again whenever the version in
 [nix/vendor.nix](../nix/vendor.nix) changes.
 
+### 0.2.0-261119-040e142 to 0.2.0-261123-8f039c5
+
+Measured on a laptop (Ryzen 7 7840U, headless Chromium 152) on
+2026-11-23, not on leviathan, so the history has no record of it yet.
+`exec-bench` on the unkernel engine, eight runs per version with the
+two versions interleaved, page seconds, median (min to max):
+
+| package    | cold, before        | cold, after         | warm, before        | warm, after         |
+| ---------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| `hello`    | 0.086 (0.077-0.331) | 0.085 (0.075-0.125) | 0.054 (0.045-0.239) | 0.053 (0.045-0.072) |
+| `rg`       | 0.034 (0.033-0.165) | 0.040 (0.037-0.071) | 0.018 (0.013-0.071) | 0.017 (0.011-0.024) |
+| `jj`       | 0.130 (0.111-0.476) | 0.138 (0.129-0.148) | 0.102 (0.091-0.459) | 0.103 (0.091-0.122) |
+| `python3`  | 0.569 (0.538-0.686) | 0.547 (0.520-0.649) | 0.494 (0.470-0.598) | 0.471 (0.439-0.544) |
+| `opencode` | 24.6 (23.1-49.0)    | 24.9 (22.4-27.6)    | 24.2 (22.6-32.7)    | 25.0 (22.0-47.9)    |
+
+opencode takes 9% less browser CPU (39.3 s against 35.7 s cold). Both
+versions sometimes take twice as long on it, 48 s instead of 24 s, cold
+or warm. The kernel reaches its first program sooner: 197 ms against
+306 ms under Node, inline, from `createKernel` to the end of the first
+exec. In the page that gain is lost in the closure download, which
+dominates the boot column (hello 2.35 s against 2.59 s, with a spread
+of two seconds on either side).
+
+The slower cold `rg` and `jj` are a regression in worker mode. The new
+release puts vsock packets for the guest on the shared transport's ring
+(unkernel 57249c5), and 9p rides vsock, so every read of the share goes
+that way. With the page's prefetch turned off, the first `jj --version`
+takes 188 ms against 170 ms before, and `rg --version` 54 ms against
+42 ms. Passing `shared: false` to `createKernel` gives 176 ms and 42 ms.
+Under Node the same split holds: inline is unchanged, worker mode is
+16 ms slower on `jj`, and worker mode without the shared transport is
+not. The prefetch in [site/js/unkernel.js](../site/js/unkernel.js)
+hides most of the regression, which leaves the 6 to 8 ms in the table.
+
 ## Running x86_64 programs on unkernel
 
 Not possible today. unkernel's emulator has one front end, for A64, and
