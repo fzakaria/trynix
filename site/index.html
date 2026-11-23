@@ -229,6 +229,17 @@
           <p id="guest-status" class="muted" hidden></p>
         </fieldset>
 
+        <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
+             always there and cost nothing until used, and the GL driver's
+             opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->
+        <h3>GUI programs</h3>
+        <p class="muted">
+          On the aarch64 guest a Wayland program opens a window under the terminal: type its name at
+          the shell. A GL program gets the site's GL driver, Mesa with only the virgl driver, which
+          draws through your browser's WebGL2. To use another, select a <code>mesa</code> with the
+          program and the page adds none of its own.
+        </p>
+
         <h3>Binary caches</h3>
         <p class="muted">
           Extra binary caches, one per line, as a URL and its public key. They go into this page's
