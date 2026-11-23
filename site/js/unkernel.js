@@ -33,7 +33,6 @@ import { Precedence } from "./store.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { consoleRecorder, pause } from "./console.js";
-import { UNKERNEL_MEMORY_MIB } from "./config.js";
 import { log } from "./log.js";
 import {
   attachDesktop,
@@ -219,7 +218,9 @@ async function pump(shell, port, console_) {
 
 // engine: { main, kernel, gl }, the versioned URLs of the SDK's
 // browser entry, of the kernel and of the GL renderer's module.
-// desktopElement is where GUI programs' windows go (gui.js).
+// desktopElement is where GUI programs' windows go (gui.js). memory is
+// { mib, fallbacks }: the size to ask for, and the smaller sizes to try
+// if the browser cannot allocate it (memory.js).
 //
 // Resolves once the kernel is running and the share is writable. The
 // share is page-side memory, so the closure streams into the share
@@ -228,6 +229,7 @@ export async function startUnkernel({
   terminalElement,
   keyBarElement,
   desktopElement,
+  memory,
   engine,
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
@@ -271,12 +273,18 @@ export async function startUnkernel({
   // relay's first dial.
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
-    memoryMiB: UNKERNEL_MEMORY_MIB,
+    memoryMiB: memory.mib,
+    memoryFallbackMiB: memory.fallbacks,
     worker: globalThis.crossOriginIsolated === true,
     shm: true,
     gpu: true,
     gl: { module: new URL(engine.gl, location.href).href },
   });
+  if (kernel.memoryMiB !== memory.mib) {
+    log(
+      `unkernel: ${memory.mib} MiB could not be allocated; booted with ${kernel.memoryMiB} MiB`,
+    );
+  }
   kernel.exited.then(({ kind, reason }) =>
     log(`unkernel exited: ${kind}${reason ? ` (${reason})` : ""}`),
   );
@@ -418,6 +426,10 @@ export async function startUnkernel({
         ),
       ]);
     },
+
+    // The memory the guest booted with, in MiB: the size asked for, or
+    // a fallback when the browser could not allocate it.
+    memoryMiB: kernel.memoryMiB,
 
     // The programs a written path offers, by basename.
     programsOf: (basename) => share.programsOf(basename),

@@ -40,3 +40,29 @@ test("the engine is written beside a store path", () => {
     `/?path=${encodeURIComponent(STORE_PATH)}&engine=unkernel&boot=1`,
   );
 });
+
+// Checks that a link can ask for the guest's memory, in MiB, and that
+// a link that does not, or asks for something that is not a number,
+// says so.
+test("the guest's memory is read from the link", () => {
+  at("?pkg=firefox&mem=2048");
+  assert.equal(readUrl().memory, 2048);
+
+  at("?pkg=hello");
+  assert.equal(readUrl().memory, null);
+
+  at("?pkg=hello&mem=lots");
+  assert.equal(readUrl().memory, null);
+});
+
+// Checks that the memory is written only when the caller passes it,
+// after the engine and ahead of boot=1.
+test("the guest's memory is written only when one is given", () => {
+  at("");
+  const state = { pkgs: [{ attr: "firefox", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=firefox");
+  assert.equal(
+    writeUrl(state, { engine: "unkernel", memory: 2048, boot: true }),
+    "/?pkg=firefox&engine=unkernel&mem=2048&boot=1",
+  );
+});

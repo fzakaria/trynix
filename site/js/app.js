@@ -73,6 +73,15 @@ import { buildReport } from "./report.js";
 import { binOutputOf } from "./outputs.js";
 import { log, onLog } from "./log.js";
 import {
+  fallbacksBelow,
+  MEMORY_SIZES_MIB,
+  memoryLabel,
+  pickMemory,
+  rememberedMemory,
+  rememberMemory,
+  thisDevice,
+} from "./memory.js";
+import {
   chooseDriver,
   DriverChoice,
   driverNote,
@@ -103,6 +112,8 @@ const debugLog = document.getElementById("debug-log");
 const addNote = document.getElementById("add-note");
 const guestChoice = document.getElementById("guest");
 const guestStatus = document.getElementById("guest-status");
+const memorySizes = document.getElementById("memory-sizes");
+const memoryStatus = document.getElementById("memory-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -244,10 +255,28 @@ function linkEngine(state) {
   return ENGINE_NAMED && ENGINE !== DEFAULT_ENGINE ? ENGINE : null;
 }
 
+// The memory size the page's link names (url.js, `mem`), or null. A
+// link carries a size only when it was opened with one: a size chosen
+// in Settings is this browser's, and stays out of links it shares.
+let linkedMemory = readUrl().memory;
+
+// The unkernel guest's memory for the next boot (memory.js): the link's
+// size, then this browser's choice in Settings, then the device's
+// default.
+let memory = pickMemory({
+  linked: linkedMemory,
+  remembered: rememberedMemory(),
+  device: thisDevice(),
+});
+
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
   const state = urlState();
-  return writeUrl(state, { boot, engine: linkEngine(state) });
+  return writeUrl(state, {
+    boot,
+    engine: linkEngine(state),
+    memory: linkedMemory,
+  });
 }
 
 // What the page has to say about the selection beyond the chips: a
@@ -387,6 +416,36 @@ function wireGuestChoice() {
   });
 }
 wireGuestChoice();
+
+// The memory choice under Settings: one radio per size memory.js offers,
+// the size the next boot will ask for checked. A choice is remembered by
+// this browser, and replaces the link's size when the link named one.
+function wireMemoryChoice() {
+  for (const mib of MEMORY_SIZES_MIB) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "memory";
+    input.value = String(mib);
+    input.checked = mib === memory.mib;
+    label.append(input, ` ${memoryLabel(mib)}`);
+    memorySizes.append(label);
+  }
+
+  memorySizes.addEventListener("change", (event) => {
+    const mib = Number(event.target.value);
+    memory = { mib, why: "chosen in Settings" };
+    rememberMemory(mib);
+    if (linkedMemory !== null) {
+      linkedMemory = mib;
+      history.replaceState(null, "", link());
+    }
+    memoryStatus.textContent = vmStarted
+      ? `${memoryLabel(mib)} from the next boot; this guest keeps what it booted with`
+      : "";
+  });
+}
+wireMemoryChoice();
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {
@@ -851,10 +910,12 @@ function unkernelEngine(panel) {
       verb: "booting",
     });
     consoleTty.textContent = "pts/0";
+    log(`unkernel memory: ${memory.mib} MiB (${memory.why})`);
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
       desktopElement,
+      memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
@@ -862,6 +923,10 @@ function unkernelEngine(panel) {
       },
     });
     log("unkernel booted");
+    memoryStatus.textContent =
+      vm.memoryMiB === memory.mib
+        ? `This guest booted with ${memoryLabel(vm.memoryMiB)}.`
+        : `This guest booted with ${memoryLabel(vm.memoryMiB)}: the browser could not set aside ${memoryLabel(memory.mib)}.`;
     return vm;
   };
 }

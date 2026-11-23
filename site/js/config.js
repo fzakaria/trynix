@@ -92,12 +92,6 @@ export const SNAPSHOT_URL = "qemu/vm.state";
 export const UNKERNEL_MAIN = "vendor/unkernel/web.mjs";
 export const UNKERNEL_KERNEL = "vendor/unkernel/unkernel.wasm";
 
-// The unkernel guest's memory, the same 512 MiB the qemu guest gets
-// (nix/guest/machine.json). unkernel allocates the memory as the guest
-// touches pages rather than up front, so a phone is asked for what the
-// guest uses and not for the whole of it.
-export const UNKERNEL_MEMORY_MIB = 512;
-
 // Guest GL's renderer, virglrenderer compiled to wasm (nix/vendor.nix).
 // The SDK fetches it on the guest's first GL use and never before.
 export const UNKERNEL_GL = "vendor/unkernel/virgl.mjs";

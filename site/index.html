@@ -266,6 +266,20 @@
           <p id="guest-status" class="muted" hidden></p>
         </fieldset>
 
+        <!-- The aarch64 guest's memory (site/js/memory.js). The radios are
+             written by app.js from MEMORY_SIZES_MIB; a choice is remembered
+             by this browser and used at the next boot. -->
+        <fieldset id="memory">
+          <legend>Guest memory</legend>
+          <div id="memory-sizes"></div>
+          <p class="muted">
+            For the aarch64 guest. It takes memory only as programs use it, so a large guest costs
+            nothing until something fills it; a browser that cannot set the size aside gets a smaller
+            one. A link can ask for a size with <code>mem=</code>.
+          </p>
+          <p id="memory-status" class="muted"></p>
+        </fieldset>
+
         <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
              always there and cost nothing until used, and the GL driver's
              opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->
