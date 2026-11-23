@@ -19,7 +19,7 @@ import {
 } from "./analytics.js";
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
-import { lazyStore, Priority } from "./lazy.js";
+import { lazyStore, Priority, References } from "./lazy.js";
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
 import {
@@ -932,13 +932,14 @@ function eagerOf(infos, rootDigests) {
 }
 
 // Fetch the eager paths through the store. A selected path is touched,
-// which starts its references in the background as well, since the
-// reader is about to run it; a driver waits until a GL program asks.
+// which starts all its references in the background as well, since the
+// reader is about to run it; a driver's wait until a GL program loads
+// the driver.
 function fetchEager(store, eager, rootDigests) {
   return Promise.all(
     eager.map((info) =>
       rootDigests.includes(digestOfInfo(info))
-        ? store.touch(basenameOf(info))
+        ? store.touch(basenameOf(info), References.ALL)
         : store.ensure(basenameOf(info), Priority.DEMAND),
     ),
   );

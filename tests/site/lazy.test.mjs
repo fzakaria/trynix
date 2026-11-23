@@ -9,8 +9,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { lazyFs, lazyStore, Priority } from "../../site/js/lazy.js";
+import {
+  lazyFs,
+  lazyStore,
+  PREFETCH_LIMIT_BYTES,
+  Priority,
+  References,
+} from "../../site/js/lazy.js";
 import { logLines } from "../../site/js/log.js";
+import { elf } from "./elf-builder.mjs";
 
 const STORE = "/nix/store";
 
@@ -155,6 +162,28 @@ test("a touched path's references are fetched, one level deep", async () => {
   assert.deepEqual(started, ["c-sol", "d-guile", "e-gtk", "f-gcc"]);
 });
 
+// Checks that a touched path's large references are left for the guest
+// to ask for, since a large reference is as often a compiler a library
+// was built with as something it opens; a selected package's are all
+// fetched, since the reader is about to run it.
+test("a touched path's large references wait, unless it was selected", async () => {
+  const { store, started } = controlled();
+  const large = PREFETCH_LIMIT_BYTES + 1;
+  store.add([
+    info("p-guile", ["q-gcc", "r-gmp"]),
+    info("q-gcc", [], large),
+    info("r-gmp"),
+    info("s-sol", ["t-gtk"]),
+    info("t-gtk", [], large),
+  ]);
+
+  store.touch("p-guile");
+  assert.deepEqual(started, ["p-guile", "r-gmp"]);
+
+  store.touch("s-sol", References.ALL);
+  assert.deepEqual(started, ["p-guile", "r-gmp", "s-sol", "t-gtk"]);
+});
+
 // Checks the bound: background fetches wait for room, and a lookup
 // the guest is waiting on starts at once, ahead of them, even when the
 // bound is reached. A lookup of a path still queued for the background
@@ -227,7 +256,10 @@ function fakeShare() {
 
   return {
     nodes,
-    getattr: (path) => ({ type: node(path).type }),
+    getattr: (path) => ({
+      type: node(path).type,
+      size: node(path).data?.length,
+    }),
     readdir(path) {
       node(path);
       const prefix = path === "/" ? "/" : `${path}/`;
@@ -237,7 +269,10 @@ function fakeShare() {
         .filter((name) => !name.includes("/"))
         .map((name) => ({ name, type: nodes.get(prefix + name).type }));
     },
-    open: (path) => ({ read: () => node(path).data }),
+    open: (path) => ({
+      read: (offset, length) =>
+        node(path).data.subarray(offset, offset + length),
+    }),
     readlink: (path) => node(path).target,
     statfs: () => ({ bsize: 4096 }),
   };
@@ -310,11 +345,14 @@ test("a lookup inside a path waits for its download", async () => {
   assert.deepEqual(started, [LIBC]);
 
   await finish(LIBC);
-  assert.deepEqual(await lookup, { type: "file" });
+  assert.deepEqual(await lookup, { type: "file", size: 1 });
   assert.deepEqual((await opened).read(0, 1), new Uint8Array([7]));
 
   // Written, the path is answered without waiting for anything.
-  assert.deepEqual(fs.getattr(`${STORE}/${LIBC}`), { type: "dir" });
+  assert.deepEqual(fs.getattr(`${STORE}/${LIBC}`), {
+    type: "dir",
+    size: undefined,
+  });
 });
 
 // Checks that a path whose download fails answers the guest EIO, and
@@ -336,17 +374,44 @@ test("a failed download answers EIO, and the next lookup retries", async () => {
   const again = fs.getattr(`${STORE}/${LIBC}/lib`);
   assert.deepEqual(started, [LIBC, LIBC]);
   await finish(LIBC);
-  assert.deepEqual(await again, { type: "dir" });
+  assert.deepEqual(await again, { type: "dir", size: undefined });
 });
 
 // Checks that what is not a path of the closure goes straight to the
 // share: the share's own files, and a store name nothing listed.
 test("paths outside the closure go straight to the share", async () => {
   const { fs, started } = servedLazily([info(LIBC)], {});
-  assert.deepEqual(fs.getattr("/nix"), { type: "dir" });
+  assert.deepEqual(fs.getattr("/nix"), { type: "dir", size: undefined });
   assert.throws(
     () => fs.getattr(`${STORE}/o-elsewhere`),
     (err) => err.code === "ENOENT",
   );
   assert.deepEqual(started, []);
+});
+
+// Checks that opening a program starts the store paths its loader will
+// open, all at once and ahead of the guest asking: its interpreter and
+// its RUNPATH, including one too large to fetch as a mere reference.
+// The program's own path is not fetched again.
+test("opening a program fetches what its loader will open", async () => {
+  const program = "u-sol";
+  const binary = elf({
+    interp: `${STORE}/${LIBC}/lib/ld-linux-aarch64.so.1`,
+    searchPath: `${STORE}/v-gtk/lib:${STORE}/${program}/lib`,
+  });
+  const { fs, started, finish } = servedLazily(
+    [info(program), info(LIBC), info("v-gtk", [], PREFETCH_LIMIT_BYTES + 1)],
+    {
+      [program]: {
+        [`${STORE}/${program}`]: { type: "dir" },
+        [`${STORE}/${program}/bin`]: { type: "dir" },
+        [`${STORE}/${program}/bin/sol`]: { type: "file", data: binary },
+      },
+    },
+  );
+
+  const opened = fs.open(`${STORE}/${program}/bin/sol`, { read: true });
+  await finish(program);
+  await opened;
+  assert.deepEqual(started, [program, LIBC, "v-gtk"]);
 });

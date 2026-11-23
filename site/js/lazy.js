@@ -23,12 +23,23 @@
 // A program's first run makes its lookups one after another: the
 // dynamic linker opens a library, reads which ones that library needs,
 // and opens those next. Each first touch would be a round trip to the
-// cache. So when the guest touches a path, the store also starts
-// fetching what that path references, in the background, before the
-// guest asks. Only one level: the references of a reference wait until
-// the guest touches the reference, or the whole closure would download
-// the moment anything was touched.
+// cache. Two things start paths before the guest asks for them:
+//
+//   When the guest opens a file, the store paths its ELF headers name
+//   for the dynamic loader (elf.js) are fetched at once: they are what
+//   the loader opens next.
+//
+//   When the guest first touches a path, the paths its narinfo
+//   references are fetched in the background, which covers what no ELF
+//   header names: icon themes, schemas, fonts. Only one level, or the
+//   whole closure would download the moment anything was touched; and
+//   only the small ones, because the large references of a library are
+//   as often what it was built with as what it opens. guile's include
+//   gcc (82 MiB), and solitaire's first frame waited behind it. A
+//   selected package's references are all fetched, since the reader is
+//   about to run it.
 
+import { loaderStorePaths } from "./elf.js";
 import { log } from "./log.js";
 
 // How urgently a path is wanted.
@@ -38,6 +49,21 @@ export const Priority = Object.freeze({
   // The guest will probably want it soon: start when there is room.
   PREFETCH: "prefetch",
 });
+
+// Which of a touched path's references are fetched in the background.
+export const References = Object.freeze({
+  // Every one: a selected package's, which the reader is about to run.
+  ALL: "all",
+  // Those no larger than PREFETCH_LIMIT_BYTES.
+  SMALL: "small",
+});
+
+// The largest reference, in compressed bytes, fetched in the background
+// for a touched path that was not selected. Libraries a program loads
+// are fetched through its ELF headers whatever their size; what is
+// left is mostly data, and a theme or a schema is far smaller than
+// this, while the compilers and runtimes nobody opens are far larger.
+export const PREFETCH_LIMIT_BYTES = 2 * 1024 * 1024;
 
 // The errno a lookup gets when its path could not be fetched: an I/O
 // error, which is what the path is, and which the guest does not cache
@@ -184,15 +210,22 @@ export function lazyStore({ fetch, write, concurrency }) {
     },
 
     // The guest looked at the path: fetch it now, and, the first time,
-    // its references in the background.
-    touch(basename) {
+    // its references in the background, all of them or the small ones.
+    touch(basename, references = References.SMALL) {
       const arrived = store.ensure(basename, Priority.DEMAND);
       if (touched.has(basename) || !paths.has(basename)) {
         return arrived;
       }
       touched.add(basename);
       for (const reference of paths.get(basename).info.references) {
-        if (reference === basename) {
+        const wanted = paths.get(reference);
+        if (reference === basename || wanted === undefined) {
+          continue;
+        }
+        if (
+          references === References.SMALL &&
+          wanted.info.fileSize > PREFETCH_LIMIT_BYTES
+        ) {
           continue;
         }
         store.ensure(reference, Priority.PREFETCH).catch(() => {});
@@ -247,6 +280,9 @@ function errno(code, message) {
 export function lazyFs(fs, store, storeDir) {
   const prefix = `${storeDir}/`;
 
+  // Files already read for what their loading opens, by path.
+  const inspected = new Set();
+
   // The closure path `path` is or is inside, by basename; null for a
   // path outside the store, or a name the closure does not hold.
   function closurePathOf(path) {
@@ -276,6 +312,25 @@ export function lazyFs(fs, store, storeDir) {
     });
   }
 
+  // Start what the dynamic loader will open for a file of the closure
+  // path `basename` the guest has just opened (elf.js), once per file.
+  // These are needed within milliseconds, so they start at once.
+  function expectLoads(path, basename, file) {
+    if (inspected.has(path)) {
+      return;
+    }
+    inspected.add(path);
+    const bytes = file.read(0, fs.getattr(path).size ?? 0);
+    if (!(bytes instanceof Uint8Array)) {
+      return;
+    }
+    for (const needed of loaderStorePaths(bytes)) {
+      if (needed !== basename) {
+        store.ensure(needed, Priority.DEMAND).catch(() => {});
+      }
+    }
+  }
+
   return {
     getattr: (path) => after(path, () => fs.getattr(path)),
 
@@ -294,7 +349,15 @@ export function lazyFs(fs, store, storeDir) {
       return [...listed, ...unfetched];
     },
 
-    open: (path, flags) => after(path, () => fs.open(path, flags)),
+    open: (path, flags) =>
+      after(path, () => {
+        const file = fs.open(path, flags);
+        const basename = closurePathOf(path);
+        if (basename !== null) {
+          expectLoads(path, basename, file);
+        }
+        return file;
+      }),
     readlink: (path) => after(path, () => fs.readlink(path)),
     statfs: () => fs.statfs(),
   };
