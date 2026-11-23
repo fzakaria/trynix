@@ -102,6 +102,11 @@ FPS_LIMIT_SECONDS = 60
 
 CASES = ["foot", "gl"]
 
+# --gpu's choices, and the browser's WebGL for each.
+GPU_SOFTWARE = "software"
+GPU_HARDWARE = "hardware"
+GPUS = {GPU_SOFTWARE: cpu.Gpu.SOFTWARE, GPU_HARDWARE: cpu.Gpu.HARDWARE}
+
 
 def page_url(base, packages):
     """The link that boots `packages` on unkernel without a click."""
@@ -271,7 +276,10 @@ def run_gl(browser, base, screenshots):
     # renderer by GPU resource (images) rather than reading pixels back.
     # A Mesa that fell back to llvmpipe submits nothing.
     status = browser.evaluate("window.trynix.kernel.gl?.status")
-    print(f"  page renderer: {status['what']}; {status['webgl']}")
+    print(
+        f"  page renderer, loaded in {status['loadMs'] / 1000:.2f} s:"
+        f" {status['what']}; {status['webgl']}"
+    )
     if status["state"] != "ready":
         raise SystemExit(f"FAIL the GL renderer is {status['state']}: {status['error']}")
     stats = browser.evaluate("JSON.parse(JSON.stringify(window.trynix.kernel.gl.stats))")
@@ -293,6 +301,12 @@ def main():
     parser.add_argument("--browser", default=os.environ.get("TRYNIX_BROWSER", "chromium"))
     parser.add_argument("--case", action="append", choices=CASES)
     parser.add_argument("--screenshots", help="a directory to save the windows in")
+    parser.add_argument(
+        "--gpu",
+        choices=[GPU_SOFTWARE, GPU_HARDWARE],
+        default=GPU_SOFTWARE,
+        help="draw WebGL with SwiftShader (the default, any host) or the host's GPU",
+    )
     args = parser.parse_args()
     if (args.site is None) == (args.url is None):
         parser.error("pass one of --site or --url")
@@ -304,7 +318,7 @@ def main():
     try:
         for case in args.case or CASES:
             browser = cpu.Browser(
-                args.browser, os.path.join(workdir, case), gpu=cpu.Gpu.SOFTWARE
+                args.browser, os.path.join(workdir, case), gpu=GPUS[args.gpu]
             )
             try:
                 RUNNERS[case](browser, base, args.screenshots)

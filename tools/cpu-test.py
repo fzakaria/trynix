@@ -63,10 +63,13 @@ CACHE_PATH = "/examples/cache"
 class Gpu(enum.Enum):
     """What the browser draws WebGL with. OFF is every test that runs no
     GL; SOFTWARE is SwiftShader, which gives a headless browser on any
-    host a WebGL2 context, for tests of the guest's GL (gui-test.py)."""
+    host a WebGL2 context, for tests of the guest's GL (gui-test.py);
+    HARDWARE is the host's GPU through its OpenGL driver, for measuring
+    the guest's GL where the host has one."""
 
     OFF = ("--disable-gpu",)
     SOFTWARE = ("--use-angle=swiftshader", "--enable-unsafe-swiftshader")
+    HARDWARE = ("--use-angle=gl", "--ignore-gpu-blocklist")
 
 
 BOOT_LIMIT_SECONDS = 180
