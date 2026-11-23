@@ -5525,6 +5525,352 @@
         }
       },
       "notes": "Pinned to CPUs 120-123 on NUMA node 7, the one node of this host where turbo boost is off (a busy core read 2419 MHz), with memory from node 5 because node 7 has none. The host's kernel began boosting busy cores to 3.5 GHz after the September records were taken; with boost off, the qemu engine measured beside unkernel in this run read within 5% of its own September record on every package."
+    },
+    {
+      "engine": "unkernel",
+      "tag": "unkernel-0.2.0-261123-8f039c5",
+      "unkernel_version": "0.2.0-261123-8f039c5",
+      "subject": "unkernel 0.2.0-261123-8f039c5",
+      "date": "2026-11-23T20:17:28+00:00",
+      "measured": "2026-11-23T20:17:28+00:00",
+      "runner": {
+        "host": "leviathan",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
+        "cores": 256,
+        "memory_gib": 251,
+        "kernel": "6.18.63",
+        "browser": "Chromium 152.0.7977.75",
+        "cpu_affinity": [
+          120,
+          121,
+          122,
+          123
+        ],
+        "clock_mhz": 2420,
+        "memory_node": 5
+      },
+      "exec": {
+        "results": [
+          {
+            "name": "hello",
+            "spec": "pkg=hello",
+            "command": "hello",
+            "shell_seconds": 2.5,
+            "resolved": "/nix/store/hwrycgha80xa6n743pfqa3s1wn4bakx7-hello-2.12.3",
+            "cold": {
+              "page_seconds": 0.163,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.15,
+                "user": 0.08,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.37,
+              "browser_peak_rss_bytes": 1430675456
+            },
+            "warm": {
+              "page_seconds": 0.101,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.09,
+                "user": 0.07,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.25,
+              "browser_peak_rss_bytes": 1430962176
+            }
+          },
+          {
+            "name": "ripgrep",
+            "spec": "pkg=ripgrep",
+            "command": "rg --version",
+            "shell_seconds": 2.44,
+            "resolved": "/nix/store/76bbldfx3g88jxaqjakksgc5mvl1c3kb-ripgrep-15.2.0",
+            "cold": {
+              "page_seconds": 0.07,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.06,
+                "user": 0.02,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.16,
+              "browser_peak_rss_bytes": 1424084992
+            },
+            "warm": {
+              "page_seconds": 0.037,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.03,
+                "user": 0.01,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.11,
+              "browser_peak_rss_bytes": 1424252928
+            }
+          },
+          {
+            "name": "jujutsu",
+            "spec": "pkg=jujutsu",
+            "command": "jj --version",
+            "shell_seconds": 2.74,
+            "resolved": "/nix/store/v4071wr5pzxywwajjz280c8rdwcv7792-jujutsu-0.47.1",
+            "cold": {
+              "page_seconds": 0.253,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.24,
+                "user": 0.2,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.51,
+              "browser_peak_rss_bytes": 1500938240
+            },
+            "warm": {
+              "page_seconds": 0.192,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.18,
+                "user": 0.17,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.37,
+              "browser_peak_rss_bytes": 1487941632
+            }
+          },
+          {
+            "name": "python",
+            "spec": "pkg=python3",
+            "command": "python3 -c 'print(1)'",
+            "shell_seconds": 4.47,
+            "resolved": "/nix/store/9zyabiswyisqky2gd1d3z1ig5rm7dd94-python3-3.14.10",
+            "cold": {
+              "page_seconds": 1.062,
+              "wall_seconds": 1.06,
+              "status": 0,
+              "guest": {
+                "real": 1.05,
+                "user": 0.87,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 2.06,
+              "browser_peak_rss_bytes": 1713430528
+            },
+            "warm": {
+              "page_seconds": 0.941,
+              "wall_seconds": 1.06,
+              "status": 0,
+              "guest": {
+                "real": 0.93,
+                "user": 0.84,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 1.85,
+              "browser_peak_rss_bytes": 1713897472
+            }
+          },
+          {
+            "name": "opencode",
+            "spec": "pkg=opencode@1.18.29",
+            "command": "opencode --version",
+            "shell_seconds": 8.6,
+            "resolved": "/nix/store/bggjqhxp5sapm7qnbd8jcwhmmwnbv9gh-opencode-1.18.29",
+            "cold": {
+              "page_seconds": 82.022,
+              "wall_seconds": 82.1,
+              "status": 0,
+              "guest": {
+                "real": 82.01,
+                "user": 81.32,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 104.73,
+              "browser_peak_rss_bytes": 1868292096
+            },
+            "warm": {
+              "page_seconds": 85.466,
+              "wall_seconds": 85.53,
+              "status": 0,
+              "guest": {
+                "real": 85.46000000000001,
+                "user": 85.43,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 106.89,
+              "browser_peak_rss_bytes": 1733074944
+            }
+          }
+        ]
+      },
+      "baseline": {
+        "tag": "engine-20260913-2056",
+        "exec": {
+          "results": [
+            {
+              "name": "hello",
+              "spec": "pkg=hello",
+              "command": "hello",
+              "shell_seconds": 5.38,
+              "resolved": "/nix/store/sd779x86bjaqxj2lzh2jsir4h0zjz6d1-hello-2.12.3",
+              "cold": {
+                "page_seconds": 1.179,
+                "wall_seconds": 1.32,
+                "status": 0,
+                "guest": {
+                  "real": 1.02,
+                  "user": 0.44,
+                  "sys": 0.48
+                },
+                "browser_cpu_seconds": 1.52,
+                "browser_peak_rss_bytes": 2708017152
+              },
+              "warm": {
+                "page_seconds": 0.489,
+                "wall_seconds": 0.53,
+                "status": 0,
+                "guest": {
+                  "real": 0.37,
+                  "user": 0.19,
+                  "sys": 0.17
+                },
+                "browser_cpu_seconds": 0.67,
+                "browser_peak_rss_bytes": 2711126016
+              }
+            },
+            {
+              "name": "ripgrep",
+              "spec": "pkg=ripgrep",
+              "command": "rg --version",
+              "shell_seconds": 5.34,
+              "resolved": "/nix/store/whbrk657qmih065xal60m4khwf6cb9pj-ripgrep-15.2.0",
+              "cold": {
+                "page_seconds": 0.932,
+                "wall_seconds": 1.07,
+                "status": 0,
+                "guest": {
+                  "real": 0.77,
+                  "user": 0.28,
+                  "sys": 0.41
+                },
+                "browser_cpu_seconds": 1.27,
+                "browser_peak_rss_bytes": 2815422464
+              },
+              "warm": {
+                "page_seconds": 0.405,
+                "wall_seconds": 0.53,
+                "status": 0,
+                "guest": {
+                  "real": 0.26,
+                  "user": 0.04,
+                  "sys": 0.19
+                },
+                "browser_cpu_seconds": 0.55,
+                "browser_peak_rss_bytes": 2820411392
+              }
+            },
+            {
+              "name": "jujutsu",
+              "spec": "pkg=jujutsu",
+              "command": "jj --version",
+              "shell_seconds": 5.62,
+              "resolved": "/nix/store/66qgw69a6dqj1hm2l83pkpkr0cqayswy-jujutsu-0.47.1",
+              "cold": {
+                "page_seconds": 3.099,
+                "wall_seconds": 3.17,
+                "status": 0,
+                "guest": {
+                  "real": 2.92,
+                  "user": 1.93,
+                  "sys": 0.89
+                },
+                "browser_cpu_seconds": 4.05,
+                "browser_peak_rss_bytes": 2781020160
+              },
+              "warm": {
+                "page_seconds": 1.229,
+                "wall_seconds": 1.33,
+                "status": 0,
+                "guest": {
+                  "real": 1.09,
+                  "user": 0.6,
+                  "sys": 0.46
+                },
+                "browser_cpu_seconds": 1.78,
+                "browser_peak_rss_bytes": 2787135488
+              }
+            },
+            {
+              "name": "python",
+              "spec": "pkg=python3",
+              "command": "python3 -c 'print(1)'",
+              "shell_seconds": 7.58,
+              "resolved": "/nix/store/bya4ansy58az5133kryqp2cvrxbnz8qy-python3-3.14.10",
+              "cold": {
+                "page_seconds": 5.378,
+                "wall_seconds": 5.55,
+                "status": 0,
+                "guest": {
+                  "real": 5.19,
+                  "user": 3.57,
+                  "sys": 1.33
+                },
+                "browser_cpu_seconds": 7.34,
+                "browser_peak_rss_bytes": 3088023552
+              },
+              "warm": {
+                "page_seconds": 3.022,
+                "wall_seconds": 3.18,
+                "status": 0,
+                "guest": {
+                  "real": 2.87,
+                  "user": 1.97,
+                  "sys": 0.82
+                },
+                "browser_cpu_seconds": 4.26,
+                "browser_peak_rss_bytes": 3092885504
+              }
+            },
+            {
+              "name": "opencode",
+              "spec": "pkg=opencode@1.18.29",
+              "command": "opencode --version",
+              "shell_seconds": 8.41,
+              "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+              "cold": {
+                "page_seconds": 184.039,
+                "wall_seconds": 184.26,
+                "status": 0,
+                "guest": {
+                  "real": 183.85,
+                  "user": 162.84,
+                  "sys": 18.28
+                },
+                "browser_cpu_seconds": 236.1,
+                "browser_peak_rss_bytes": 3397996544
+              },
+              "warm": {
+                "page_seconds": 167.685,
+                "wall_seconds": 167.9,
+                "status": 0,
+                "guest": {
+                  "real": 167.39,
+                  "user": 149.04,
+                  "sys": 16.38
+                },
+                "browser_cpu_seconds": 211.14,
+                "browser_peak_rss_bytes": 3438641152
+              }
+            }
+          ]
+        }
+      },
+      "notes": "Pinned to CPUs 120-123 on NUMA node 7, where boost is off, with memory from node 5, like the 040e142 record; a busy core read 2419 or 2420 MHz. Three runs of the suite on both engines, taken in turn on the same cores with three runs of the site before this version (unkernel 040e142, no GUI devices). Each package's entry is the one of the three runs with the median cold time. This version boots every guest with the shm, gpu and gl devices, and the time to a shell did not change beyond the run-to-run spread. Against the site before it, cold rg --version is 5 ms slower and cold jj --version 10 ms slower, the worker-mode regression docs/unkernel.md traces to unkernel 57249c5; warm rg --version is 9 ms slower as well, which the laptop did not show. python3 is 4% faster cold and 5% faster warm. Those are medians of eight runs a site, five of them exec-bench on unkernel alone. opencode ran between 55 and 114 s, cold or warm, on both versions, too spread for three runs to tell them apart. Most of the drop from the 040e142 record comes from the page: since fb538cc the guest reads its programs ahead of the first command and the shell comes up without a timed wait, and since b09addd NARs are decompressed in workers. The previous site, run beside this one, read cold jj --version in 0.241 s against that record's 0.354 s. The qemu engine read within 4% of its 2026-11-20 numbers."
     }
   ]
 }
