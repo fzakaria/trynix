@@ -17,6 +17,11 @@
 # compiled to wasm, with its JavaScript SDK. The npm package carries
 # the kernel prebuilt, base system included, so unlike the qemu engine
 # there is nothing to build out of band and nothing to publish.
+#
+# wland is the Wayland compositor the page runs for GUI programs in
+# the unkernel guest (docs/gui.md): its browser modules and the wasm
+# core. Its relay, the guest half, is built from source (nix/wlandr.nix)
+# from the commit this release was published from.
 { pkgs }:
 let
   npm =
@@ -36,6 +41,23 @@ let
       "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
   unkernelVersion = "0.2.0-261123-8f039c5";
   unkernel = npm "unkernel" unkernelVersion "15klkpxgyxsdlxs86kmn79x5pgq856hgcd6p47kj1v5pnbd5vw0l";
+  wland = npm "wland" "0.1.0-261122-6617578" "118n8wgcp6wgxp6wvvsyf834048d6qzy6zs5h5jb438jvy61ns5y";
+
+  # The modules the compositor's browser entry (client.mjs) imports,
+  # directly or through each other. The package's Node entry, its CLI
+  # and the prebuilt relays stay behind.
+  wlandModules = [
+    "client"
+    "engine"
+    "view"
+    "input"
+    "wm"
+    "clipboard"
+    "link-ws"
+    "link-stream"
+    "remote-core"
+    "present"
+  ];
 in
 pkgs.runCommand "trynix-js-vendor" { } ''
   mkdir -p $out unpack
@@ -93,17 +115,29 @@ pkgs.runCommand "trynix-js-vendor" { } ''
 
   # The SDK's browser entry, the chunk the entry imports by relative
   # path, and the kernel. The Node entry and the CLI stay behind: the
-  # page never loads them. So does the guest GL renderer (virgl.mjs,
-  # virgl.wasm), which the SDK fetches only for createKernel({ gl }).
-  # The workers the SDK starts are inlined in the entry as blobs, so
-  # there is no worker file to place.
+  # page never loads them. The workers the SDK starts are inlined in
+  # the entry as blobs, so there is no worker file to place.
   tar -xzf ${unkernel} -C unpack
   mkdir -p $out/unkernel/_chunks
   cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
   cp unpack/package/dist/_chunks/core.mjs $out/unkernel/_chunks/core.mjs
   cp unpack/package/dist/unkernel.wasm $out/unkernel/unkernel.wasm
+  # Guest GL's renderer: virglrenderer compiled to wasm, which the SDK
+  # loads on the guest's first GL use and never before. virgl.mjs finds
+  # its wasm next to itself.
+  cp unpack/package/dist/virgl.mjs unpack/package/dist/virgl.wasm $out/unkernel/
+  cp unpack/package/LICENSE unpack/package/LICENSE-MIT $out/unkernel/
   # The version, for the benchmark history: a record of the unkernel
   # engine is named after the version the site carried
   # (tools/bench-history.py).
   echo ${unkernelVersion} > $out/unkernel/VERSION
+  rm -r unpack/package
+
+  # The compositor finds its wasm next to engine.mjs, where it is put.
+  tar -xzf ${wland} -C unpack
+  mkdir -p $out/wland
+  for module in ${pkgs.lib.concatStringsSep " " wlandModules}; do
+    cp unpack/package/dist/$module.mjs $out/wland/
+  done
+  cp unpack/package/dist/wland.wasm unpack/package/LICENSE $out/wland/
 ''

@@ -97,3 +97,17 @@ export const UNKERNEL_KERNEL = "vendor/unkernel/unkernel.wasm";
 // touches pages rather than up front, so a phone is asked for what the
 // guest uses and not for the whole of it.
 export const UNKERNEL_MEMORY_MIB = 512;
+
+// Guest GL's renderer, virglrenderer compiled to wasm (nix/vendor.nix).
+// The SDK fetches it on the guest's first GL use and never before.
+export const UNKERNEL_GL = "vendor/unkernel/virgl.mjs";
+
+// What a GUI program in the unkernel guest needs from the site
+// (gui.js, docs/gui.md), in one directory: wland's compositor, its
+// relay and the guest's fonts. nix/site.nix renames the directory
+// after a hash of its contents and rewrites this name to match, so a
+// deploy never pairs one module with another's cached copy.
+export const GUI_DIR = "gui";
+export const GUI_WLAND = "client.mjs";
+export const GUI_RELAY = "wlandr";
+export const GUI_FONTS = ["DejaVuSansMono.ttf", "DejaVuSans.ttf"];

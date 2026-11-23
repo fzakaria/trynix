@@ -556,6 +556,21 @@ code {
 #console-body {
   position: relative;
 }
+/* The desktop GUI programs' windows go in. Its size is the output the
+   programs are told about, so it is fixed rather than fitted to what
+   it holds; wland positions the windows inside it. */
+#desktop {
+  position: relative;
+  overflow: hidden;
+  margin-top: 0.8rem;
+  height: 70vh;
+  min-height: 480px;
+  border-radius: 6px;
+  background: var(--console-bg);
+}
+#desktop[hidden] {
+  display: none;
+}
 #console-veil {
   position: absolute;
   inset: 0;

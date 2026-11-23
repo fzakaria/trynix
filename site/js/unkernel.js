@@ -35,6 +35,14 @@ import { guestDriver } from "./agent.js";
 import { consoleRecorder, pause } from "./console.js";
 import { UNKERNEL_MEMORY_MIB } from "./config.js";
 import { log } from "./log.js";
+import {
+  attachDesktop,
+  guestSession,
+  isGlDriver,
+  linkGlDriver,
+  sessionEnv,
+  speaksWayland,
+} from "./gui.js";
 
 // The guest's shell: busybox ash from unkernel's base system, the same
 // shell the qemu guest runs.
@@ -121,12 +129,19 @@ async function visible(kernel, paths) {
 
 // The shell fragment the guest's shell sources: PATH with the farm in
 // front, and the same TERM and LANG the qemu guest gets (boot.js says
-// why each is what it is, and why there is no LD_LIBRARY_PATH).
+// why each is what it is, and why there is no LD_LIBRARY_PATH). Every
+// shell gets the Wayland session's environment too (gui.js), so a GUI
+// program added after the boot finds the relay from the shell it is
+// typed into.
 function manifest() {
+  const session = Object.entries(sessionEnv()).map(
+    ([name, value]) => `export ${name}="${value}"`,
+  );
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
+    ...session,
     // Wait for the page's handshake (see HANDSHAKE), on the page's
     // shell alone (see HANDSHAKE_VARIABLE).
     `if [ -n "$${HANDSHAKE_VARIABLE}" ]; then`,
@@ -202,8 +217,9 @@ async function pump(shell, port, console_) {
   }
 }
 
-// engine: { main, kernel }, the versioned URLs of the SDK's browser
-// entry and of the kernel.
+// engine: { main, kernel, gl }, the versioned URLs of the SDK's
+// browser entry, of the kernel and of the GL renderer's module.
+// desktopElement is where GUI programs' windows go (gui.js).
 //
 // Resolves once the kernel is running and the share is writable. The
 // share is page-side memory, so the closure streams into the share
@@ -211,6 +227,7 @@ async function pump(shell, port, console_) {
 export async function startUnkernel({
   terminalElement,
   keyBarElement,
+  desktopElement,
   engine,
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
@@ -224,14 +241,41 @@ export async function startUnkernel({
   const FS = memoryFsCalls(files);
   const share = storeShare(FS);
 
+  // Watch the paths as they are written. A Wayland library in the
+  // closure starts the download of the GUI session's files, while the
+  // rest of the closure is still arriving, and a Mesa store path
+  // becomes the guest's /run/opengl-driver once the guest is up.
+  const glDrivers = [];
+  const write = share.write.bind(share);
+  share.write = (basename, entries) => {
+    if (speaksWayland([basename])) {
+      session.prepare();
+    }
+    if (isGlDriver(entries)) {
+      glDrivers.push(basename);
+    }
+    write(basename, entries);
+  };
+
   // The kernel runs in a worker where the page may share memory with
   // one, which keeps a busy guest from stalling the page; without
   // cross-origin isolation the kernel runs on the page's own thread
   // and yields to it between slices.
+  //
+  // The devices a GUI program needs are always there, since which
+  // programs the reader runs is not known when the kernel boots: kwshm,
+  // through which the compositor reads programs' buffers, and a
+  // virtio-gpu device with 3D, which Mesa's virgl driver renders on.
+  // Neither costs a download until a program uses it: the GL renderer
+  // is fetched on the guest's first GL use, the compositor on the
+  // relay's first dial.
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
     memoryMiB: UNKERNEL_MEMORY_MIB,
     worker: globalThis.crossOriginIsolated === true,
+    shm: true,
+    gpu: true,
+    gl: { module: new URL(engine.gl, location.href).href },
   });
   kernel.exited.then(({ kind, reason }) =>
     log(`unkernel exited: ${kind}${reason ? ` (${reason})` : ""}`),
@@ -253,6 +297,30 @@ export async function startUnkernel({
     }
   }
 
+  // A command in the guest's shell, for the GUI session's setup.
+  const sh = (command) => kernel.exec(SHELL, ["-c", command]);
+  const session = guestSession({ FS, exec: sh });
+
+  // Start the GUI session where `basenames` hold a Wayland program,
+  // and link the newest GL driver written. Resolves once both are done,
+  // so a GUI program typed at the prompt finds the relay running. A
+  // failure is logged rather than thrown: the shell works without
+  // either.
+  async function guiSetup(basenames) {
+    const steps = [];
+    if (speaksWayland(basenames)) {
+      steps.push(session.start());
+    }
+    const driver = glDrivers.at(-1);
+    if (driver !== undefined) {
+      glDrivers.length = 0;
+      steps.push(linkGlDriver(sh, driver));
+    }
+    await Promise.all(steps).catch((err) =>
+      log(`gui: setup failed: ${err.message ?? err}`),
+    );
+  }
+
   // The handle everything outside the page reaches the guest through
   // (boot.js says who uses it). The driver is the supported surface;
   // the kernel is there for what the driver cannot do.
@@ -264,6 +332,13 @@ export async function startUnkernel({
     terminal: ui.terminal,
     kernel,
   };
+  attachDesktop({
+    kernel,
+    container: desktopElement,
+    show: () => {
+      desktopElement.hidden = false;
+    },
+  });
 
   return {
     terminal: ui.terminal,
@@ -312,9 +387,12 @@ export async function startUnkernel({
 
       // The shell is ready once it has sourced the manifest, taken the
       // handshake and redrawn its prompt on a cleared screen (see
-      // HANDSHAKE for why that moment and no earlier one).
+      // HANDSHAKE for why that moment and no earlier one). The GUI
+      // session comes up meanwhile, and is waited for as well.
+      const gui = guiSetup(share.written());
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
+      await gui;
     },
 
     // Add store paths to a guest that is already running. The share is
@@ -330,6 +408,7 @@ export async function startUnkernel({
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
+      await guiSetup(basenames);
 
       const added = roots.filter((basename) => basenames.includes(basename));
       await visible(kernel, [

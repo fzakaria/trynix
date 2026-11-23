@@ -6,6 +6,8 @@
 #                                       the unkernel engine among them
 #   qemu/                               the qemu engine and the snapshot
 #   guest/                              kernel, initramfs, BIOS blobs
+#   gui.<hash>/                         the GUI compositor, its relay
+#                                       and the guest's fonts
 #   assets.json                         content hashes for the above
 #
 # The engine and snapshot are fetches rather than builds (nix/engine.nix
@@ -16,6 +18,15 @@ let
   vendor = import ./vendor.nix { inherit pkgs; };
   engine = import ./engine.nix { inherit pkgs; };
   guest = (import ./guest.nix { inherit pkgs; }).guest;
+  wlandr = import ./wlandr.nix { inherit pkgs; };
+
+  # The guest's fonts: one monospace for terminals and one proportional
+  # for everything else. The names are the ones nixpkgs' dejavu_fonts
+  # installs; DejaVuSans.ttf is a link there, which cp follows.
+  fonts = [
+    "DejaVuSansMono.ttf"
+    "DejaVuSans.ttf"
+  ];
 in
 pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mkdir -p $out
@@ -37,6 +48,26 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   cp ${engine}/* $out/qemu/
   cp ${guest}/* $out/guest/
   chmod -R u+w $out/qemu $out/guest
+
+  # What a GUI program in the unkernel guest needs from the site
+  # (docs/gui.md), in one directory: wland's compositor (modules and
+  # wasm, from vendor.nix), its relay, which the page writes into the
+  # guest, and two fonts, because a nixpkgs GUI program's closure
+  # carries fontconfig but no font, and foot will not start without one.
+  # The modules import each other by relative path, so the directory is
+  # renamed after a hash of its contents, as js/ is below, and the one
+  # module that names it is rewritten to match. That happens before
+  # js/ is hashed, so the new name is part of js/'s hash.
+  mv $out/vendor/wland $out/gui
+  cp ${wlandr}/bin/wlandr $out/gui/wlandr
+  for font in ${pkgs.lib.concatStringsSep " " fonts}; do
+    cp ${pkgs.dejavu_fonts}/share/fonts/truetype/$font $out/gui/
+  done
+  hash=$(find $out/gui -type f | LC_ALL=C sort |
+    xargs sha256sum | sha256sum | cut -c1-12)
+  mv $out/gui "$out/gui.$hash"
+  substituteInPlace $out/js/config.js \
+    --replace-fail '"gui"' "\"gui.$hash\""
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).

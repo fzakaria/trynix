@@ -64,6 +64,7 @@ import {
   QEMU_WORKER,
   SNAPSHOT_URL,
   SYSTEM,
+  UNKERNEL_GL,
   UNKERNEL_KERNEL,
   UNKERNEL_MAIN,
 } from "./config.js";
@@ -87,6 +88,7 @@ const bootSection = document.getElementById("boot");
 const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
 const keyBarElement = document.getElementById("keybar");
+const desktopElement = document.getElementById("desktop");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const consoleSpinner = document.getElementById("console-spinner");
@@ -789,7 +791,7 @@ function unkernelEngine(panel) {
   const engineRow = panel.row("unkernel engine");
 
   return async function start(started) {
-    const urls = await assets([UNKERNEL_MAIN, UNKERNEL_KERNEL]);
+    const urls = await assets([UNKERNEL_MAIN, UNKERNEL_KERNEL, UNKERNEL_GL]);
 
     // The kernel is not held by the page: the SDK streams the wasm from
     // the URL and the browser compiles as the bytes arrive. This
@@ -809,9 +811,11 @@ function unkernelEngine(panel) {
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
+      desktopElement,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
+        gl: urls.get(UNKERNEL_GL),
       },
     });
     log("unkernel booted");
