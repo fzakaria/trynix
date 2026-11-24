@@ -23,6 +23,7 @@ import { lazyStore, Priority, References } from "./lazy.js";
 import { fetchListing, listingFetcher, programsOfListing } from "./listing.js";
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
+import { fullScreenButton } from "./frame.js";
 import {
   DEFAULT_ENGINE,
   Engine,
@@ -137,6 +138,7 @@ const consoleElement = document.getElementById("console");
 const desktopElement = document.getElementById("desktop");
 const soundControl = document.getElementById("sound-control");
 const windowsButton = document.getElementById("console-windows");
+const fullScreenElement = document.getElementById("console-fullscreen");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const consoleSpinner = document.getElementById("console-spinner");
@@ -676,6 +678,10 @@ function wireNetworkChoice() {
   });
 }
 wireNetworkChoice();
+
+// The console bar's full-screen button, for the terminal and any GUI
+// windows over it, whichever engine boots.
+fullScreenButton({ consoleElement, button: fullScreenElement });
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {

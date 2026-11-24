@@ -36,11 +36,14 @@ the rest) stop acting on keys. When the window holding the keyboard
 closes or is minimized, the next window takes it, and with none left
 the terminal does.
 
-The console bar has a button for the windows. "hide windows" minimizes
-every window and gives the terminal the keyboard; "show windows" brings
-them back in their stacking order, including a window its program
-minimized itself. What programs are told about the screen is the
-frame's size, so maximize fills the frame.
+The console bar has two buttons. "hide windows" minimizes every window
+and gives the terminal the keyboard; "show windows" brings them back
+in their stacking order, including a window its program minimized
+itself. "full screen" puts the whole frame, terminal and windows, in
+the browser's full screen. It is missing on iPhone, whose Safari has
+the Fullscreen API for video only. What programs are told about the
+screen is the frame's size, so maximize fills the frame, in full
+screen too.
 
 GL programs need a driver, and the page adds one: when the closure
 holds a Wayland program that links libglvnd and no Mesa, the page
@@ -71,7 +74,7 @@ line says why.
 [site/js/gui.js](../site/js/gui.js) has both halves, and
 [site/js/frame.js](../site/js/frame.js) the console frame the windows
 open in: its size, where windows open, the keyboard between the
-windows and the terminal, and the bar's windows button. `#desktop` covers the console's
+windows and the terminal, and the bar's buttons. `#desktop` covers the console's
 body and takes no pointer itself, so a press outside every window
 reaches the terminal; wland gives each window's canvases their own.
 

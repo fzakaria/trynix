@@ -678,6 +678,23 @@ code {
 #console.windowed #terminal {
   height: max(30rem, calc(100vh - 4rem));
 }
+/* Full screen: the bar on top, the key bar at the bottom, and the
+   terminal and windows filling what is between. */
+#console:fullscreen {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+#console:fullscreen #console-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+#console:fullscreen #terminal {
+  flex: 1;
+  min-height: 0;
+}
 #console-veil {
   position: absolute;
   inset: 0;

@@ -17,7 +17,10 @@
 //
 // A new window opens clear of the shell's prompt where it can. The
 // console bar has a button that hides every window, bringing the
-// terminal forward, and shows them again.
+// terminal forward, and shows them again, and a full-screen button for
+// the whole frame.
+
+import { log } from "./log.js";
 
 // The class the console takes once a GUI program has connected:
 // style.css grows the terminal so windows fit.
@@ -37,6 +40,12 @@ export const WindowsAction = Object.freeze({
   NONE: "none",
   HIDE: "hide",
   SHOW: "show",
+});
+
+// What the full-screen button says, by whether the frame is full screen.
+const FullScreenLabel = Object.freeze({
+  ENTER: "full screen",
+  EXIT: "exit full screen",
 });
 
 // Where a new window at `box`, wland's cascade near the frame's top,
@@ -71,6 +80,41 @@ export function windowsButton(windows) {
 // or from a window; the click still comes.
 function keepFocus(button) {
   button.addEventListener("mousedown", (event) => event.preventDefault());
+}
+
+// The bar's full-screen button: the whole console frame, terminal and
+// windows, in the browser's full screen and back. Left hidden where the
+// Fullscreen API is missing, which is iPhone's Safari.
+export function fullScreenButton({ consoleElement, button }) {
+  if (
+    !document.fullscreenEnabled ||
+    typeof consoleElement.requestFullscreen !== "function"
+  ) {
+    return;
+  }
+
+  // The label follows the browser's state, which Esc changes too.
+  const relabel = () => {
+    button.textContent =
+      document.fullscreenElement === consoleElement
+        ? FullScreenLabel.EXIT
+        : FullScreenLabel.ENTER;
+  };
+  document.addEventListener("fullscreenchange", relabel);
+  relabel();
+
+  // Toggle on a click, which carries the user gesture the request needs.
+  keepFocus(button);
+  button.addEventListener("click", () => {
+    if (document.fullscreenElement === consoleElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    consoleElement
+      .requestFullscreen()
+      .catch((err) => log(`full screen refused: ${err.message ?? err}`));
+  });
+  button.hidden = false;
 }
 
 // The frame around wland's desktop. `consoleElement` is the console,
