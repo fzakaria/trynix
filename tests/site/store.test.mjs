@@ -259,3 +259,37 @@ test(
     assert.equal(entries.length > 0, true);
   },
 );
+
+// Checks a package whose bin is a symlink to a directory inside it, as
+// openjdk's is (bin -> lib/openjdk/bin): its programs are what that
+// directory holds, reached through bin. A bin that points out of the
+// package, or at nothing in it, has no programs.
+test("a bin that links to a directory inside the package has its programs", () => {
+  const entries = [
+    { path: "", type: "directory" },
+    { path: "bin", type: "symlink", target: "lib/openjdk/bin" },
+    { path: "lib", type: "directory" },
+    { path: "lib/openjdk", type: "directory" },
+    { path: "lib/openjdk/bin", type: "directory" },
+    {
+      path: "lib/openjdk/bin/java",
+      type: "regular",
+      executable: true,
+      data: new Uint8Array(),
+    },
+    { path: "lib/openjdk/bin/jar", type: "symlink", target: "java" },
+    {
+      path: "lib/openjdk/bin/README",
+      type: "regular",
+      executable: false,
+      data: new Uint8Array(),
+    },
+  ];
+  assert.deepEqual(programsOf(entries), ["java", "jar"]);
+
+  const outward = [
+    { path: "", type: "directory" },
+    { path: "bin", type: "symlink", target: "/nix/store/x-other/bin" },
+  ];
+  assert.deepEqual(programsOf(outward), []);
+});

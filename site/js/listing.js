@@ -128,9 +128,20 @@ export const rootType = (root) => FILE_TYPES[root.type];
 // bin/, executables and symlinks, the same names store.js's programsOf
 // takes from a written NAR.
 export function programsOfListing(root) {
-  const bin =
-    root.type === Node.DIRECTORY ? root.entries?.[BIN_DIRECTORY] : null;
-  if (bin === undefined || bin === null || bin.type !== Node.DIRECTORY) {
+  if (root.type !== Node.DIRECTORY) {
+    return [];
+  }
+  const directory = programDirectory(root.entries?.[BIN_DIRECTORY]);
+  if (directory === null) {
+    return [];
+  }
+  let bin;
+  try {
+    bin = nodeAt(root, directory);
+  } catch {
+    return [];
+  }
+  if (bin.type !== Node.DIRECTORY) {
     return [];
   }
   return Object.entries(bin.entries ?? {})
@@ -140,6 +151,47 @@ export function programsOfListing(root) {
         (entry.type === Node.REGULAR && entry.executable === true),
     )
     .map(([name]) => name);
+}
+
+// Where a package keeps its programs, from its top-level `bin` entry
+// (a listing's node or a NAR entry; both have a type and a symlink's
+// target): bin itself, or the directory inside the package that a bin
+// symlink names, as openjdk's bin -> lib/openjdk/bin does. null when
+// there is no bin, or it points out of the package.
+export function programDirectory(bin) {
+  if (bin === undefined || bin === null) {
+    return null;
+  }
+  if (bin.type === Node.DIRECTORY) {
+    return BIN_DIRECTORY;
+  }
+  if (bin.type !== Node.SYMLINK) {
+    return null;
+  }
+  return insidePackage(bin.target);
+}
+
+// A symlink target at the package's top as a path inside the package,
+// or null when it is absolute or climbs out.
+function insidePackage(target) {
+  if (target.startsWith("/")) {
+    return null;
+  }
+  const parts = [];
+  for (const part of target.split("/")) {
+    if (part === "" || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      if (parts.length === 0) {
+        return null;
+      }
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.length === 0 ? null : parts.join("/");
 }
 
 // How a listing differs from the NAR it describes, or null when it does

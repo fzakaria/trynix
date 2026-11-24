@@ -125,6 +125,43 @@ test("a listing's programs are its executables and links in bin", () => {
   assert.deepEqual(programsOfListing({ type: "regular", size: 1 }), []);
 });
 
+// Checks a listing whose bin is a symlink to a directory inside the
+// path, as openjdk's is: its programs are that directory's, and a bin
+// that points out of the path has none.
+test("a listing's bin may link to a directory inside the path", () => {
+  const root = {
+    type: "directory",
+    entries: {
+      bin: { type: "symlink", target: "lib/openjdk/bin" },
+      lib: {
+        type: "directory",
+        entries: {
+          openjdk: {
+            type: "directory",
+            entries: {
+              bin: {
+                type: "directory",
+                entries: {
+                  java: { type: "regular", size: 1, executable: true },
+                  jar: { type: "symlink", target: "java" },
+                  README: { type: "regular", size: 1 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+  assert.deepEqual(programsOfListing(root), ["java", "jar"]);
+
+  const outward = {
+    type: "directory",
+    entries: { bin: { type: "symlink", target: "/nix/store/x-other/bin" } },
+  };
+  assert.deepEqual(programsOfListing(outward), []);
+});
+
 // Checks the fetcher: one download per path however often it is asked,
 // a bound on how many run at once, a failure that resolves to null (no
 // listing) rather than rejecting, since every caller then falls back to

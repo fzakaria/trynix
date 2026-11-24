@@ -19,6 +19,7 @@ import { fetchWithProgress } from "./net.js";
 import { evictFromCache } from "./cache.js";
 import { verifyHash } from "./hash.js";
 import { log } from "./log.js";
+import { programDirectory } from "./listing.js";
 
 // Decompression happens in workers where the browser has them, several
 // archives at once, and on this thread, one at a time, where it does
@@ -456,18 +457,24 @@ export function absoluteTarget(linkPath, target) {
 // The programs a store path offers: the names directly under bin/ that
 // a PATH lookup would run — executables and symlinks, not data files
 // and not nested directories.
-const PROGRAM_PATH = /^bin\/[^/]+$/;
 const BIN_PREFIX = "bin/";
 
 export function programsOf(entries) {
+  const bin = entries.find((entry) => `${entry.path}/` === BIN_PREFIX);
+  const directory = programDirectory(bin);
+  if (directory === null) {
+    return [];
+  }
+  const prefix = `${directory}/`;
   return entries
     .filter(
       (entry) =>
-        PROGRAM_PATH.test(entry.path) &&
+        entry.path.startsWith(prefix) &&
+        !entry.path.slice(prefix.length).includes("/") &&
         (entry.type === "symlink" ||
           (entry.type === "regular" && entry.executable)),
     )
-    .map((entry) => entry.path.slice(BIN_PREFIX.length));
+    .map((entry) => entry.path.slice(prefix.length));
 }
 
 // What a program link does when the farm already has one by that name:
