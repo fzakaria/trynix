@@ -152,7 +152,6 @@ const consoleNote = document.getElementById("console-note");
 const consoleSpinner = document.getElementById("console-spinner");
 const rebootLink = document.getElementById("reboot-link");
 const debugLog = document.getElementById("debug-log");
-const addNote = document.getElementById("add-note");
 const guestChoice = document.getElementById("guest");
 const guestStatus = document.getElementById("guest-status");
 const memorySizes = document.getElementById("memory-sizes");
@@ -1860,7 +1859,6 @@ async function boot() {
     reportX11(x11.result);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
-    addNote.hidden = false;
     bootButton.disabled = false;
 
     await ready;
