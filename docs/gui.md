@@ -304,6 +304,40 @@ inside it:
   to get DRM render node from remote Wayland compositor"). sway's
   wlroots goes on without one.
 
+## Sound
+
+The guest has a sound card: unkernel's `kwsnd` driver, ALSA card 0,
+offered on every boot ([site/js/unkernel.js](../site/js/unkernel.js)).
+Nothing runs until a program opens it. While one plays, a kernel timer
+hands the page the frames due every 5 to 10 ms, and the page plays them
+with Web Audio ([site/js/sound.js](../site/js/sound.js)). The SDK stops
+at the samples, so the player is the page's, adapted from unkernel's
+own page (`web/src/audio.ts`, MIT): an AudioWorklet plays from a queue
+that starts once 60 ms is in, resamples to the device's rate, and
+steers by up to 1% to absorb the drift between the guest's clock and
+the audio device's ([site/js/sound-queue.js](../site/js/sound-queue.js)).
+
+Browsers start sound only after a click or key press on the page. A
+Try link boots and runs its command with no click on the new page, so
+the AudioContext is made only once the page has had one, and until
+then up to 10 s of what programs play is held. The console bar shows
+"sound: click to play"; a clip that ended by the click plays whole,
+and a stream still playing joins live. After that the same control
+switches sound off and on, remembered by this browser.
+
+```
+https://trynix.dev/?pkg=espeak-ng&boot=1&run=espeak-ng+%27Hello%27
+```
+
+Programs that write to ALSA play: espeak-ng, `aplay`, mpv with
+`--ao=alsa`, SDL programs. A program that needs a PulseAudio or
+PipeWire server stays silent unless it falls back to ALSA, since the
+guest runs neither.
+
+Measured in headless Chromium, 2026-11-23: espeak-ng's 1.9 s greeting,
+held before the click, played whole after it, then a second line live,
+with no underruns and nothing dropped.
+
 ## What it costs
 
 Measured 2026-11-23 on a laptop (AMD Radeon 780M), headless Chromium
