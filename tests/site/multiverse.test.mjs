@@ -13,6 +13,7 @@ import {
   mergeVersions,
   multiverseUrl,
 } from "../../site/js/multiverse.js";
+import { matches, parseSpecs } from "../../site/js/ranges.js";
 
 // A meta-shard entry: `d` digest, `cs` closure size. The entry also
 // carries the census verdict `ok`, which nothing here reads, so it is
@@ -95,8 +96,10 @@ test("multiverseUrl names a system other than the index's default", () => {
 // digits and letters splits at each change, numbers compare as
 // numbers, a letter part is older than a number, and "pre" is older
 // than anything. openjdk's "8u265-ga" read as text came out newer than
-// "21.0.5+11", so ?pkg=openjdk booted Java 8. One rule differs from
-// Nix's: a release is newer than its own release candidates.
+// "21.0.5+11", so ?pkg=openjdk booted Java 8. A letter after a release
+// is newer than the release, as in Nix, so OpenSSL's 1.1.1t is newer
+// than 1.1.1. One rule differs from Nix's: a release is newer than its
+// own prereleases (rc, beta and the other words nixpkgs uses for them).
 test("versions compare as Nix compares them", () => {
   const newer = (a, b) => assert.ok(compareVersions(a, b) > 0, `${a} > ${b}`);
   newer("21.0.5+11", "8u265-ga");
@@ -105,6 +108,27 @@ test("versions compare as Nix compares them", () => {
   newer("2.3.1", "2.3a");
   newer("1.0", "1.0pre1");
   newer("0.43.0", "0.9.1");
+  newer("1.1.1t", "1.1.1");
+  newer("1.1.1t", "1.1.1s");
+  newer("9.6p1", "9.6");
+  newer("1.2-unstable-2025-01-19", "1.2");
   newer("1.2", "1.2-rc1");
+  newer("1.2", "1.2beta3");
+  newer("1.0.0", "1.0.0-alpha.1");
+  newer("3.0.0", "3.0.0-preview.26");
+  newer("3.5", "3.5-DEV1903");
+  newer("0.7.0", "0.7.0_rc4");
+  newer("1.2-rc1", "1.2-beta3");
   assert.equal(compareVersions("3.10.6", "3.10.6"), 0);
+});
+
+// Checks that a range compares with the same order, by matching
+// OpenSSL's lettered releases against ">1.1.1": every one of them is a
+// release after 1.1.1, and 1.1.1 itself is not after itself.
+test("a range accepts the lettered releases after a version", () => {
+  const [spec] = parseSpecs("openssl_1_1@>1.1.1");
+  assert.equal(matches(spec, "1.1.1t"), true);
+  assert.equal(matches(spec, "1.1.1a"), true);
+  assert.equal(matches(spec, "1.1.1"), false);
+  assert.equal(matches(spec, "1.1.0l"), false);
 });

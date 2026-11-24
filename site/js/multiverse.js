@@ -163,8 +163,8 @@ export async function versionRowsOf(attr) {
 
 // Version ordering for the picker and for a link's newest version, as
 // Nix's compareVersions orders nixpkgs' version strings (partOlder),
-// with one change: a release sorts above its own release candidates
-// (1.2 over 1.2-rc1), where Nix puts the candidate first.
+// with one change: a release sorts above its own prereleases (1.2 over
+// 1.2-rc1 and 1.2beta3), where Nix puts the prerelease first.
 export function compareVersions(a, b) {
   const pa = versionParts(a);
   const pb = versionParts(b);
@@ -191,21 +191,46 @@ const isNumber = (part) => /^\d+$/.test(part);
 // The part Nix counts older than any other.
 const PRE = "pre";
 
+// The words nixpkgs versions use for a build that comes before the
+// release it names: "1.0.0-rc.1", "1.2beta3", "3.0.0-preview.26",
+// "3.5-DEV1903", "1.7.0-prerelease-1". Each one counts as older than
+// the release itself. The list is every word that, in the multiverse's
+// versions, follows a release that also shipped and nearly always
+// shipped before that release. Single letters stay off the list:
+// OpenSSL's 1.1.1t and OpenSSH's 9.6p1 come after 1.1.1 and 9.6, and
+// "a" and "b" mean a patch release as often as an alpha or beta.
+const PRERELEASE_WORDS = new Set([
+  PRE,
+  "rc",
+  "alpha",
+  "beta",
+  "dev",
+  "preview",
+  "prerelease",
+  "nightly",
+]);
+
+// Whether a part names a prerelease, read without case or punctuation
+// so "DEV" and "_rc" count as "dev" and "rc".
+const isPrerelease = (part) =>
+  PRERELEASE_WORDS.has(part.toLowerCase().replace(/[^a-z]/g, ""));
+
 // Whether part `a` is older than part `b`, by Nix's rules
 // (componentsLT); a missing part is "". Numbers compare as numbers, a
-// missing part is older than a number and newer than letters (Nix has
-// it older than both), "pre" is older than anything else, and a part
-// that is not a number is older than one that is, so 2.3a is older than
-// 2.3.1.
+// missing part is older than a number and older than letters, "pre" is
+// older than anything else, and a part that is not a number is older
+// than one that is, so 2.3a is older than 2.3.1. The one change from
+// Nix: a prerelease word is older than a missing part, so 1.2 is newer
+// than 1.2-rc1 while 1.1.1t stays newer than 1.1.1.
 function partOlder(a, b) {
   if (isNumber(a) && isNumber(b)) {
     return Number(a) < Number(b);
   }
   if (a === "") {
-    return isNumber(b);
+    return !isPrerelease(b);
   }
   if (b === "") {
-    return !isNumber(a);
+    return isPrerelease(a);
   }
   if (a === PRE && b !== PRE) {
     return true;
