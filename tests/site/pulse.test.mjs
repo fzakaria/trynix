@@ -42,6 +42,36 @@ const STAND_IN_DAEMON = [
   "",
 ].join("\n");
 
+// A stand-in for a daemon whose binary could not be read: it says so,
+// as setsid did when the daemon's download failed, and exits.
+const STAND_IN_UNREADABLE = [
+  "#!/bin/sh",
+  `echo "setsid: can't execute '$0': I/O error" >&2`,
+  "exit 126",
+  "",
+].join("\n");
+
+// A stand-in for setsid, which runs its arguments.
+const STAND_IN_SETSID = ["#!/bin/sh", 'exec "$@"', ""].join("\n");
+
+// How long a start whose daemon exited may take, in milliseconds: well
+// under the minute its socket polls last.
+const EXITED_LIMIT_MS = 10000;
+
+// A function that moves the guest's runtime directory and store, in a
+// command's text, under `root`.
+const guestPathsUnder = (root) => (text) =>
+  text
+    .replaceAll(RUNTIME_DIR, join(root, "run"))
+    .replaceAll(GUEST_STORE_DIR, join(root, "store"));
+
+// Write `text` to the executable file `file`, making its directory.
+function writeProgram(file, text) {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text);
+  chmodSync(file, 0o755);
+}
+
 // Whether process `pid` has exited: it is gone, or it is a zombie its
 // parent has not collected yet.
 function exited(pid) {
@@ -308,24 +338,20 @@ test("stopping the daemon spares other PulseAudio servers", async () => {
   // The file the start records its daemon's PID in, and the shell
   // functions the command opens with, through the one that stops the
   // daemon.
-  const pidFile = /^echo \$! > (\S+)$/m.exec(command)?.[1];
+  const pidFile = /^echo \$daemon > (\S+)$/m.exec(command)?.[1];
   assert.ok(pidFile !== undefined, "the start records no PID");
   const stop = /^[\s\S]*?^stop_daemon\(\) \{$[\s\S]*?^\}$/m.exec(command)?.[0];
   assert.ok(stop !== undefined, "no stop_daemon in the command");
 
   // The guest's paths, moved under a temporary directory.
   const root = mkdtempSync(join(tmpdir(), "pulse-"));
-  const moved = (text) =>
-    text
-      .replaceAll(RUNTIME_DIR, join(root, "run"))
-      .replaceAll(GUEST_STORE_DIR, join(root, "store"));
+  const moved = guestPathsUnder(root);
   const socket = moved(PULSE_SOCKET);
   mkdirSync(dirname(socket), { recursive: true });
 
   // The stand-in daemons, and the PID of the page's one in its file.
   const standIn = join(root, "pulseaudio");
-  writeFileSync(standIn, STAND_IN_DAEMON);
-  chmodSync(standIn, 0o755);
+  writeProgram(standIn, STAND_IN_DAEMON);
   const managed = spawn(standIn, [], { stdio: "ignore" });
   const private_ = spawn(standIn, [], { stdio: "ignore" });
   writeFileSync(moved(pidFile), `${managed.pid}\n`);
@@ -335,10 +361,8 @@ test("stopping the daemon spares other PulseAudio servers", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(socket, resolve));
   const pactlLog = join(root, "pactl.log");
-  const pactl = moved(`${GUEST_STORE_DIR}/${daemon}/bin/pactl`);
-  mkdirSync(dirname(pactl), { recursive: true });
-  writeFileSync(
-    pactl,
+  writeProgram(
+    moved(`${GUEST_STORE_DIR}/${daemon}/bin/pactl`),
     [
       "#!/bin/sh",
       `echo "$*" >> ${pactlLog}`,
@@ -346,7 +370,6 @@ test("stopping the daemon spares other PulseAudio servers", async () => {
       "",
     ].join("\n"),
   );
-  chmodSync(pactl, 0o755);
 
   try {
     // Each stand-in daemon runs under the daemon's name before the stop.
@@ -377,6 +400,46 @@ test("stopping the daemon spares other PulseAudio servers", async () => {
     managed.kill();
     private_.kill();
     server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Checks that a daemon that exits before its socket opens fails the
+// start at once, by running the whole start command through a real
+// shell, with the guest's paths moved under a temporary directory and
+// stand-ins for setsid and for a daemon whose binary could not be read.
+// The start waited out all its socket polls, a minute, for a daemon
+// that was gone: a boot whose daemon download failed held the shell
+// that long.
+test("a daemon that exits before its socket opens fails at once", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell();
+  await soundServer({ exec: shell.exec }).start(daemon);
+  const [command] = shell.commands;
+
+  // The guest's paths, moved under a temporary directory, with the
+  // stand-in daemon at the binary's place and setsid on the PATH.
+  const root = mkdtempSync(join(tmpdir(), "pulse-"));
+  const moved = guestPathsUnder(root);
+  const bin = join(root, "bin");
+  writeProgram(join(bin, "setsid"), STAND_IN_SETSID);
+  writeProgram(
+    moved(`${GUEST_STORE_DIR}/${daemon}/bin/pulseaudio`),
+    STAND_IN_UNREADABLE,
+  );
+
+  // The start fails before the limit, with the daemon's last words.
+  try {
+    const result = spawnSync("sh", ["-c", moved(command)], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      timeout: EXITED_LIMIT_MS,
+    });
+    assert.equal(result.signal, null, "the start waited out its polls");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /the daemon exited/);
+    assert.match(result.stderr, /I\/O error/);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

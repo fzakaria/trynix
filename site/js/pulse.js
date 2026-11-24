@@ -163,11 +163,13 @@ export function soundEnv(daemon) {
 // which pactl asks to exit. A PulseAudio server a reader started on a
 // socket of their own runs under the same name and is left alone.
 //
-// The command fails if the daemon logs an error (`E:`) before its
-// socket opens, if no socket appears in time, or if the daemon has no
-// sink on card 0 once it does, printing the end of the daemon's
-// output. A daemon that failed is stopped, so the next start begins
-// afresh.
+// The command fails if the daemon logs an error (`E:`) or exits before
+// its socket opens, if no socket appears in time, or if the daemon has
+// no sink on card 0 once it does, printing the end of the daemon's
+// output. A daemon whose binary could not be read, because its download
+// failed, exits at once, and the polls for its socket would otherwise
+// have held the shell for a minute. A daemon that failed is stopped, so
+// the next start begins afresh.
 function daemonCommand(daemon) {
   const directory = `${GUEST_STORE_DIR}/${daemon}/bin`;
   const binary = `${directory}/${DAEMON_NAME}`;
@@ -239,12 +241,14 @@ function daemonCommand(daemon) {
     `rm -f ${PULSE_SOCKET}`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${binary} ${flags.join(" ")} ${modules.join(" ")}` +
       ` < /dev/null > ${PULSE_LOG} 2>&1 &`,
-    `echo $! > ${PULSE_PID_FILE}`,
+    `daemon=$!`,
+    `echo $daemon > ${PULSE_PID_FILE}`,
 
     // Wait for the socket, and then for card 0's sink.
     `polls=0`,
     `until [ -S ${PULSE_SOCKET} ]; do`,
     `  grep -q '^E: ' ${PULSE_LOG} 2> /dev/null && { ${giveUp}; }`,
+    `  exited $daemon && { echo 'the daemon exited' >&2; ${giveUp}; }`,
     `  polls=$((polls + 1))`,
     `  [ $polls -gt ${SOCKET_POLLS} ] && { echo 'no socket after ${SOCKET_POLLS} polls' >&2; ${giveUp}; }`,
     `  sleep ${POLL_S}`,
