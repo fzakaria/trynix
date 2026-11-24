@@ -138,8 +138,15 @@ export function enteredLine(terminal) {
 // A line being typed, after `data` is sent: printable text added, a
 // backspace taking the last character off, and anything else (arrows,
 // control keys, escape sequences) left out.
+//
+// The terminal's replies to a program's queries are sent the same way
+// as keys, and are left out whole: a control sequence, whose parameters
+// may start with < = > or ? (ESC [ > 1;10;0c), and a control string
+// (DCS ESC P, OSC ESC ], or SOS, PM, APC) up to its ESC \ or BEL. An
+// arrow key in application mode is ESC O and one character (SS3).
 const BACKSPACE = "\x7f";
-const ESCAPE_SEQUENCE = /\x1b(\[[0-9;?]*[ -/]*[@-~]|[@-Z\\-_])/g;
+const ESCAPE_SEQUENCE =
+  /\x1b(\[[0-?]*[ -/]*[@-~]|[PX\]^_][^\x07\x1b]*(\x07|\x1b\\)|O.|[@-Z\\-_])/g;
 export function typedLine(line, data) {
   let next = line;
   for (const char of data.replace(ESCAPE_SEQUENCE, "")) {

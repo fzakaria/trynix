@@ -337,3 +337,18 @@ test("the entered line is on the cursor's row, past the scrollback", () => {
   assert.equal(enteredLine(terminalOf([], screen, 1)), "ls");
   assert.equal(enteredLine(terminalOf(scrollback, screen, 0)), null);
 });
+
+// Checks that the terminal's replies to a program's queries, which
+// reach the page by the same path as keys, add nothing to a typed line:
+// emacs -nw asks for the secondary device attributes as it starts, and
+// in a guest the reply (ESC [ > 1;10;0c) became text that the next
+// line began with, so "emacs -nw" was read as a program named "[>1".
+// Replies in a control string (DCS, OSC) and arrow keys in application
+// mode (SS3) are left out whole too.
+test("a typed line leaves out the terminal's replies", () => {
+  assert.equal(typedLine("", "\x1b[>1;10;0c"), "");
+  assert.equal(typedLine("", "\x1b[?62;22c\x1b[4;5R"), "");
+  assert.equal(typedLine("", "\x1bP>|ghostty 1.2\x1b\\"), "");
+  assert.equal(typedLine("", "\x1b]11;rgb:0000/0000/0000\x07"), "");
+  assert.equal(typedLine("vi", "\x1bOD\x1bOC"), "vi");
+});
