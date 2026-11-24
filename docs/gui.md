@@ -24,8 +24,10 @@ https://trynix.dev/?pkg=galculator&boot=1&run=galculator+%26
 Windows open over the terminal, inside the console's frame, with the
 terminal drawn behind them. When the first program connects the frame
 grows to nearly the viewport's height, the terminal refits its rows,
-and the page scrolls the whole frame on screen. Windows move by their
-title bar or by Alt+drag.
+and the page scrolls the whole frame on screen. A new window opens at
+the bottom of the frame while the shell's prompt is in the upper half,
+so the prompt the program was started from stays in view. Windows move
+by their title bar or by Alt+drag.
 
 The keyboard goes to one place at a time. A click on a window gives it
 the keyboard; a click on the terminal outside every window gives the
@@ -65,8 +67,8 @@ line says why.
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
 [site/js/frame.js](../site/js/frame.js) the console frame the windows
-open in: its size and the keyboard between the windows and the
-terminal. `#desktop` covers the console's
+open in: its size, where windows open, and the keyboard between the
+windows and the terminal. `#desktop` covers the console's
 body and takes no pointer itself, so a press outside every window
 reaches the terminal; wland gives each window's canvases their own.
 
@@ -459,7 +461,9 @@ SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
 the console, terminal and windows, at each step.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
-page writes into the share and runs in the guest, offline.
+page writes into the share and runs in the guest, offline, and
+[tests/site/frame.test.mjs](../tests/site/frame.test.mjs) the frame's
+rules: where a new window opens.
 
 ## Updating it
 
