@@ -56,6 +56,12 @@ const FullScreenLabel = Object.freeze({
   EXIT: "exit full screen",
 });
 
+// Whether a window fills the frame: maximized or full screen, at its
+// program's asking (firefox opens maximized) or the reader's, and not
+// minimized. Such a window gets the frame at its tallest.
+export const fillsFrame = (win) =>
+  !win.minimized && (win.maximized || win.fullscreen);
+
 // Whether a window's box is wider or taller than the frame's.
 export const oversized = (box, frame) =>
   box.width > frame.width || box.height > frame.height;
@@ -381,6 +387,11 @@ export function consoleFrame({
       return;
     }
     placeNew();
+    // A window that fills the frame gets the frame at its tallest,
+    // whenever it came to fill it.
+    if (desktop.view.windows().some(fillsFrame)) {
+      growFrame(tallestFrame());
+    }
     keepWindowsReachable();
     relabel();
     returnKeyboard();

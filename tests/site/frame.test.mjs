@@ -11,6 +11,7 @@ import {
   WINDOW_GRIP,
   WINDOW_MARGIN,
   WindowsAction,
+  fillsFrame,
   keepReachable,
   opensAt,
   oversized,
@@ -116,4 +117,18 @@ test("the windows button hides shown windows and shows hidden ones", () => {
   const show = windowsButton([hidden, hidden]);
   assert.equal(show.action, WindowsAction.SHOW);
   assert.equal(show.label, "show windows (2)");
+});
+
+// Checks which windows want the frame at its tallest: one maximized or
+// full screen, whether its program asked for that (firefox opens
+// maximized) or the reader did, and not one that is minimized.
+test("a maximized or full-screen window wants the tallest frame", () => {
+  const plain = { minimized: false, maximized: false, fullscreen: false };
+  assert.equal(fillsFrame(plain), false);
+  assert.equal(fillsFrame({ ...plain, maximized: true }), true);
+  assert.equal(fillsFrame({ ...plain, fullscreen: true }), true);
+  assert.equal(
+    fillsFrame({ ...plain, maximized: true, minimized: true }),
+    false,
+  );
 });
