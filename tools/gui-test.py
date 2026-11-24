@@ -243,6 +243,13 @@ class Chromium:
             deviceScaleFactor=1,
             mobile=viewport.mobile,
         )
+
+        # The page is laid out without a scrollbar. A screenshot that
+        # captures beyond the viewport grows the viewport to the page's
+        # height, which drops a scrollbar the page had, and the centred
+        # console then sat 7.5 px right of the clip measured before.
+        self.browser.send("Emulation.setScrollbarsHidden", hidden=True)
+
         if viewport.mobile:
             self.browser.send(
                 "Emulation.setTouchEmulationEnabled",
