@@ -456,7 +456,10 @@
         </div>
         <div id="console-body">
           <div id="console-veil"><span class="spinner" id="console-spinner"></span><span id="console-note"></span></div>
-          <div id="terminal"></div>
+          <!-- ghostty input mostly goes through a hidden input, but it
+               also makes this element contenteditable as a backup so the
+               editing attributes need to manually be set here as well -->
+          <div id="terminal" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
           <!-- GUI programs' windows, composited in the page by wland
                (site/js/gui.js) over the terminal; shown when the first
                one connects. -->
