@@ -21,7 +21,10 @@
 // Everything is written back with replaceState as it changes, so the
 // address bar is always the link for what is on screen — a store path
 // from someone's cachix and the key that vouches for it travel in the
-// same link as the selection.
+// same link as the selection. The one exception is a link the page is
+// still restoring: the link's packages, paths and boot flag stay in the
+// address until the page has selected what the link names
+// (whileRestoring).
 
 import { downloadsOf } from "./downloads.js";
 import { networkOf, relayOf } from "./network.js";
@@ -104,6 +107,32 @@ function countOf(value) {
     return null;
   }
   return Number(value);
+}
+
+// The selection and boot flag the address carries, given `state`, the
+// page's selection and caches as writeUrl takes them, and `boot`, the
+// flag the caller asks for.
+//
+// While the page is still restoring the link it was opened with
+// (`opening`, readUrl's answer for that link), the address keeps that
+// link's packages, paths and boot flag. The selection fills in only as
+// app.js's restore() finds each package in the index, and an address
+// written from the selection before then is a link to an empty page. A
+// reload in that window opens the address: the reader's reload, and on
+// a first visit the COOP/COEP shim's, which reloads once its service
+// worker is installed (site/index.html). The caches and every other
+// setting already come from the page, which applied the link's caches
+// and settings before the first redraw. A chip the reader adds or
+// removes meanwhile reaches the address once the restore is done, when
+// `opening` is null again.
+export function whileRestoring(state, { boot, opening }) {
+  if (opening === null) {
+    return { state, boot };
+  }
+  return {
+    state: { ...state, pkgs: opening.pkgs, paths: opening.paths },
+    boot: boot || opening.boot,
+  };
 }
 
 // Rewrite the address bar to describe the current selection. `boot`

@@ -58,7 +58,7 @@ import {
 } from "./multiverse.js";
 import { registerTools } from "./webmcp.js";
 import { RangeComplete } from "./complete.js";
-import { readUrl, writeUrl } from "./url.js";
+import { readUrl, whileRestoring, writeUrl } from "./url.js";
 import {
   holdsPath,
   NOT_FOUND,
@@ -346,15 +346,21 @@ let network = pickNetwork({
 // link.
 let linkedSound = readUrl().sound;
 
+// The link the page was opened with, while restore() is still looking
+// the link's packages up in the index, or null. Until the restore is
+// done every link the page writes keeps the opening link's packages,
+// paths and boot flag (url.js, whileRestoring).
+let opening = null;
+
 // The link for what is on screen, as a URL relative to this page.
 // `engine` names an engine for the link in place of the one
 // linkEngine picks, which is how the guest choice under Settings moves
 // the page to the other engine with every other setting kept.
 function link({ boot = false, engine = null } = {}) {
-  const state = urlState();
-  return writeUrl(state, {
-    boot,
-    engine: engine ?? linkEngine(state),
+  const shown = whileRestoring(urlState(), { boot, opening });
+  return writeUrl(shown.state, {
+    boot: shown.boot,
+    engine: engine ?? linkEngine(shown.state),
     memory: linkedMemory,
     cpus: linkedCpus,
     downloads: linkedDownloads,
@@ -2141,6 +2147,13 @@ async function prefetch() {
 }
 
 const initial = readUrl();
+
+// A link naming packages or paths holds the address until restore()
+// has selected the link's packages and paths. Set before the first
+// redraw, which applyCaches does.
+if (initial.pkgs.length > 0 || initial.paths.length > 0) {
+  opening = initial;
+}
 applyCaches(initial.caches);
 
 // Not while a boot is already starting. A reboot lands on ?boot=1 and
@@ -2158,12 +2171,19 @@ if (!initial.boot) {
   }
 }
 render();
-if (initial.pkgs.length > 0 || initial.paths.length > 0) {
-  restore(initial).then(() => {
-    if (initial.boot && selection.size > 0) {
-      boot();
-    }
-  });
+if (opening !== null) {
+  restore(initial)
+    .finally(() => {
+      // The restore is over, whatever the index answered, so the
+      // address goes back to describing the selection.
+      opening = null;
+      render();
+    })
+    .then(() => {
+      if (initial.boot && selection.size > 0) {
+        boot();
+      }
+    });
 }
 
 // The site build substitutes the derivation's own $out into STORE_PATH, so

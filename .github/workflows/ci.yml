@@ -59,6 +59,19 @@ jobs:
       - name: Guest image
         run: nix build .#guest -L
 
+      # A shared link on a first visit, served without COOP/COEP headers
+      # as GitHub Pages serves it, so the shim's service worker reloads
+      # the page. Every run below serves the real headers and never sees
+      # that reload; a link that lost its packages to the reload went
+      # unnoticed. Firefox too, since its reload is the one that lands
+      # after the page has written the address. No network: the test
+      # holds the index and answers for the index itself.
+      - name: Keeps a shared link through the first visit
+        run: |
+          site="$(nix build .#site --no-link --print-out-paths)"
+          nix run .#link-test -- --site "$site"
+          nix run .#link-test -- --site "$site" --with firefox
+
       # Cold boots in headless chromium: the resume handshake has raced
       # twice, and a race only shows up over repeated fresh starts. This
       # needs the network, since the closure comes from cache.nixos.org.

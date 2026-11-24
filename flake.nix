@@ -162,6 +162,20 @@
               pkgs.firefox
             ];
 
+          # open a shared link on a first visit, through the COOP/COEP
+          # shim's reload, and check that the address keeps the link
+          # until the page has restored it, in chromium or (--with
+          # firefox) firefox. The tools directory as a whole, since this
+          # imports gui-test.py and cpu-test.py
+          link-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "link-test" "${python}/bin/python3 ${./tools}/link-test.py" [
+              pkgs.chromium
+              pkgs.firefox
+            ];
+
           # call the page's WebMCP tools the way an agent would, through a
           # polyfill, since no headless browser ships the API yet.
           # The tools directory as a whole, since this imports cpu-test.py

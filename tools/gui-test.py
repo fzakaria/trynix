@@ -242,6 +242,14 @@ class Chromium:
     def navigate(self, url):
         self.browser.send("Page.navigate", url=url)
 
+    def preload(self, function):
+        """Run `function`, the source of a JavaScript function, in every
+        document this tab opens from now on, before the page's own
+        scripts."""
+        self.browser.send(
+            "Page.addScriptToEvaluateOnNewDocument", source=f"({function})();"
+        )
+
     def evaluate(self, expression):
         return self.browser.evaluate(expression)
 
@@ -380,6 +388,16 @@ class Firefox:
 
     def navigate(self, url):
         self.send("browsingContext.navigate", context=self.context, url=url, wait="none")
+
+    def preload(self, function):
+        """Run `function`, the source of a JavaScript function, in every
+        document this tab opens from now on, before the page's own
+        scripts."""
+        self.send(
+            "script.addPreloadScript",
+            functionDeclaration=function,
+            contexts=[self.context],
+        )
 
     def evaluate(self, expression):
         return self._value(f"JSON.stringify(({expression}) ?? null)", False)
