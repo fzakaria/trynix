@@ -108,6 +108,24 @@ test("nothing is added where nothing is needed or a Mesa is selected", () => {
   assert.match(driverNote(unpublished), /mesa/);
 });
 
+// Checks a GL program added to a guest that already has the site's
+// driver: the driver is held to the program's glibc and gcc as at a
+// fresh boot, rather than taken for a Mesa the reader selected. An
+// added program older than the driver gets the note a fresh boot
+// gives, and a closure the driver fits keeps the driver it has.
+test("the site's driver in a running guest is checked against added programs", () => {
+  const driver = NEW.storePath.slice("/nix/store/".length);
+  const booted = [...glProgram("2.42-84", "15.3.0"), driver];
+
+  const added = chooseDriver([...booted, path("glibc-2.37-45")], [NEW]);
+  assert.equal(added.choice, DriverChoice.NONE_FITS);
+  assert.match(driverNote(added), /glibc 2\.37/);
+
+  const kept = chooseDriver(booted, [NEW]);
+  assert.equal(kept.choice, DriverChoice.ADD);
+  assert.equal(kept.driver, NEW);
+});
+
 // Checks a selection that mixes nixpkgs revisions: the closure then
 // holds two glibcs, and a driver must fit the older one, since any of
 // the programs may be the one that loads it.

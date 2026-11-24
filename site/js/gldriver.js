@@ -18,7 +18,11 @@
 // that is no newer than the program on either count.
 //
 // A reader who selects a Mesa of their own gets that one instead: the
-// page adds nothing where the selection already holds a Mesa.
+// page adds nothing where the selection already holds a Mesa. The
+// site's own driver is not such a Mesa. A guest the page gave it at the
+// boot still has it when a program is added, and the added program may
+// be older than the driver; the driver is held to the whole closure
+// again, as a fresh boot of it would be.
 
 import { speaksWayland } from "./gui.js";
 import { siteManifest } from "./substituters.js";
@@ -44,6 +48,8 @@ const GLVND_PATH = /^[0-9a-z]{32}-libglvnd-\d/;
 const MESA_PATH = /^[0-9a-z]{32}-mesa-(virgl-)?\d/;
 const GLIBC_PATH = /^[0-9a-z]{32}-glibc-(\d+(?:\.\d+)*)/;
 const GCC_LIB_PATH = /^[0-9a-z]{32}-gcc-(\d+(?:\.\d+)*)-lib$/;
+
+const STORE_PREFIX = "/nix/store/";
 
 // Whether a store basename is a Mesa, which the guest may take as its
 // GL driver. A lazily served boot fetches these with the selection
@@ -80,7 +86,17 @@ export function chooseDriver(basenames, drivers) {
   ) {
     return { choice: DriverChoice.NOT_NEEDED };
   }
-  if (basenames.some((basename) => MESA_PATH.test(basename))) {
+
+  // A Mesa in the closure that the site does not publish is one the
+  // reader selected.
+  const published = new Set(
+    drivers.map((driver) => driver.storePath.slice(STORE_PREFIX.length)),
+  );
+  if (
+    basenames.some(
+      (basename) => MESA_PATH.test(basename) && !published.has(basename),
+    )
+  ) {
     return { choice: DriverChoice.PRESENT };
   }
   if (drivers.length === 0) {

@@ -951,9 +951,14 @@ async function glDriverPaths(known, onProgress) {
     return { added: new Map(), result };
   }
 
+  // A running guest the page gave the driver at its boot needs nothing
+  // more.
   const digest = result.driver.storePath
     .slice(STORE_PREFIX.length)
     .slice(0, DIGEST_LENGTH);
+  if (known.has(digest)) {
+    return { added: new Map(), result };
+  }
   const added = await walkRoots([digest], onProgress, known);
   log(
     `gl: added ${result.driver.storePath} (${added.size} paths) for GL programs`,

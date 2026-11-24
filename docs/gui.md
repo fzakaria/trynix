@@ -228,7 +228,10 @@ What the page does instead:
 - it adds the newest driver whose floors are no newer than the
   program's ([site/js/gldriver.js](../site/js/gldriver.js)), and when
   none fits it says so and suggests a Mesa from the program's own
-  nixpkgs, which the reader can select with `pkg=mesa@<version>`.
+  nixpkgs, which the reader can select with `pkg=mesa@<version>`;
+- a program added to a running guest is judged the same way, with the
+  guest's closure and the driver it already has, so an added program
+  older than that driver gets the same note a fresh boot gives.
 
 One driver is published, built on the nixpkgs this flake locks. Its
 floors are glibc 2.38 and gcc 11.1: the `GLIBC_2.38` comes from
@@ -252,7 +255,9 @@ the programs tried; it is not a proof.
 fails when the pin claims less than the binaries ask for, and
 [tests/site/gldriver.test.mjs](../tests/site/gldriver.test.mjs)
 covers the choice: a program older than every driver gets none, a
-mixed selection is judged by its older glibc, a selected Mesa wins.
+mixed selection is judged by its older glibc, a selected Mesa wins,
+and the site's driver in a running guest is held to a program added
+later.
 
 ### Where it is served from
 
