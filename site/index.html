@@ -96,9 +96,22 @@
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
-    <!-- GUI programs and sound (docs/gui.md); the Settings lane says
-         where that holds. -->
-    <p>GUI programs open as windows on the page, and sound works too.</p>
+    <!-- GUI programs and sound (docs/gui.md). Each half carries what
+         holds for it in its tooltip, under a dotted line. -->
+    <p>
+      <span
+        class="hint"
+        tabindex="0"
+        title="On the aarch64 guest, a Wayland program opens as a window over the terminal. Programs that speak only X11 don't start yet. A GL program draws through your browser's WebGL2 with the site's own Mesa; select a mesa with it to use nixpkgs' instead. Tested in Chrome and Firefox."
+        >GUI programs open as windows on the page</span
+      >, and
+      <span
+        class="hint"
+        tabindex="0"
+        title="On the aarch64 guest, what a program plays through ALSA comes out of your speakers, from your first click on the page. The console bar's sound switch turns it off. A program that needs a PulseAudio or PipeWire server stays silent unless it falls back to ALSA."
+        >sound works too</span
+      >.
+    </p>
 
     <!-- Each example boots on click and types its command at the shell
          once the guest is up (boot=1, run=; site/js/url.js), so the
@@ -295,14 +308,15 @@
 
         <!-- The aarch64 guest's memory (site/js/memory.js). The radios are
              written by app.js from MEMORY_SIZES_MIB; a choice is remembered
-             by this browser and used at the next boot. -->
+             by this browser, goes into the link and is used at the next
+             boot. This box and the three after it are hidden on the x86_64
+             guest (app.js). -->
         <fieldset id="memory">
           <legend>Guest memory</legend>
           <div id="memory-sizes"></div>
           <p class="muted">
-            For the aarch64 guest. It takes memory only as programs use it, so a large guest costs
-            nothing until something fills it; a browser that cannot set the size aside gets a smaller
-            one. A link can ask for a size with <code>mem=</code>.
+            The guest takes memory only as programs use it, so a large guest costs nothing until
+            something fills it; a browser that cannot set the size aside gets a smaller one.
           </p>
           <p id="memory-status" class="muted"></p>
         </fieldset>
@@ -313,17 +327,14 @@
           <legend>Guest CPUs</legend>
           <div id="cpu-counts"></div>
           <p class="muted">
-            For the aarch64 guest, each CPU in a worker of its own. The default leaves half your
-            machine's threads to the browser; you can give it up to all of them, at most 16, the
-            guest kernel's limit. A link can ask for a count with <code>cpus=</code>.
+            Each CPU runs in a worker of its own. The default leaves half your machine's threads to
+            the browser; you can give the guest up to all of them, at most 16, its kernel's limit.
           </p>
           <p id="cpu-status" class="muted"></p>
         </fieldset>
 
         <!-- When a boot downloads its closure (site/js/downloads.js): on
-             first use, the default, or all of it before the shell starts.
-             A choice is remembered by this browser and used at the next
-             boot; the x86_64 guest has only the second (app.js says so). -->
+             first use, the default, or all of it before the shell starts. -->
         <fieldset id="downloads">
           <legend>Downloads</legend>
           <label>
@@ -348,17 +359,11 @@
               </span>
             </span>
           </label>
-          <p class="muted">
-            For the aarch64 guest; the x86_64 guest always downloads everything first. A link can ask
-            with <code>fetch=all</code> or <code>fetch=lazy</code>.
-          </p>
           <p id="downloads-status" class="muted"></p>
         </fieldset>
 
         <!-- The guest's network (site/js/network.js): on through a Wisp
-             relay, the default, or off, and the relay to use. Remembered
-             by this browser and used at the next boot; the x86_64 guest
-             has none (app.js says so). -->
+             relay, the default, or off, and the relay to use. -->
         <fieldset id="network">
           <legend>Network</legend>
           <label>
@@ -392,34 +397,11 @@
           </div>
           <p class="muted">
             Empty means unkernel's relay at wisp.unkernel.dev, which lets this site use it. Another
-            relay must speak Wisp v1 and accept this page's origin. A link can turn the network off
-            with <code>net=off</code>, but cannot name a relay.
+            relay must speak Wisp v1 and accept this page's origin; this browser keeps it, and no
+            link carries one.
           </p>
           <p id="network-status" class="muted"></p>
         </fieldset>
-
-        <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
-             always there and cost nothing until used, and the GL driver's
-             opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->
-        <h3>GUI programs</h3>
-        <p class="muted">
-          On the aarch64 guest a Wayland program opens a window over the terminal: type its name at
-          the shell. Programs that only speak X11 do not start, since the guest has no X server. A GL
-          program also downloads the site's GL driver, Mesa with only the virgl driver, which draws
-          through your browser's WebGL2; to use another, select a <code>mesa</code> with the program
-          and the page adds none of its own. Tested in Chrome and Firefox.
-        </p>
-
-        <!-- The guest's sound (site/js/sound.js, docs/gui.md). The switch
-             is on the console bar, where it shows once a program plays. -->
-        <h3>Sound</h3>
-        <p class="muted">
-          The aarch64 guest has a sound card, and what a program plays through ALSA comes out of
-          your speakers. Browsers start sound only after a click or key press on the page, so what a
-          program plays before that is held and plays at your first click. The console bar's sound
-          switch turns it off. A program that needs a PulseAudio or PipeWire server stays silent
-          unless it falls back to ALSA.
-        </p>
 
         <h3>Binary caches</h3>
         <p class="muted">

@@ -298,8 +298,8 @@ function linkEngine(state) {
 }
 
 // The memory size the page's link names (url.js, `mem`), or null. A
-// link carries a size only when it was opened with one: a size chosen
-// in Settings is this browser's, and stays out of links it shares.
+// size chosen in Settings goes into the link too, so the address bar
+// always says what the next boot asks for.
 let linkedMemory = readUrl().memory;
 
 // The unkernel guest's memory for the next boot (memory.js): the link's
@@ -324,8 +324,7 @@ let cpus = pickCpus({
 
 // When the next boot downloads its closure (downloads.js, url.js
 // `fetch`): the link's choice, then this browser's, then on first use.
-// A link carries the choice only when it was opened with one, as it
-// does the memory.
+// A choice made in Settings goes into the link, as the memory does.
 let linkedDownloads = readUrl().downloads;
 let downloads = pickDownloads({
   linked: linkedDownloads,
@@ -341,8 +340,8 @@ const linkedRun = readUrl().run;
 
 // Whether the next boot has a network, and through which Wisp relay
 // (network.js, url.js `net`): the link's choice, then this browser's,
-// then on through unkernel's relay. A link carries the choice only when
-// it was opened with one, and never a relay.
+// then on through unkernel's relay. A choice made in Settings goes into
+// the link, as the memory does; a relay never does.
 let linkedNetwork = readUrl().network;
 let network = pickNetwork({
   linked: linkedNetwork,
@@ -534,10 +533,8 @@ function wireMemoryChoice() {
     const mib = Number(event.target.value);
     memory = { mib, why: "chosen in Settings" };
     rememberMemory(mib);
-    if (linkedMemory !== null) {
-      linkedMemory = mib;
-      history.replaceState(null, "", link());
-    }
+    linkedMemory = mib;
+    history.replaceState(null, "", link());
     memoryStatus.textContent = vmStarted
       ? `${memoryLabel(mib)} from the next boot; this guest keeps what it booted with`
       : "";
@@ -577,10 +574,8 @@ function wireCpuChoice() {
     const count = Number(event.target.value);
     cpus = { count, why: "chosen in Settings" };
     rememberCpus(count);
-    if (linkedCpus !== null) {
-      linkedCpus = count;
-      history.replaceState(null, "", link());
-    }
+    linkedCpus = count;
+    history.replaceState(null, "", link());
     cpuStatus.textContent = vmStarted
       ? `${count} from the next boot; this guest keeps what it booted with`
       : "";
@@ -589,29 +584,19 @@ function wireCpuChoice() {
 wireCpuChoice();
 
 // The downloads choice under Settings: on first use, or everything
-// before the shell starts. The x86_64 guest has only the second, and
-// says why. A choice is remembered by this browser, replaces the link's
-// when the link named one, and takes effect at the next boot.
+// before the shell starts. A choice is remembered by this browser, goes
+// into the link, and takes effect at the next boot.
 function wireDownloadsChoice() {
   const option = (mode) =>
     downloadsChoice.querySelector(`input[value="${mode}"]`);
   option(downloads.mode).checked = true;
 
-  if (ENGINE === Engine.QEMU) {
-    option(Downloads.LAZY).disabled = true;
-    downloadsStatus.textContent =
-      "The x86_64 guest downloads everything first: QEMU's 9p server reads its store synchronously and cannot wait for a download.";
-    return;
-  }
-
   downloadsChoice.addEventListener("change", (event) => {
     const mode = event.target.value;
     downloads = { mode, why: "chosen in Settings" };
     rememberDownloads(mode);
-    if (linkedDownloads !== null) {
-      linkedDownloads = mode;
-      history.replaceState(null, "", link());
-    }
+    linkedDownloads = mode;
+    history.replaceState(null, "", link());
     downloadsStatus.textContent = vmStarted
       ? "from the next boot; this guest keeps the way it started"
       : "";
@@ -619,22 +604,31 @@ function wireDownloadsChoice() {
 }
 wireDownloadsChoice();
 
+// The settings only the aarch64 guest has (its memory, CPUs, downloads
+// and network) are not shown on the x86_64 guest, which has a fixed
+// machine, downloads everything first and has no network device.
+const UNKERNEL_ONLY_SETTINGS = [
+  memorySizes.closest("fieldset"),
+  cpuCounts.closest("fieldset"),
+  downloadsChoice,
+  networkChoice,
+];
+if (ENGINE !== Engine.UNKERNEL) {
+  for (const setting of UNKERNEL_ONLY_SETTINGS) {
+    setting.hidden = true;
+  }
+}
+
 // The network choice under Settings: on or off, and the relay, empty
-// for unkernel's. A choice is remembered by this browser, replaces the
-// link's when the link named one, and takes effect at the next boot. A
-// relay that is not a ws: or wss: URL is refused, and says so.
+// for unkernel's. A choice is remembered by this browser, goes into the
+// link, and takes effect at the next boot; the relay stays in this
+// browser. A relay that is not a ws: or wss: URL is refused, and says
+// so.
 function wireNetworkChoice() {
   const option = (mode) =>
     networkChoice.querySelector(`input[name="network"][value="${mode}"]`);
   option(network.mode).checked = true;
   networkRelay.value = rememberedRelay() ?? "";
-
-  if (ENGINE === Engine.QEMU) {
-    option(Network.ON).disabled = true;
-    networkRelay.disabled = true;
-    networkStatus.textContent = "The x86_64 guest has no network device.";
-    return;
-  }
 
   // What the status line says once something changed.
   const fromNextBoot = () =>
@@ -648,10 +642,8 @@ function wireNetworkChoice() {
       const mode = event.target.value;
       network = { ...network, mode, why: "chosen in Settings" };
       rememberNetwork(mode);
-      if (linkedNetwork !== null) {
-        linkedNetwork = mode;
-        history.replaceState(null, "", link());
-      }
+      linkedNetwork = mode;
+      history.replaceState(null, "", link());
       networkStatus.textContent = fromNextBoot();
       return;
     }

@@ -171,11 +171,13 @@ The guest's memory is sized per boot ([site/js/memory.js](../site/js/memory.js))
   browser reports `navigator.deviceMemory` of 4 GB or less, the guest
   gets a quarter of it, never under 512 MiB.
 - A link can ask for a size: `mem=2048`, in MiB, one of the sizes the
-  Settings lane offers. A link carries `mem` only when it was opened
-  with one.
-- The Settings lane offers 512 MiB, 1, 2 and 4 GiB, and this browser
-  remembers the choice (`localStorage`). The link's size wins over the
-  remembered one, which wins over the default.
+  Settings lane offers.
+- The Settings lane offers 512 MiB, 1, 2 and 4 GiB. A choice there goes
+  into the address bar's link and this browser remembers it
+  (`localStorage`). The link's size wins over the remembered one, which
+  wins over the default. The same goes for the CPUs, the downloads and
+  the network below, and all four boxes are hidden on the x86_64 guest,
+  which has none of them.
 - When the browser cannot allocate the size, the SDK tries 1 GiB and
   then 512 MiB, and the Settings lane says what the guest booted with.
 

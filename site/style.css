@@ -710,6 +710,14 @@ code {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+/* A phrase with more to say in its tooltip: the dotted underline the
+   progress rows' setting links have. */
+.hint {
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
 /* A progress row's label that links to its setting: the row reads as
    before, with a dotted underline saying there is more behind it. */
 a.label {
