@@ -17,7 +17,7 @@ import {
   createLoadTelemetry,
   track,
 } from "./analytics.js";
-import { walkClosure } from "./closure.js";
+import { reachable, walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { lazyStore, Priority, References } from "./lazy.js";
 import {
@@ -46,6 +46,7 @@ import {
   multiverseUrl,
   searchAttrs,
   versionRowsOf,
+  versionsOf,
 } from "./multiverse.js";
 import { registerTools } from "./webmcp.js";
 import { RangeComplete } from "./complete.js";
@@ -106,6 +107,14 @@ import {
   isGlDriverPath,
   publishedDrivers,
 } from "./gldriver.js";
+import {
+  chooseX11Server,
+  ShellStart,
+  X11_SERVER_ATTR,
+  X11Choice,
+  x11Note,
+  x11ServerIn,
+} from "./x11.js";
 import {
   Downloads,
   pickDownloads,
@@ -946,18 +955,27 @@ function reportSilent(vm, closure, roots) {
 // (gldriver.js): the driver's own closure, walked past what `known`
 // already holds, and the choice, for reportGl. Nothing is added on the
 // qemu engine, whose guest has no GPU to drive.
-async function glDriverPaths(known, onProgress) {
+//
+// The programs are the selected ones (`rootDigests`) with their
+// closures. What the page added beside them is left out: the X server
+// links libglvnd and Wayland, and Xwayland draws without GL here
+// (gui.js), so a guest with X11 programs would otherwise get the
+// driver on every later addition. The site's driver is held to that
+// closure (gldriver.js), an added program's glibc and gcc included,
+// even where the guest has had the driver since its boot.
+async function glDriverPaths(known, rootDigests, onProgress) {
   if (ENGINE !== Engine.UNKERNEL) {
     return { added: new Map(), result: { choice: DriverChoice.NOT_NEEDED } };
   }
-  const basenames = [...known.values()].map(basenameOf);
+  const basenames = [...reachable(known, rootDigests).values()].map(basenameOf);
   const result = chooseDriver(basenames, await publishedDrivers());
   if (result.choice !== DriverChoice.ADD) {
     return { added: new Map(), result };
   }
 
-  // A running guest the page gave the driver at its boot needs nothing
-  // more.
+  // A running guest the page gave the driver at its boot, or at an
+  // earlier addition, has it in `known`, outside the selection's
+  // closure, and needs nothing more.
   const digest = result.driver.storePath
     .slice(STORE_PREFIX.length)
     .slice(0, DIGEST_LENGTH);
@@ -969,6 +987,66 @@ async function glDriverPaths(known, onProgress) {
     `gl: added ${result.driver.storePath} (${added.size} paths) for GL programs`,
   );
   return { added, result };
+}
+
+// The newest build of the X server the index has for the guest's
+// system, or undefined when it has none or cannot be reached.
+async function newestX11Server() {
+  try {
+    return (await versionsOf(X11_SERVER_ATTR)).find(bootable);
+  } catch (err) {
+    log(
+      `x11: the index could not be asked for ${X11_SERVER_ATTR}: ${err.message}`,
+    );
+    return undefined;
+  }
+}
+
+// The X server a closure's X11 programs need, on the unkernel engine
+// (x11.js): the server's own closure, walked past what `known` already
+// holds, and the choice, for reportX11. Nothing is added on the qemu
+// engine, whose guest has no compositor to show X11 windows in.
+async function x11ServerPaths(known, rootDigests, onProgress) {
+  if (ENGINE !== Engine.UNKERNEL) {
+    return { added: new Map(), result: { choice: X11Choice.NOT_NEEDED } };
+  }
+  const result = chooseX11Server(known, rootDigests);
+  if (result.choice !== X11Choice.ADD) {
+    return { added: new Map(), result };
+  }
+
+  const server = await newestX11Server();
+  if (server === undefined) {
+    return {
+      added: new Map(),
+      result: { choice: X11Choice.UNAVAILABLE },
+    };
+  }
+  const added = await walkRoots([server.digest], onProgress, known);
+  log(
+    `x11: added ${server.storePath} (${added.size} paths) for ${result.programs.join(", ")}`,
+  );
+  return { added, result };
+}
+
+// Whether the shell on the page started with an X server in the
+// closure, given what the guest held before an addition (`before`): it
+// sourced its environment at the boot, and an addition changes it only
+// for shells started later.
+const shellStartOf = (before) =>
+  x11ServerIn([...before.values()].map(basenameOf)) === null
+    ? ShellStart.BEFORE_SERVER
+    : ShellStart.AFTER_SERVER;
+
+// Say what the selection's X11 programs lack, or how the shell already
+// running reaches an X server an addition brought (x11.js, x11Note),
+// unless the status names silent selections.
+function reportX11(result, shellStart) {
+  const note = x11Note(result, shellStart);
+  if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
+    return;
+  }
+  status.textContent = note;
 }
 
 // Say what the selection's GL programs lack (gldriver.js, driverNote),
@@ -1489,11 +1567,18 @@ async function boot() {
       walkRow.note(`${n} narinfos`);
       found(info);
     });
-    const gl = await glDriverPaths(closure, (n, info) => {
+    const gl = await glDriverPaths(closure, rootDigests, (n, info) => {
       walkRow.note(`${closure.size + n} narinfos`);
       found(info);
     });
     for (const [digest, info] of gl.added) {
+      closure.set(digest, info);
+    }
+    const x11 = await x11ServerPaths(closure, rootDigests, (n, info) => {
+      walkRow.note(`${closure.size + n} narinfos`);
+      found(info);
+    });
+    for (const [digest, info] of x11.added) {
       closure.set(digest, info);
     }
     log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
@@ -1597,6 +1682,7 @@ async function boot() {
     log("virtual machine running");
     reportSilent(vm, closure, roots);
     reportGl(gl.result);
+    reportX11(x11.result, ShellStart.AFTER_SERVER);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
     addNote.hidden = false;
@@ -1672,12 +1758,23 @@ async function addToRunningVM() {
       (n) => row.note(`${n} narinfos`),
       mounted,
     );
-    const gl = await glDriverPaths(new Map([...mounted, ...fresh]), (n) =>
-      row.note(`${fresh.size + n} narinfos`),
+    const gl = await glDriverPaths(
+      new Map([...mounted, ...fresh]),
+      rootDigests,
+      (n) => row.note(`${fresh.size + n} narinfos`),
     );
     for (const [digest, info] of gl.added) {
       fresh.set(digest, info);
     }
+    const x11 = await x11ServerPaths(
+      new Map([...mounted, ...fresh]),
+      rootDigests,
+      (n) => row.note(`${fresh.size + n} narinfos`),
+    );
+    for (const [digest, info] of x11.added) {
+      fresh.set(digest, info);
+    }
+    const before = new Map(mounted);
     if (fresh.size === 0 && unfetchedSelections(rootDigests).length === 0) {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
@@ -1687,7 +1784,17 @@ async function addToRunningVM() {
 
     stage = LoadStage.DOWNLOAD;
     if (served !== null) {
-      await addLazily({ fresh, roots, rootDigests, gl, panel, row, telemetry });
+      await addLazily({
+        fresh,
+        roots,
+        rootDigests,
+        gl,
+        x11,
+        before,
+        panel,
+        row,
+        telemetry,
+      });
       return;
     }
     const infos = [...fresh.values()];
@@ -1712,6 +1819,7 @@ async function addToRunningVM() {
     await vm.add(unpacked, basenamesOf(mounted, rootDigests));
     reportSilent(vm, mounted, roots);
     reportGl(gl.result);
+    reportX11(x11.result, shellStartOf(before));
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
@@ -1764,6 +1872,8 @@ async function addLazily({
   roots,
   rootDigests,
   gl,
+  x11,
+  before,
   panel,
   row,
   telemetry,
@@ -1789,6 +1899,7 @@ async function addLazily({
   await vm.add([], basenamesOf(mounted, rootDigests), eager.map(basenameOf));
   reportSilent(vm, mounted, roots);
   reportGl(gl.result);
+  reportX11(x11.result, shellStartOf(before));
   telemetry.finish(LoadStage.READY);
   row.done(`${fresh.size} paths added, ${eager.length} fetched`);
   renderClosure(mounted);

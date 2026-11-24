@@ -21,6 +21,11 @@
 // The page loads wland only when the relay first dials, which it does
 // when the first program connects (--link-on-demand). A boot that runs
 // no GUI program fetches none of it.
+//
+// An X11 program connects to an X display the relay holds, and the
+// relay starts the X server, xwayland-satellite, for the first one
+// (x11.js). The satellite runs Xwayland rootless and hands each X11
+// window to the relay as a Wayland window of its own.
 
 import { GUEST_STORE_DIR, SHARE_DIR } from "./share.js";
 import { GUI_DIR, GUI_FONTS, GUI_RELAY, GUI_WLAND } from "./config.js";
@@ -81,6 +86,33 @@ const RENDER_NODE = "/dev/dri/renderD128";
 const MACHINE_ID = "/etc/machine-id";
 const RANDOM_UUID = "/proc/sys/kernel/random/uuid";
 
+// X11 programs (x11.js). The relay claims an X display and runs the
+// launcher for the first X client that connects (wlandr --xwayland);
+// the launcher starts the X server the page linked into the guest, or
+// fails when there is none, and the relay then refuses X clients. The
+// launcher is there from the session's start so a relay already
+// running when an addition brings the X server serves X clients too.
+const X11_LAUNCHER = `${GUI_SHARE_DIR}/start-x11`;
+const X11_SERVER_LINK = `${RUN_DIR}/x11-server`;
+
+// The program in the X server's store path: xwayland-satellite, which
+// nixpkgs wraps with Xwayland on its PATH.
+const X11_SERVER_PROGRAM = "bin/xwayland-satellite";
+
+// The display the relay claims: the first free one in /tmp, and a
+// fresh guest has none in use before the relay starts.
+export const X11_DISPLAY = ":0";
+
+// X resources for X11 programs, which Xt programs read from the file
+// XENVIRONMENT names. Xwayland has no core fonts but its built-in
+// "fixed", so xterm, asking for one it lacks, printed a warning on the
+// reader's terminal and drew in a 6x13 bitmap. The resources give it
+// the monospace family fontconfig maps to the page's DejaVu Sans Mono,
+// drawn through Xft, at a size in points.
+const X11_RESOURCES = `${GUI_SHARE_DIR}/Xresources`;
+const XTERM_FACE = "monospace";
+const XTERM_FACE_POINTS = 10;
+
 // fontconfig keeps its cache somewhere writable; the share is not.
 const FONT_CACHE_DIR = "/tmp/fontconfig";
 
@@ -99,8 +131,8 @@ const MESA_EGL_VENDOR = "share/glvnd/egl_vendor.d/50_mesa.json";
 // The environment every guest shell gets, so a GUI program started
 // plainly finds the relay and picks its Wayland backend. Toolkits that
 // would otherwise look for X are told to use Wayland; each falls back
-// to X where it has no Wayland backend, which here means it fails, as
-// the guest has no X server.
+// to X where it has no Wayland backend, which works only once the
+// closure holds an X server (x11Env).
 export function sessionEnv() {
   return {
     XDG_RUNTIME_DIR: RUNTIME_DIR,
@@ -112,6 +144,23 @@ export function sessionEnv() {
     MOZ_ENABLE_WAYLAND: "1",
     ELECTRON_OZONE_PLATFORM_HINT: "wayland",
     FONTCONFIG_FILE: FONTS_CONF,
+  };
+}
+
+// The environment a guest shell gets once the closure holds an X
+// server, so an X11 program started plainly finds the relay's display.
+// Shells get none without one: a program with both backends that tries
+// X11 first would find a display with no server behind it.
+//
+// Java's AWT waits for its window manager to reparent each window into
+// a frame of its own, and the satellite, whose windows' frames are the
+// compositor's, does not: a Swing window opened blank and stayed so
+// until AWT was told.
+export function x11Env() {
+  return {
+    DISPLAY: X11_DISPLAY,
+    XENVIRONMENT: X11_RESOURCES,
+    _JAVA_AWT_WM_NONREPARENTING: "1",
   };
 }
 
@@ -154,6 +203,34 @@ function fontsConf() {
   ].join("\n");
 }
 
+// The launcher the relay runs for the first X client, with the
+// relay's arguments (the display and its listening sockets). Xwayland
+// draws into shared memory, which the compositor reads through kwshm
+// like any other program's buffers: with glamor it would draw through
+// the GL driver, which X11 programs do not otherwise need, and the
+// first window took longer to open.
+function x11Launcher() {
+  return [
+    `#!/bin/sh`,
+    `[ -e ${X11_SERVER_LINK} ] || {`,
+    `  echo "trynix: no X server in this guest; select xwayland-satellite" >&2`,
+    `  exit 1`,
+    `}`,
+    `XWAYLAND_NO_GLAMOR=1 exec ${X11_SERVER_LINK} "$@"`,
+    ``,
+  ].join("\n");
+}
+
+// The X resources file (X11_RESOURCES).
+function x11Resources() {
+  return [
+    `! X resources for X11 programs in the trynix guest (site/js/gui.js).`,
+    `XTerm*faceName: ${XTERM_FACE}`,
+    `XTerm*faceSize: ${XTERM_FACE_POINTS}`,
+    ``,
+  ].join("\n");
+}
+
 // Fetch a file of the site's GUI directory, as bytes.
 async function fetchGuiFile(name) {
   const url = `${GUI_DIR}/${name}`;
@@ -165,14 +242,15 @@ async function fetchGuiFile(name) {
 }
 
 // The shell command that gives the guest a machine id unless it has
-// one, and starts the relay unless it runs. With the render node the
-// relay takes GL programs' buffers by GPU resource; without one they
-// render in software into shared memory like any other program. setsid
-// gives the relay a session of its own, so no shell's hangup reaches
-// it. The command prints the relay's PID, the running one's or the new
-// one's. A background job keeps its PID through setsid: setsid forks
-// only when its caller leads a process group, and a background job of
-// a shell without job control does not.
+// one, and starts the relay unless it runs, ready for X clients
+// (X11_LAUNCHER). With the render node the relay takes GL programs'
+// buffers by GPU resource; without one they render in software into
+// shared memory like any other program. setsid gives the relay a
+// session of its own, so no shell's hangup reaches it. The command
+// prints the relay's PID, the running one's or the new one's. A
+// background job keeps its PID through setsid: setsid forks only when
+// its caller leads a process group, and a background job of a shell
+// without job control does not.
 function relayCommand() {
   const link = `vsock:${HOST_CID}:${WAYLAND_PORT}`;
   return [
@@ -182,7 +260,7 @@ function relayCommand() {
     `flags=--link-on-demand`,
     `[ -c ${RENDER_NODE} ] && flags="$flags --dmabuf virtgpu:${RENDER_NODE} --no-fence-wait"`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${RELAY_PATH} --link ${link}` +
-      ` --buffers kwshm --display ${DISPLAY_NAME} $flags` +
+      ` --buffers kwshm --display ${DISPLAY_NAME} --xwayland ${X11_LAUNCHER} $flags` +
       ` < /dev/null > ${RELAY_LOG} 2>&1 &`,
     `echo $!`,
   ].join("\n");
@@ -225,9 +303,10 @@ async function relayListening(exec, pid) {
   }
 }
 
-// The guest half of the session: the relay and the fonts in the share,
-// the relay running. `FS` is the share's file calls (share.js,
-// memoryFsCalls) and `exec` runs a shell command in the guest.
+// The guest half of the session: the relay, the fonts, the X11
+// launcher and X resources in the share, the relay running. `FS` is
+// the share's file calls (share.js, memoryFsCalls) and `exec` runs a
+// shell command in the guest.
 //
 // prepare() downloads the files, and can start while the closure is
 // still arriving; start() writes them and starts the relay, once the
@@ -261,6 +340,9 @@ export function guestSession({ FS, exec }) {
       FS.writeFile(`${FONT_DIR}/${name}`, fonts[at]),
     );
     FS.writeFile(FONTS_CONF, new TextEncoder().encode(fontsConf()));
+    FS.writeFile(X11_LAUNCHER, new TextEncoder().encode(x11Launcher()));
+    FS.chmod(X11_LAUNCHER, MODE_EXECUTABLE);
+    FS.writeFile(X11_RESOURCES, new TextEncoder().encode(x11Resources()));
 
     const result = await exec(relayCommand());
     if (result.exitCode !== 0) {
@@ -296,6 +378,21 @@ export async function linkGlDriver(exec, basename) {
     throw new Error(`could not link ${OPENGL_DRIVER}: ${result.stderr.trim()}`);
   }
   log(`gui: ${OPENGL_DRIVER} is ${target}`);
+}
+
+// Point the X11 launcher's link at an X server's store path
+// (x11.js, isX11Server).
+export async function linkX11Server(exec, basename) {
+  const target = `${GUEST_STORE_DIR}/${basename}/${X11_SERVER_PROGRAM}`;
+  const result = await exec(
+    `mkdir -p ${RUN_DIR} && ln -sfn ${target} ${X11_SERVER_LINK}`,
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `could not link ${X11_SERVER_LINK}: ${result.stderr.trim()}`,
+    );
+  }
+  log(`gui: ${X11_SERVER_LINK} is ${target}`);
 }
 
 // DRM fourccs of the formats with no alpha the relay offers: XR24

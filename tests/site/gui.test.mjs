@@ -10,8 +10,11 @@ import assert from "node:assert/strict";
 import {
   guestSession,
   isGlDriver,
+  linkX11Server,
   sessionEnv,
   speaksWayland,
+  X11_DISPLAY,
+  x11Env,
 } from "../../site/js/gui.js";
 import { GUI_FONTS, GUI_RELAY } from "../../site/js/config.js";
 
@@ -250,4 +253,103 @@ test("a session that failed to start tries again when asked", async () => {
     shell.commands.filter((command) => command.includes("--link")).length,
     1,
   );
+});
+
+// Checks that the relay is started ready for X clients whether or not
+// the closure has an X server yet: it runs the launcher the session
+// writes into the share, as an executable, for the first X client.
+test("a session starts the relay with the X11 launcher", async () => {
+  stubFetch();
+  const share = fakeShare();
+  const commands = [];
+  const session = guestSession({
+    FS: share,
+    exec: async (command) => {
+      commands.push(command);
+      return RELAY_STARTED;
+    },
+  });
+  await session.start();
+
+  const launcher = share.files.get("/share/gui/start-x11");
+  assert.equal(launcher.mode, 0o755);
+  const [start] = commands.filter((command) => command.includes("--link"));
+  assert.match(start, /--xwayland \/share\/gui\/start-x11/);
+});
+
+// Checks what the launcher does: start the X server the page linked
+// into the guest, with Xwayland drawing in shared memory rather than
+// GL, and the relay's arguments passed on; without a linked server, say
+// so and fail, which the relay takes as no X server.
+test("the X11 launcher runs the linked X server without glamor", async () => {
+  stubFetch();
+  const share = fakeShare();
+  const session = guestSession({
+    FS: share,
+    exec: async () => RELAY_STARTED,
+  });
+  await session.start();
+
+  const script = new TextDecoder().decode(
+    share.files.get("/share/gui/start-x11").data,
+  );
+  assert.match(script, /^#!\/bin\/sh\n/);
+  assert.match(script, /\[ -e \/run\/x11-server \] \|\|/);
+  assert.match(script, /exit 1/);
+  assert.match(script, /XWAYLAND_NO_GLAMOR=1 exec \/run\/x11-server "\$@"/);
+});
+
+// Checks how the page gives the guest its X server: a link from the
+// launcher's fixed path to the satellite's program in the store, made
+// by the guest's shell, and an error when the link cannot be made.
+test("the X server is linked from the store into /run", async () => {
+  const commands = [];
+  const basename = `${DIGEST}-xwayland-satellite-0.8.2`;
+  await linkX11Server(async (command) => {
+    commands.push(command);
+    return { exitCode: 0 };
+  }, basename);
+  assert.deepEqual(commands, [
+    `mkdir -p /run && ln -sfn /nix/store/${basename}/bin/xwayland-satellite /run/x11-server`,
+  ]);
+
+  await assert.rejects(
+    linkX11Server(
+      async () => ({ exitCode: 1, stderr: "ln: read-only\n" }),
+      basename,
+    ),
+    /could not link \/run\/x11-server: ln: read-only/,
+  );
+});
+
+// Checks the X display shells are told of, which is the first one the
+// relay claims in a fresh guest, the X resources file they are pointed
+// at, and that Java's AWT is told its window manager does not reparent,
+// without which a Swing window opened blank.
+test("the X11 environment names display :0, the resources and AWT's flag", () => {
+  assert.equal(X11_DISPLAY, ":0");
+  assert.deepEqual(x11Env(), {
+    DISPLAY: ":0",
+    XENVIRONMENT: "/share/gui/Xresources",
+    _JAVA_AWT_WM_NONREPARENTING: "1",
+  });
+});
+
+// Checks that the session writes the X resources the environment names,
+// giving xterm the monospace font fontconfig knows, since Xwayland has
+// none of the core fonts xterm asks for by default.
+test("a session writes X resources that give xterm a font", async () => {
+  stubFetch();
+  const share = fakeShare();
+  const session = guestSession({
+    FS: share,
+    exec: async () => RELAY_STARTED,
+  });
+  await session.start();
+
+  const resources = new TextDecoder().decode(
+    share.files.get(x11Env().XENVIRONMENT).data,
+  );
+  assert.match(resources, /^XTerm\*faceName: monospace$/m);
+  assert.match(resources, /^XTerm\*faceSize: \d+$/m);
 });

@@ -46,9 +46,12 @@ import {
   guestSession,
   isGlDriver,
   linkGlDriver,
+  linkX11Server,
   sessionEnv,
   speaksWayland,
+  x11Env,
 } from "./gui.js";
+import { x11ServerIn } from "./x11.js";
 
 // Where the page writes the CA certificates when the guest has a
 // network (network.js), the same path on both sides of the share.
@@ -169,14 +172,16 @@ async function visible(kernel, paths) {
 // why each is what it is, and why there is no LD_LIBRARY_PATH). Every
 // shell gets the Wayland session's environment too (gui.js), so a GUI
 // program added after the boot finds the relay from the shell it is
-// typed into. With a network, TLS clients are pointed at the CA bundle
-// in the share (`caBundle`, or null without one). Sound clients are told
-// about the PulseAudio daemon the page starts (`daemon`, a store
-// basename, or null without one; pulse.js).
-function manifest({ caBundle, daemon }) {
+// typed into, and the X display once the closure holds an X server
+// (`x11Server`, its basename, or null). With a network, TLS clients are
+// pointed at the CA bundle in the share (`caBundle`, or null without
+// one). Sound clients are told about the PulseAudio daemon the page
+// starts (`daemon`, a store basename, or null without one; pulse.js).
+function manifest({ caBundle, daemon, x11Server }) {
   const session = Object.entries({
     ...sessionEnv(),
     ...soundEnv(daemon),
+    ...(x11Server === null ? {} : x11Env()),
   }).map(([name, value]) => `export ${name}="${value}"`);
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
@@ -421,11 +426,31 @@ export async function startUnkernel({
     ...(lazyStore === null ? [] : lazyStore.pending()),
   ];
 
+  // The X server the closure holds (x11.js), from the first time one
+  // is seen: shells started from then on are told of its display
+  // (manifest), and the relay's X11 launcher runs it (guiSetup links
+  // it). The first one seen stays.
+  let x11Server = null;
+  let x11Linked = null;
+
+  // The shell fragment, written into the share for every shell that
+  // starts from now on, with the PulseAudio daemon the closure holds.
+  async function writeManifest() {
+    FS.writeFile(
+      MANIFEST_FILE,
+      manifest({
+        caBundle: await caBundle,
+        daemon: pulseDaemonIn(closure()),
+        x11Server,
+      }),
+    );
+  }
+
   // Start the GUI session where `basenames` hold a Wayland program,
-  // and link the newest GL driver written. Resolves once both are done,
-  // so a GUI program typed at the prompt finds the relay running. A
-  // failure is logged rather than thrown: the shell works without
-  // either.
+  // link the newest GL driver written, and link the X server once the
+  // closure holds one. Resolves once all are done, so a GUI program
+  // typed at the prompt finds the relay running. A failure is logged
+  // rather than thrown: the shell works without any of them.
   async function guiSetup(basenames) {
     const steps = [];
     if (speaksWayland(basenames)) {
@@ -435,6 +460,11 @@ export async function startUnkernel({
     if (driver !== undefined) {
       glDrivers.length = 0;
       steps.push(linkGlDriver(sh, driver));
+    }
+    x11Server ??= x11ServerIn(basenames);
+    if (x11Server !== null && x11Linked === null) {
+      x11Linked = x11Server;
+      steps.push(linkX11Server(sh, x11Server));
     }
     await Promise.all(steps).catch((err) =>
       log(`gui: setup failed: ${err.message ?? err}`),
@@ -497,13 +527,11 @@ export async function startUnkernel({
     // arrived waits for it.
     async run(roots, { store = null } = {}) {
       share.linkAll(share.known(), roots, Precedence.KEEP);
-      FS.writeFile(
-        MANIFEST_FILE,
-        manifest({
-          caBundle: await caBundle,
-          daemon: pulseDaemonIn(closure()),
-        }),
-      );
+      x11Server = x11ServerIn([
+        ...share.written(),
+        ...(store === null ? [] : store.pending()),
+      ]);
+      await writeManifest();
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
@@ -598,8 +626,12 @@ export async function startUnkernel({
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
+      const told = x11Server;
       await guiSetup(lazyStore === null ? basenames : closure());
       await soundSetup(lazyStore === null ? basenames : closure());
+      if (x11Server !== told) {
+        await writeManifest();
+      }
 
       const added = roots.filter((basename) => basenames.includes(basename));
       await visible(kernel, [

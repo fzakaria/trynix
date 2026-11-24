@@ -49,6 +49,31 @@ export function parseNarinfo(text) {
 // The digest is the leading 32 characters of a store basename.
 export const digestOf = (basename) => basename.slice(0, DIGEST_LENGTH);
 
+// The part of a walked closure (digest -> narinfo) that `rootDigests`
+// reach through references, as a Map of the same shape. A selection's
+// closure also holds what the page added beside it (a GL driver, an X
+// server), which no selected program loads; this is how a rule asks
+// what one program, or the selection alone, holds.
+export function reachable(closure, rootDigests) {
+  const reached = new Map();
+  const pending = rootDigests.filter((digest) => closure.has(digest));
+  while (pending.length > 0) {
+    const digest = pending.pop();
+    if (reached.has(digest)) {
+      continue;
+    }
+    const info = closure.get(digest);
+    reached.set(digest, info);
+    for (const ref of info.references) {
+      const next = digestOf(ref);
+      if (closure.has(next) && !reached.has(next)) {
+        pending.push(next);
+      }
+    }
+  }
+  return reached;
+}
+
 // Resolved lazily to avoid a cycle: substituters.js parses narinfos
 // with the function above.
 async function fetchFrom(digest) {
