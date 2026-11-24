@@ -670,6 +670,92 @@ code {
 #desktop .wland-window[data-wland-fullscreen] {
   box-shadow: none;
 }
+/* The activity strip under the terminal (site/js/activity.js): closed
+   until the guest waits on something, then one line that slides open,
+   with a pulsing dot, what is going on, a muted detail, the time on the
+   right, and a hairline along the top that fills for a download and
+   sweeps while a program starts. */
+#console-activity {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 0.75rem;
+  background: var(--console-bar);
+  color: var(--console-fg);
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+  white-space: nowrap;
+  transition:
+    max-height 0.2s ease,
+    padding 0.2s ease;
+}
+#console-activity[data-visible="true"] {
+  max-height: 2rem;
+  padding: 0.3rem 0.75rem;
+}
+.activity-track {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  overflow: hidden;
+}
+.activity-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+#console-activity[data-progress="sweep"] .activity-fill {
+  width: 30%;
+  animation: activity-sweep 1.4s ease-in-out infinite;
+}
+@keyframes activity-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.activity-dot {
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: activity-pulse 1.2s ease-in-out infinite;
+}
+@keyframes activity-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.activity-primary {
+  flex: none;
+}
+.activity-secondary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.6;
+}
+.activity-elapsed {
+  margin-left: auto;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-dot,
+  #console-activity[data-progress="sweep"] .activity-fill {
+    animation: none;
+  }
+}
+
 /* The resize grip: a strip along the frame's bottom edge, a short line
    in its middle saying it can be taken hold of (site/js/grip.js). */
 #console-grip {

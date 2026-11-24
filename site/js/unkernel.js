@@ -75,6 +75,9 @@ async function writeCaBundle(FS) {
 // shell the qemu guest runs.
 const SHELL = "/bin/sh";
 
+// A program name the page may put in a guest command line as it is.
+const PROGRAM_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+
 // The store's directory inside the MemoryFs, whose root the guest
 // mounts at SHARE_DIR.
 const MEMORY_FS_STORE_DIR = STORE_DIR.slice(SHARE_DIR.length);
@@ -665,5 +668,22 @@ export async function startUnkernel({
 
     // The programs a written path offers, by basename.
     programsOf: (basename) => share.programsOf(basename),
+
+    // Whether a process runs in the guest whose command line names
+    // `program`, as a program file: the file itself, or nixpkgs'
+    // .program-wrapped behind a wrapper script. A name that is not a
+    // plain program name is taken to run, so the caller waits on.
+    async isRunning(program) {
+      if (!PROGRAM_NAME.test(program)) {
+        return true;
+      }
+      const escaped = program.replaceAll(".", "\\.").replaceAll("+", "\\+");
+      const pattern = `(^|/)\\.?${escaped}(-wrapped)?( |$)`;
+      const found = await kernel.exec(SHELL, [
+        "-c",
+        `pgrep -f -- '${pattern}' > /dev/null`,
+      ]);
+      return found.exitCode === 0;
+    },
   };
 }

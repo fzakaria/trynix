@@ -462,6 +462,16 @@
                one connects. -->
           <div id="desktop" hidden></div>
         </div>
+        <!-- What the guest is waiting on, shown only then
+             (site/js/activity.js): a download, or a program that opens
+             windows starting. -->
+        <div id="console-activity" data-visible="false" aria-hidden="true" aria-live="polite">
+          <span class="activity-track"><span class="activity-fill"></span></span>
+          <span class="activity-dot"></span>
+          <span class="activity-primary"></span>
+          <span class="activity-secondary"></span>
+          <span class="activity-elapsed"></span>
+        </div>
         <!-- The resize grip along the frame's bottom edge
              (site/js/grip.js): drag it, or focus it and use the arrow
              keys; a double click gives the terminal its own height. -->

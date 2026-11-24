@@ -31,6 +31,7 @@ import { startUnkernel } from "./unkernel.js";
 import { fullScreenButton } from "./frame.js";
 import { resizeGrip } from "./grip.js";
 import { wireHints } from "./hints.js";
+import { activityStrip, commandProgram, opensWindows } from "./activity.js";
 import {
   DEFAULT_ENGINE,
   Engine,
@@ -1125,6 +1126,68 @@ let vm = null;
 // Everything the running guest already has, so a later addition only
 // fetches what is new.
 let mounted = new Map();
+
+// The digests of every package selected into the guest, at its boot and
+// by additions since.
+const guestRoots = [];
+
+// The strip under the terminal that says what the guest is waiting on
+// (activity.js): a download, or a program that opens windows starting.
+const activity = activityStrip({
+  element: document.getElementById("console-activity"),
+  windowCount: () => desktopElement.querySelectorAll(".wland-window").length,
+  isRunning: (program) =>
+    vm?.isRunning === undefined
+      ? Promise.resolve(false)
+      : vm.isRunning(program),
+});
+
+// The programs of the selected packages that open windows, each judged
+// by its own closure (activity.js, opensWindows).
+function windowPrograms() {
+  const programs = new Set();
+  if (vm?.programsOf === undefined) {
+    return programs;
+  }
+  for (const digest of new Set(guestRoots)) {
+    const own = reachable(mounted, [digest]);
+    const root = own.get(digest);
+    if (
+      root === undefined ||
+      !opensWindows([...own.values()].map(basenameOf))
+    ) {
+      continue;
+    }
+    for (const name of vm.programsOf(basenameOf(root))) {
+      programs.add(name);
+    }
+  }
+  return programs;
+}
+
+// A command line entered at the guest's shell: if its program opens
+// windows, the strip says it is starting until its first window.
+function commandEntered(line) {
+  const program = commandProgram(line);
+  if (program !== null && windowPrograms().has(program)) {
+    activity.started(program);
+  }
+}
+
+// The command line the reader just entered at the terminal: the row the
+// cursor is on, after the shell's prompt ("# " or "$ "), or null.
+function enteredLine(terminal) {
+  try {
+    const buffer = terminal.buffer.active;
+    const row =
+      buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) ??
+      "";
+    const at = Math.max(row.lastIndexOf("# "), row.lastIndexOf("$ "));
+    return at === -1 ? null : row.slice(at + 2);
+  } catch {
+    return null;
+  }
+}
 // How the guest started, for the report.
 let bootMode = "not started";
 
@@ -1240,13 +1303,23 @@ function serveLazily(vmPromise, listings) {
     listing: (info) => listings.of(info),
     dropListing: forgetListing,
     async fetch(info) {
-      const entries = await fetchNar(
-        info,
-        (bytes) => count(info, bytes),
-        (result, bytes) => telemetry.cacheRead(result, bytes),
-      );
-      checkSystem(info, entries, selectedDigests);
-      return entries;
+      // The strip under the terminal shows the download while it runs.
+      const basename = basenameOf(info);
+      activity.downloadStarted(basename, info.fileSize);
+      try {
+        const entries = await fetchNar(
+          info,
+          (bytes) => {
+            count(info, bytes);
+            activity.downloadBytes(basename, bytes);
+          },
+          (result, bytes) => telemetry.cacheRead(result, bytes),
+        );
+        checkSystem(info, entries, selectedDigests);
+        return entries;
+      } finally {
+        activity.downloadEnded(basename);
+      }
     },
     async write(basename, entries) {
       (await vmPromise).share.write(basename, entries);
@@ -1566,6 +1639,7 @@ async function boot() {
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
     const rootDigests = digestsOf(roots);
+    guestRoots.push(...rootDigests);
 
     // Served lazily, each path's listing is on its way the moment the
     // walk finds the path.
@@ -1710,6 +1784,25 @@ async function boot() {
       log(`typing the link's command: ${linkedRun}`);
       vm.type(`${linkedRun}\n`);
     }
+
+    // The strip under the terminal may show from now on, for a command
+    // the link typed and for each one the reader enters. Only the aarch64
+    // guest downloads on first use and opens windows.
+    if (ENGINE === Engine.UNKERNEL) {
+      activity.ready();
+      if (linkedRun !== null) {
+        commandEntered(linkedRun);
+      }
+      vm.terminal.onData((data) => {
+        if (!data.includes("\r")) {
+          return;
+        }
+        const line = enteredLine(vm.terminal);
+        if (line !== null) {
+          commandEntered(line);
+        }
+      });
+    }
   } catch (err) {
     telemetry.finish(stage, mode);
     log(`boot failed: ${err.message}`);
@@ -1761,6 +1854,7 @@ async function addToRunningVM() {
   try {
     const roots = await rootsOf([...selection.keys()]);
     const rootDigests = digestsOf(roots);
+    guestRoots.push(...rootDigests);
     const fresh = await walkRoots(
       rootDigests,
       (n) => row.note(`${n} narinfos`),
