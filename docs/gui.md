@@ -3,10 +3,11 @@
 A Wayland program from nixpkgs, run in the unkernel guest, opens a
 window on the page. foot, GTK 3 programs (galculator, mousepad,
 aisleriot), mpv, wev and GL programs through Mesa have been run this
-way. Everything runs in the tab: the guest, the
+way, and X11 programs through Xwayland: xterm, xeyes, xclock, Tk's
+`wish` and Python's tkinter. Everything runs in the tab: the guest, the
 relay that carries the program's protocol, the compositor that draws
-its windows and the GL renderer. There is no server, and the host's
-own display is never involved.
+its windows, the X server and the GL renderer. There is no server, and
+the host's own display is never involved.
 
 Only the unkernel engine has this. The qemu engine's guest has no
 device a compositor could read a program's pixels through.
@@ -71,6 +72,17 @@ page adds nothing, and the guest uses nixpkgs' Mesa (380 MB with its
 closure). When no driver the site serves fits the program, the status
 line says why.
 
+X11 programs need an X server, and the page adds one: when a selected
+program's closure holds libX11 and no libwayland, the page walks in
+xwayland-satellite, and every shell gets `DISPLAY=:0` (see
+[X11 programs](#x11-programs)). Each X11 window opens as a window of
+its own, like a Wayland program's.
+
+```
+https://trynix.dev/?pkg=xterm&boot=1&run=xterm+%26
+https://trynix.dev/?pkg=xeyes&boot=1&run=xeyes+%26
+```
+
 ## How it works
 
 ```
@@ -81,6 +93,8 @@ line says why.
    └─ wl_shm buffer ── /dev/kwshm ────────────┘  read in place
  es2gears ── Mesa virgl ── virtio-gpu ──────> virglrenderer (wasm) on WebGL2
                                               └─> frame by GPU resource ──┘
+ xterm ──X11──> Xwayland ──> xwayland-satellite ──wayland──> wlandr
+ (wlandr holds :0 and starts the satellite, which starts Xwayland)
 ```
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
@@ -230,8 +244,10 @@ What the page does instead:
   none fits it says so and suggests a Mesa from the program's own
   nixpkgs, which the reader can select with `pkg=mesa@<version>`;
 - a program added to a running guest is judged the same way, with the
-  guest's closure and the driver it already has, so an added program
-  older than that driver gets the same note a fresh boot gives.
+  closures of every program selected so far and the driver it already
+  has, so an added program older than that driver gets the same note a
+  fresh boot gives. What the page added beside the selections, an X
+  server among them, is not judged.
 
 One driver is published, built on the nixpkgs this flake locks. Its
 floors are glibc 2.38 and gcc 11.1: the `GLIBC_2.38` comes from
@@ -301,6 +317,138 @@ starts warning.
 Each driver update adds its NAR to the repository's history for good:
 removing a file from the tree does not remove it from the clones that
 already have it.
+
+## X11 programs
+
+The guest has no X server of its own, and wland's relay has one on
+call. Started with `--xwayland`, the relay claims X display `:0` (the
+lock `/tmp/.X0-lock`, the socket `/tmp/.X11-unix/X0` and its abstract
+twin) and, when the first X client connects, runs xwayland-satellite
+with the listening sockets. The satellite starts Xwayland rootless, is
+its X window manager, and connects to the relay as an ordinary Wayland
+client, so each X11 toplevel becomes a window of its own on the page,
+titled with the X11 window's name. The compositor needs nothing for
+this that a Wayland program does not already use: no
+`xwayland-shell-v1`, which only a compositor that runs Xwayland itself
+needs. The relay's side is wland's own (`server/src/xwayland.zig`),
+built into the relay the site serves. Nothing X11 runs until a program
+connects.
+
+### Which programs get it
+
+The page decides per selected program, from that program's own
+closure ([site/js/x11.js](../site/js/x11.js)): libX11 and no
+libwayland. The closures of foot, galculator, mpv, wireshark-qt and
+xpdf all hold libX11 beside libwayland, through their toolkits and
+libraries, and those programs run on the relay as before.
+
+When one does, the page resolves `xwayland-satellite` in the
+multiverse index, as it resolves a name in a link, takes the newest
+build and walks its closure from cache.nixos.org. Programs selected by
+name resolve to their newest builds too, so the two share paths:
+glibc, gcc's runtime and the X client libraries. Of the satellite's
+129 paths, xeyes' closure held 12 already, xterm's 23 and wish's 22,
+in November 2026. The build from the nixpkgs this flake locks shared
+none with any of them (its glibc is 2.42, theirs 2.44), and its first
+use downloaded glibc again, 10 MB of it. The satellite and Xwayland run
+as processes of their own, so unlike the GL driver they need not match
+the program's glibc.
+
+A program whose closure holds libwayland and still speaks only X11 is
+not recognised. Java's AWT and Swing are the known case: openjdk's
+closure holds GTK 3. Selecting the satellite with it gives it the
+server, since a closure that holds a satellite, selected or added
+earlier, is used as it is:
+
+```
+https://trynix.dev/?pkg=openjdk21&pkg=xwayland-satellite&boot=1
+```
+
+### In the guest
+
+Every GUI session writes a launcher, `/share/gui/start-x11`, and
+starts the relay with `--xwayland` pointing at it, whether the closure
+has an X server yet or not. The launcher runs `/run/x11-server`, which
+the page links to the satellite's program once the closure holds one;
+without the link it says so and fails, and the relay, after three
+quick failures, stops listening on `:0`. So a relay already serving
+Wayland programs when an addition brings the X server needs no
+restart.
+
+Shells get `DISPLAY=:0` once the closure holds the server, and not
+before: a program with both backends that tries X11 first would
+otherwise find a display with nothing behind it. A shell sources its
+environment as it starts, so the shell on the page has no `DISPLAY`
+after an addition brought the server, until `export DISPLAY=:0`; the
+status line says so, and suggests a new shell (`sh`), which gets the X
+resources below as well. Shells started later have both, at the
+prompt or in a terminal window.
+
+Xwayland runs with `XWAYLAND_NO_GLAMOR=1`: it draws with pixman into
+shared memory, which the compositor reads through kwshm like any
+other program's buffers. With glamor it draws through the GL driver,
+and that works too (xterm's buffers reached the compositor by GPU
+resource), but it needs the site's Mesa in the closure and the GL
+renderer loaded, and xterm's first frame took 6.3 s with it against
+5.0 s without, one cold run each. The GL driver rule looks only at the
+selected programs' closures, so the libglvnd that Xwayland links does
+not bring the driver.
+
+Xwayland has no core fonts but its built-in `fixed`, and xterm asks
+for one it lacks by default, which printed a warning on the reader's
+terminal. The session writes X resources, `/share/gui/Xresources`,
+named by `XENVIRONMENT` in every shell that has `DISPLAY`, which give
+xterm the `monospace` family through Xft; fontconfig maps it to the
+page's DejaVu Sans Mono. Tk draws through Xft and fontconfig by
+itself.
+
+### What X11 costs
+
+Measured 2026-11-23 on the laptop below, headless Chromium with
+SwiftShader, downloads on first use (the default), each run in a new
+browser profile, the closures from cache.nixos.org over a home
+connection. The index's satellite was 0.8.3, with Xwayland 24.1.15.
+
+The X server costs an X11 boot three things. The closure walk takes
+106 to 129 more narinfos and their listings, and one 10 KB shard of
+the index to find the satellite: xeyes' shell came up after 2.9 to
+6.0 s, against 2.2 s in three boots of the site before X11, which
+could not run it. The first X11 program then starts the satellite and
+Xwayland, which download what they open: 54 paths and 24 MB
+compressed for xeyes, whose own closure was in by the prompt. And the
+GUI session starts, as for any Wayland program, since the server's
+closure holds libwayland. A boot with no X11 program pays nothing:
+hello's shell came up after 1.8 to 2.2 s before the change and 1.9 to
+2.0 s after.
+
+| program, selected alone              | paths | shell after | first frame after the shell | downloaded by then |
+| ------------------------------------ | ----- | ----------- | --------------------------- | ------------------ |
+| xeyes                                | 134   | 2.9–6.0 s   | 4.0–10.6 s                  | 37 MB              |
+| xterm                                | 138   | 3.0–10.2 s  | 4.0–5.4 s                   | 40 MB              |
+| xclock                               | 139   | 2.9–5.0 s   | 3.9–5.6 s                   | 39 MB              |
+| `wish` (tk)                          | 132   | 3.1–4.6 s   | 4.8–5.3 s                   | 42 MB              |
+| `python3 -m tkinter` (python3Full)   | 166   | 16.4 s      | 6.1 s                       | 99 MB              |
+| Swing (openjdk21 with the satellite) | 308   | 81 s        | 25–30 s                     | 493 MB             |
+
+"Downloaded by then" is the compressed bytes the guest had fetched
+five seconds after the first frame, the program's own closure
+included. Each row is one to six boots; the slow ends of the xeyes and
+xterm rows were each the first boot of a series. openjdk is the expensive
+one: a selected package's references are all fetched at the boot, and
+openjdk21's are 438 MB. Its `java` is not on `PATH` either, since its
+`bin` is a link to `lib/openjdk/bin` and the page looks for programs in
+a real `bin` directory, so the Swing program was started by its store
+path.
+
+### Routes not taken
+
+Rootless Xwayland through the satellite worked on the first try, so
+neither fallback was built: rootful Xwayland as one window holding the
+X11 screen, or unkernel's display device (`/dev/fb0`, or Xorg's
+modesetting driver on virtio-gpu) drawn on the page. Both would put
+every X11 program in one window. An earlier try of `weston --xwayland`
+inside wland gave a black window, after which the guest's shell
+stopped answering; it was not revisited.
 
 ## Firefox and whole compositors
 
@@ -536,8 +684,23 @@ compositor:
 - **A selected `mesa`** resolves to the newest Mesa in the index,
   which may be built against a newer glibc than the program; the page
   does not check one the reader chose.
-- **No X11.** There is no Xwayland in the guest, so programs with only
-  an X11 backend do not start.
+- **X11 programs the rule misses**, whose closure holds libwayland
+  though they speak only X11 (Java's AWT and Swing), get no X server
+  unless `xwayland-satellite` is selected with them.
+- **Java** draws, with `_JAVA_AWT_WM_NONREPARENTING=1`, which shells
+  with `DISPLAY` get: the satellite does not reparent windows, and
+  without it a Swing window stayed blank. openjdk's `java` is not on
+  `PATH` (see [What X11 costs](#what-x11-costs)).
+- **An X server an addition brings** reaches shells started after it;
+  the shell already on the page needs `export DISPLAY=:0`, or a new
+  shell (`sh`), which also gets xterm's font.
+- **GLX programs** have not been run. Xwayland draws without glamor
+  here, and the site's Mesa has no GLX.
+- **Downloads set to all** fetch the X server's whole closure before
+  the shell: 129 paths, 105 MB compressed. 70 of those paths, 67 MB,
+  are there only for libdecor's GTK plugin (GTK 3, ICU, systemd),
+  which Xwayland links for its rootful `-decorate` mode and a rootless
+  Xwayland never loads.
 - **Reloads end the programs**, as they end the guest: the page boots a
   fresh kernel every time.
 - **Keyboard layout** is US, which is wland's.
@@ -547,18 +710,22 @@ compositor:
   page starts no PipeWire daemon.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
-  60 FPS. Safari has not been run.
+  60 FPS. Its xterm case, which takes keys through Xwayland, passed in
+  Chromium 152 and Firefox 155. Safari has not been run.
 
 ## Testing
 
-`nix run .#gui-test -- --site <site>` boots foot and es2gears from
-links (es2gears alone, so the page has to add the driver), starts each at the shell and waits for the compositor's first
-frame. It types into foot's window and checks that the keys reached the
-program, then presses the terminal beside the window, types a line,
-and checks that the page's shell ran it while wland sent no key to any
-window and holds none focused. It checks that es2gears' frames went
-through the page's GL renderer by GPU resource and not through
-llvmpipe. `--with firefox`
+`nix run .#gui-test -- --site <site>` boots foot, es2gears and xterm
+from links (es2gears alone, so the page has to add the driver, and
+xterm alone, so it has to add the X server and no driver), starts each
+at the shell and waits for the compositor's first frame. It types into
+foot's window and checks that the keys reached the program, then
+presses the terminal beside the window, types a line, and checks that
+the page's shell ran it while wland sent no key to any window and
+holds none focused. It checks that es2gears' frames went through the
+page's GL renderer by GPU resource and not through llvmpipe, and types
+a line into xterm's window and checks that xterm's shell ran it.
+`--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
 `--viewport phone` runs them in a phone-sized window, where foot opens
@@ -569,7 +736,9 @@ SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
 the console, terminal and windows, at each step.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
-page writes into the share and runs in the guest, offline, and
+page writes into the share and runs in the guest, offline,
+[tests/site/x11.test.mjs](../tests/site/x11.test.mjs) which selections
+get the X server, and
 [tests/site/frame.test.mjs](../tests/site/frame.test.mjs) the frame's
 rules: which windows open maximized, where the others open, where a
 window past the edge goes back to, and what the windows button offers.
@@ -597,5 +766,7 @@ site next to the files:
 - DejaVu fonts are Bitstream Vera's license with public-domain changes
   (`gui.<hash>/LICENSE-dejavu`).
 - The programs come from cache.nixos.org and keep nixpkgs' licenses,
-  as every other package the page boots does. The site's Mesa is
-  MIT, built unmodified from nixpkgs' source with fewer drivers.
+  as every other package the page boots does, the X server the page
+  adds among them (xwayland-satellite is MPL-2.0, Xwayland MIT). The
+  site's Mesa is MIT, built unmodified from nixpkgs' source with fewer
+  drivers.

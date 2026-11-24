@@ -102,7 +102,7 @@
       <span
         class="hint"
         tabindex="0"
-        title="On the aarch64 guest, a Wayland program opens as a window over the terminal. Programs that speak only X11 don't start yet. A GL program draws through your browser's WebGL2 with the site's own Mesa; select a mesa with it to use nixpkgs' instead. Tested in Chrome and Firefox."
+        title="On the aarch64 guest, a Wayland program opens as a window over the terminal, and an X11 program does too, through an Xwayland the page adds. A GL program draws through your browser's WebGL2 with the site's own Mesa; select a mesa with it to use nixpkgs' instead. Tested in Chrome and Firefox."
         >GUI programs open as windows on the page</span
       >, and
       <span
@@ -197,6 +197,11 @@
         href="?pkg=mpv&engine=unkernel&run=mpv%20--vo=wlshm%20av://lavfi:mandelbrot%20%26&boot=1"
         title="a video player drawing a fractal"
         >mpv</a
+      > ·
+      <a
+        href="?pkg=xeyes&engine=unkernel&run=xeyes%20%26&boot=1"
+        title="an X11 program; the page adds Xwayland"
+        >xeyes</a
       > ·
       <a
         href="?pkg=wev&engine=unkernel&run=wev%20%26&boot=1"
