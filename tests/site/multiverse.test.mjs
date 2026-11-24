@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 
 import {
   bootable,
+  compareVersions,
   mergeVersions,
   multiverseUrl,
 } from "../../site/js/multiverse.js";
@@ -87,4 +88,23 @@ test("multiverseUrl names a system other than the index's default", () => {
     multiverseUrl({ attr: "ripgrep", system: "aarch64-linux" }),
     "https://nixmultiverse.com/?pkg=ripgrep&sys=aarch64-linux",
   );
+});
+
+// Checks that versions compare as Nix's compareVersions does, which is
+// what nixpkgs' version strings are written for: a part that mixes
+// digits and letters splits at each change, numbers compare as
+// numbers, a letter part is older than a number, and "pre" is older
+// than anything. openjdk's "8u265-ga" read as text came out newer than
+// "21.0.5+11", so ?pkg=openjdk booted Java 8. One rule differs from
+// Nix's: a release is newer than its own release candidates.
+test("versions compare as Nix compares them", () => {
+  const newer = (a, b) => assert.ok(compareVersions(a, b) > 0, `${a} > ${b}`);
+  newer("21.0.5+11", "8u265-ga");
+  newer("2.12.3", "2.10");
+  newer("1.2.3", "1.2");
+  newer("2.3.1", "2.3a");
+  newer("1.0", "1.0pre1");
+  newer("0.43.0", "0.9.1");
+  newer("1.2", "1.2-rc1");
+  assert.equal(compareVersions("3.10.6", "3.10.6"), 0);
 });

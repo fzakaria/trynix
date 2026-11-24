@@ -161,37 +161,65 @@ export async function versionRowsOf(attr) {
   return mergeVersions(attr, all.attrs?.[attr], meta.attrs?.[attr]);
 }
 
-// Version ordering good enough to sort a picker: numeric runs compare
-// as numbers, everything else lexically, and a release sorts above its
-// own prereleases (1.2 over 1.2-rc1) because the shorter run wins when
-// every shared component is equal.
+// Version ordering for the picker and for a link's newest version, as
+// Nix's compareVersions orders nixpkgs' version strings (partOlder),
+// with one change: a release sorts above its own release candidates
+// (1.2 over 1.2-rc1), where Nix puts the candidate first.
 export function compareVersions(a, b) {
-  const split = (v) => v.split(/[.\-_+]/).filter(Boolean);
-  const pa = split(a);
-  const pb = split(b);
-
+  const pa = versionParts(a);
+  const pb = versionParts(b);
   for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
-    const x = pa[i];
-    const y = pb[i];
-    if (x === undefined) {
+    const x = pa[i] ?? "";
+    const y = pb[i] ?? "";
+    if (partOlder(x, y)) {
       return -1;
     }
-    if (y === undefined) {
+    if (partOlder(y, x)) {
       return 1;
-    }
-    const nx = Number(x);
-    const ny = Number(y);
-    if (Number.isInteger(nx) && Number.isInteger(ny)) {
-      if (nx !== ny) {
-        return nx - ny;
-      }
-      continue;
-    }
-    if (x !== y) {
-      return x < y ? -1 : 1;
     }
   }
   return 0;
+}
+
+// The parts of a version as Nix splits them (libstore/names.cc,
+// nextComponent): runs of digits and runs of anything else, with "."
+// and "-" between parts. "8u265-ga" is 8, u, 265, ga.
+const versionParts = (version) => version.match(/\d+|[^.\-\d]+/g) ?? [];
+
+const isNumber = (part) => /^\d+$/.test(part);
+
+// The part Nix counts older than any other.
+const PRE = "pre";
+
+// Whether part `a` is older than part `b`, by Nix's rules
+// (componentsLT); a missing part is "". Numbers compare as numbers, a
+// missing part is older than a number and newer than letters (Nix has
+// it older than both), "pre" is older than anything else, and a part
+// that is not a number is older than one that is, so 2.3a is older than
+// 2.3.1.
+function partOlder(a, b) {
+  if (isNumber(a) && isNumber(b)) {
+    return Number(a) < Number(b);
+  }
+  if (a === "") {
+    return isNumber(b);
+  }
+  if (b === "") {
+    return !isNumber(a);
+  }
+  if (a === PRE && b !== PRE) {
+    return true;
+  }
+  if (b === PRE) {
+    return false;
+  }
+  if (isNumber(b)) {
+    return true;
+  }
+  if (isNumber(a)) {
+    return false;
+  }
+  return a < b;
 }
 
 // Attributes whose name contains the query, best matches first: exact,
