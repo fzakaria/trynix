@@ -239,6 +239,39 @@ rendering is the page's, on one WebGL2 context. GUI programs, the
 compositor's in-place reads of their buffers and the GL driver behave
 the same on four CPUs as on one.
 
+## Network
+
+The guest has a network by default ([site/js/network.js](../site/js/network.js)).
+unkernel's SDK gives it a network device whose frames end in a small
+stack on the page (the SDK's `NetStack`): the guest is 10.0.2.15
+behind a gateway at 10.0.2.2 with DNS at 10.0.2.3, and unkernel's base
+userland takes that address by DHCP at boot. Each TCP connection goes
+over one WebSocket to a Wisp relay, which opens it for the guest. Wisp
+carries no DNS, so names resolve to stand-in addresses on the page and
+the relay looks up the real name when it connects. There is no UDP
+beyond DHCP and DNS, no IPv6, and nothing can connect in.
+
+- The relay is unkernel's, `wss://wisp.unkernel.dev:6680`, whose
+  author added trynix.dev to its allowed origins. It sees which hosts
+  the guest connects to, and anything sent unencrypted.
+- Settings can turn the network off or name another relay (a `ws:` or
+  `wss:` URL that speaks Wisp v1 and accepts the page's origin), and
+  this browser remembers both. A link can turn it on or off with
+  `net=`, but cannot name a relay, so a link someone sends cannot
+  route a reader's traffic through a server of its choosing.
+- unkernel's base userland has no CA certificates. With the network
+  on, the page writes nixpkgs' CA bundle, which the site ships
+  (`certs.<hash>/ca-bundle.crt`, [nix/site.nix](../nix/site.nix)),
+  into the share, and the shell sets `SSL_CERT_FILE` and
+  `NIX_SSL_CERT_FILE` to it and links
+  `/etc/ssl/certs/ca-certificates.crt`.
+- The qemu engine's guest has no network device.
+
+Measured in headless Chromium on a home connection, 2026-11-23: the
+relay's handshake took 0.6 to 0.9 s, during the boot; `curl` to
+`http://example.com/` 0.9 to 1.5 s and `https://example.com/` 1.1 s,
+each a new connection through the relay.
+
 ## Where a boot's time goes now
 
 The kernel is up 0.3 to 0.8 s after the click. Everything after that
