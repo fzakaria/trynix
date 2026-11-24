@@ -54,12 +54,20 @@ for good. The cases:
                   link and boot=1 and no boot starts, and a reload of
                   that address restores the link and boots.
 
+    engine-switch the guest choice under Settings moves the page to the
+                  qemu engine while the index is held. The qemu page
+                  opens with the link's package and settings, and once
+                  the index answers, it selects the package. Before
+                  the address was kept, the switch wrote the link of an
+                  empty selection, and the qemu page opened with the
+                  settings and no package.
+
     nix run .#link-test -- --site <a built site directory>
     nix run .#link-test -- --site <site> --with firefox --case index-first
     nix run .#link-test -- --url https://trynix.dev
 
---url runs reload-first and index-fails alone, since the other cases
-need a server whose worker script the test controls.
+--url runs reload-first, index-fails and engine-switch alone, since the
+other cases need a server whose worker script the test controls.
 
 Against --site this needs no network: the test answers for the index
 and holds every other fetch to another origin.
@@ -117,6 +125,17 @@ CHOSEN_MEMORY_MIB = "1024"
 # threads need isolation, so a boot without it fails at once.
 QEMU = "qemu"
 QEMU_LINK = [("pkg", PACKAGE), ("engine", QEMU), ("boot", "1")]
+
+# The engine-switch case's link: the package and settings that ride
+# along to the other engine, the network among them, and no boot=1, so
+# neither page boots.
+NETWORK_OFF = "off"
+SWITCH_LINK = [
+    ("pkg", PACKAGE),
+    ("mem", MEMORY_MIB),
+    ("net", NETWORK_OFF),
+    ("run", COMMAND),
+]
 
 # What the test's index says about PACKAGE once it answers: one version
 # with a build for either engine's system, in the two shards the page
@@ -238,6 +257,12 @@ UNREAD_NOTE = "could not be read"
 
 # Pressing the Boot button.
 PRESS_BOOT = "document.getElementById('boot-button').click()"
+
+# Choosing the qemu engine under Settings, the chips that show the
+# selection, and what the chip of the restored version says.
+CHOOSE_QEMU = f"document.querySelector('#guest input[value=\"{QEMU}\"]').click()"
+SELECTION = "document.getElementById('selection').textContent"
+RESTORED_CHIP = f"{PACKAGE} {VERSION}"
 
 
 # How long GitHub Pages lets a browser keep a file. The modules a
@@ -508,6 +533,58 @@ def index_fails(browser, base, server, checks):
     checks.equal("the address: pkg", params(search).get("pkg"), [RESTORED])
 
 
+def check_switched(checks, label, search):
+    """The address `search` is the switch's link: the qemu engine, and
+    the link's package and settings, with no boot=1."""
+    got = params(search)
+    checks.equal(f"{label}: engine", got.get("engine"), [QEMU])
+    checks.equal(f"{label}: pkg", got.get("pkg"), [PACKAGE])
+    checks.equal(f"{label}: mem", got.get("mem"), [MEMORY_MIB])
+    checks.equal(f"{label}: net", got.get("net"), [NETWORK_OFF])
+    checks.equal(f"{label}: run", got.get("run"), [COMMAND])
+    checks.equal(f"{label}: boot", got.get("boot"), None)
+
+
+def engine_switch(browser, base, server, checks):
+    """The engine is switched while the index is held (the module
+    docstring's engine-switch)."""
+    del server  # the worker is served at once
+    browser.navigate(f"{base}/?{urllib.parse.urlencode(SWITCH_LINK)}")
+
+    # The first visit, through the shim's reload, with the index held.
+    print("a first visit to a shared link, the index held")
+    gui.wait_for(browser, SETTLED, SETTLE_LIMIT_SECONDS, "an isolated page")
+    loads = len(browser.evaluate(LOADS))
+
+    # The guest choice moves the page to qemu while the restore waits.
+    # The qemu page is a load of its own, and the worker the first
+    # visit installed isolates it.
+    print("qemu chosen under Settings, the index still held")
+    browser.evaluate(CHOOSE_QEMU)
+    gui.wait_for(
+        browser,
+        f"{LOADS}.length > {loads} && {SETTLED}",
+        SETTLE_LIMIT_SECONDS,
+        "the qemu page",
+    )
+    check_switched(checks, "the address the switch opened", browser.evaluate(LOADS)[-1])
+    check_switched(checks, "the address", browser.evaluate(ADDRESS))
+
+    # The index answers, and the qemu page selects the link's package.
+    print("the index answers")
+    answer_index(browser)
+    search, _ = gui.wait_for(
+        browser,
+        RESTORED_ADDRESS,
+        SETTLE_LIMIT_SECONDS,
+        "an address naming the restored version",
+    )
+    checks.equal("the address: engine", params(search).get("engine"), [QEMU])
+    selection = browser.evaluate(SELECTION)
+    checks.true(f"the selection: {selection!r}", RESTORED_CHIP in (selection or ""))
+    checks.equal("the boot started", browser.evaluate(BOOT_STARTED), False)
+
+
 # Each case, what the server does with the worker script for it, and
 # the order --case runs them in when none is named.
 Case = collections.namedtuple("Case", ["run", "worker"])
@@ -516,8 +593,9 @@ CASES = {
     "index-first": Case(index_first, Worker.HOLD),
     "no-worker": Case(no_worker, Worker.REFUSE),
     "index-fails": Case(index_fails, Worker.SERVE),
+    "engine-switch": Case(engine_switch, Worker.SERVE),
 }
-URL_CASES = ["reload-first", "index-fails"]
+URL_CASES = ["reload-first", "index-fails", "engine-switch"]
 
 
 def main():
@@ -542,7 +620,7 @@ def main():
 
     cases = args.case or (list(CASES) if args.site is not None else URL_CASES)
     if args.site is None and set(cases) - set(URL_CASES):
-        parser.error(f"--url runs {' and '.join(URL_CASES)} alone")
+        parser.error(f"--url runs {', '.join(URL_CASES)} alone")
 
     binary = args.browser or (
         os.environ.get("TRYNIX_BROWSER", gui.CHROMIUM)
