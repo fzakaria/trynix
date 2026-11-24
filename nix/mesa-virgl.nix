@@ -47,6 +47,14 @@ in
   (old: {
     pname = "mesa-virgl";
 
+    # A draw that samples a texture it renders into puts the guest's
+    # whole GL context in error on unkernel, whose renderer replays GL
+    # on WebGL 2; the virgl driver sends a stand-in view instead, until
+    # unkernel fixes its renderer (the patch's header says more).
+    patches = old.patches ++ [
+      ../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch
+    ];
+
     # The OpenCL, spirv2dxil and cross-tool outputs hold nothing once
     # their drivers and tools are gone.
     outputs = [ "out" ];

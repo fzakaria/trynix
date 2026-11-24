@@ -15,10 +15,21 @@
 # the cache has narinfos for. The page asks the site for those paths and
 # no others (site/js/substituters.js), so a path missing from the list
 # is fetched from nowhere, and a listed path with no narinfo is a 404.
-{ pkgs }:
+#
+# And that the site serves the driver nix/mesa-virgl.nix builds today:
+# `mesa` is packages.aarch64-linux.mesa-virgl, and a change to its
+# derivation (a patch, an option, a nixpkgs bump) that was never
+# published with tools/make-gl-cache.py leaves the site serving the
+# old one.
+{ pkgs, mesa }:
 let
   gl = ../site/gl;
   inherit ((builtins.fromJSON (builtins.readFile (gl + "/drivers.json")))) paths drivers;
+
+  # The path as a string alone: the check compares it with the pins and
+  # must not build an aarch64 Mesa to do so.
+  built = builtins.unsafeDiscardStringContext mesa.outPath;
+  pinned = map (driver: driver.storePath) drivers;
 
   checkDriver =
     driver:
@@ -56,6 +67,12 @@ pkgs.runCommand "trynix-gl-check"
       diff <(echo "$listed") <(echo "$served") >&2 || true
       exit 1
     fi
+
+    ${pkgs.lib.optionalString (!builtins.elem built pinned) ''
+      echo "nix/mesa-virgl.nix builds ${built}, which site/gl does not serve:" >&2
+      echo "publish it with nix run .#make-gl-cache" >&2
+      exit 1
+    ''}
 
     ${pkgs.lib.concatMapStringsSep "\n" checkDriver drivers}
     touch $out

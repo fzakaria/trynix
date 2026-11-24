@@ -201,6 +201,20 @@ libdrm's headers and test programs in the runtime closure. The build
 refuses to finish if LLVM, python3, hwdata, libpciaccess or libdrm's
 dev and bin outputs are in its closure.
 
+Mesa carries one patch,
+[patches/mesa/0001](../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch),
+for unkernel's renderer. A draw that renders into a level of a texture
+while a sampler view of the draw covers that level is a feedback loop:
+GL leaves what it samples undefined, and WebGL 2 refuses the draw even
+when the shader never reads the texture. unkernel's renderer takes the
+refusal as a context error and refuses every later draw of that
+program's context, so a program that leaves a texture on a unit and
+then renders into it goes blank. Firefox's WebRender does that, and
+Firefox's window stopped drawing about 100 s into a page of CSS
+effects and canvas copies. With the patch the virgl driver gives the
+renderer a view of a 1x1 texture in that slot for such a draw. It can
+go once unkernel's renderer stops passing the loop to WebGL.
+
 The result is Mesa 26.2.2 with `libgallium` holding the one driver:
 
 | Mesa            | closure paths | compressed | unpacked | only on the site |
@@ -750,6 +764,10 @@ compositor:
 - **An X server or PulseAudio daemon an addition brings** reaches
   shells started after it; the shell already on the page needs
   `. $ENV`, or a new shell (`sh`).
+- **A blit or copy within one texture level**, whose source and
+  destination are the same image, is refused by WebGL 2 too, and the
+  site's Mesa does not route around it; no program run so far has done
+  one.
 - **GLX programs** have not been run. Xwayland draws without glamor
   here, and the site's Mesa has no GLX.
 - **Downloads set to all** fetch the X server's whole closure before

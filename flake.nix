@@ -338,8 +338,12 @@
         in
         {
           # the site's GL driver asks for no newer glibc than its manifest
-          # says, which is what the page decides by (nix/gl-check.nix)
-          gl-driver = import ./nix/gl-check.nix { inherit pkgs; };
+          # says, which is what the page decides by, and is the one
+          # nix/mesa-virgl.nix builds (nix/gl-check.nix)
+          gl-driver = import ./nix/gl-check.nix {
+            inherit pkgs;
+            mesa = self.packages.aarch64-linux.mesa-virgl;
+          };
 
           # the site assembles: the entry page and the hashed module tree
           # are where the build put them, and the GL renderer's module
