@@ -35,6 +35,7 @@ import {
   activityStrip,
   commandJob,
   commandProgram,
+  enteredLine,
   opensWindows,
   typedLine,
 } from "./activity.js";
@@ -1248,20 +1249,6 @@ function commandEntered(line) {
   activity.started(program, commandJob(line));
 }
 
-// The command line the reader just entered at the terminal: the row the
-// cursor is on, after the shell's prompt ("# " or "$ "), or null.
-function enteredLine(terminal) {
-  try {
-    const buffer = terminal.buffer.active;
-    const row =
-      buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) ??
-      "";
-    const at = Math.max(row.lastIndexOf("# "), row.lastIndexOf("$ "));
-    return at === -1 ? null : row.slice(at + 2);
-  } catch {
-    return null;
-  }
-}
 // How the guest started, for the report.
 let bootMode = "not started";
 

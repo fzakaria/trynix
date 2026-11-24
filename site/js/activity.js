@@ -117,6 +117,24 @@ export function commandJob(line) {
   return Job.BACKGROUND;
 }
 
+// The command line the reader just entered at the terminal: the row the
+// cursor is on, after the shell's prompt ("# " or "$ "), or null.
+//
+// The buffer counts rows from the oldest one scrolled off, and the
+// screen is its last `rows` rows. ghostty-web's baseY is always 0, so
+// baseY + cursorY named a row scrolled off once the terminal had any.
+export function enteredLine(terminal) {
+  try {
+    const buffer = terminal.buffer.active;
+    const cursorRow = buffer.length - terminal.rows + buffer.cursorY;
+    const row = buffer.getLine(cursorRow)?.translateToString(true) ?? "";
+    const at = Math.max(row.lastIndexOf("# "), row.lastIndexOf("$ "));
+    return at === -1 ? null : row.slice(at + 2);
+  } catch {
+    return null;
+  }
+}
+
 // A line being typed, after `data` is sent: printable text added, a
 // backspace taking the last character off, and anything else (arrows,
 // control keys, escape sequences) left out.

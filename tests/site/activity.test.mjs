@@ -1,5 +1,6 @@
-// Tests the console's activity strip (site/js/activity.js): which
-// program a command line starts and whether in the background, which
+// Tests the console's activity strip (site/js/activity.js): the command
+// line read off the terminal at an Enter, which program a command line
+// starts and whether in the background, which
 // selected packages open windows, the line the strip shows for what is
 // going on (a program starting, downloads in flight, both, or nothing),
 // when the strip stops waiting for a program, and the clock of time
@@ -15,6 +16,7 @@ import {
   commandJob,
   commandProgram,
   downloadClock,
+  enteredLine,
   opensWindows,
   startLook,
   typedLine,
@@ -23,6 +25,30 @@ import {
 const DIGEST = "0".repeat(32);
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
+
+// A terminal shaped as ghostty-web's is, with the rows `scrollback`
+// scrolled off above a screen of the rows `screen` and its cursor on
+// the screen's row `cursorY`. Its buffer counts rows from the oldest
+// one scrolled off and its baseY is always 0, where xterm.js's baseY is
+// the count of rows scrolled off.
+const terminalOf = (scrollback, screen, cursorY) => {
+  const rows = [...scrollback, ...screen];
+  return {
+    rows: screen.length,
+    buffer: {
+      active: {
+        type: Screen.NORMAL,
+        baseY: 0,
+        cursorY,
+        length: rows.length,
+        getLine: (y) =>
+          y < rows.length
+            ? { translateToString: () => rows[y].trimEnd() }
+            : undefined,
+      },
+    },
+  };
+};
 
 // One look at a program starting, from a look at a program in the
 // background that has been running a second, changed by `overrides`.
@@ -297,4 +323,17 @@ test("a typed line keeps text and backspaces, not escapes", () => {
   assert.equal(typedLine("", "foot &"), "foot &");
   assert.equal(typedLine("foox", "\x7ft &"), "foot &");
   assert.equal(typedLine("sol", "\x1b[A\x1b[D &"), "sol &");
+});
+
+// Checks the command line read off the terminal at an Enter: the text
+// after the shell's prompt on the row the cursor is on, counted past the
+// rows scrolled off. With rows scrolled off, the row read was one of
+// them, and an old prompt there ("~ # emacs -nw") had the strip wait for
+// emacs when the reader entered ls. A row with no prompt reads as none.
+test("the entered line is on the cursor's row, past the scrollback", () => {
+  const scrollback = ["~ # emacs -nw", "1", "2"];
+  const screen = ["3", "~ # ls", ""];
+  assert.equal(enteredLine(terminalOf(scrollback, screen, 1)), "ls");
+  assert.equal(enteredLine(terminalOf([], screen, 1)), "ls");
+  assert.equal(enteredLine(terminalOf(scrollback, screen, 0)), null);
 });
