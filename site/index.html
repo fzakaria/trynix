@@ -96,20 +96,24 @@
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
-    <!-- GUI programs and sound (docs/gui.md). Each half carries what
-         holds for it in its tooltip, under a dotted line. -->
+    <!-- GUI programs and sound (docs/gui.md). Each half opens a short
+         note under it, on hover or on a click (site/js/hints.js). -->
     <p>
-      <span
-        class="hint"
-        tabindex="0"
-        title="On the aarch64 guest, a Wayland program opens as a window over the terminal, and an X11 program does too, through an Xwayland the page adds. A GL program draws through your browser's WebGL2 with the site's own Mesa; select a mesa with it to use nixpkgs' instead. Tested in Chrome and Firefox."
-        >GUI programs open as windows on the page</span
+      <span class="hint"
+        ><button type="button" class="hint-phrase" aria-expanded="false" aria-controls="hint-gui">
+          GUI programs open as windows on the page</button
+        ><span class="hint-note" id="hint-gui" role="tooltip"
+          >Wayland and X11 programs open as windows over the terminal. GL programs draw with your
+          browser's WebGL2. This needs the aarch64 guest, and works in Chrome and Firefox.</span
+        ></span
       >, and
-      <span
-        class="hint"
-        tabindex="0"
-        title="On the aarch64 guest, what a program plays comes out of your speakers from your first click on the page, and the console bar's sound switch turns it off. Most programs need no sound server. One that speaks only PulseAudio, such as paplay, plays when you select pulseaudio with it."
-        >sound works too</span
+      <span class="hint"
+        ><button type="button" class="hint-phrase" aria-expanded="false" aria-controls="hint-sound">
+          sound works too</button
+        ><span class="hint-note" id="hint-sound" role="tooltip"
+          >Sound starts after your first click on the page. The sound switch on the terminal's bar
+          turns it off. A program that needs PulseAudio plays if you also select pulseaudio.</span
+        ></span
       >.
     </p>
 

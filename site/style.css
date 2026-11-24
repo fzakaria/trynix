@@ -736,12 +736,46 @@ code {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-/* A phrase with more to say in its tooltip: the dotted underline the
-   progress rows' setting links have. */
+/* A phrase with a short note under it (site/js/hints.js): the dotted
+   underline the progress rows' setting links have, and the note shown
+   on hover or once the phrase is clicked. */
 .hint {
+  position: relative;
+}
+.hint-phrase {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   text-decoration: underline dotted var(--muted);
   text-underline-offset: 3px;
-  cursor: help;
+}
+.hint-phrase:hover,
+.hint-phrase[aria-expanded="true"] {
+  text-decoration-color: currentColor;
+}
+.hint-note {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: min(26rem, 85vw);
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+}
+.hint:hover .hint-note,
+.hint-phrase[aria-expanded="true"] + .hint-note {
+  display: block;
 }
 
 /* A progress row's label that links to its setting: the row reads as
