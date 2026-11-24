@@ -81,6 +81,45 @@ test("a new window opens under the prompt, growing the frame to fit", () => {
   );
 });
 
+// Checks that a new window as wide as the frame, or nearly, opens
+// wholly inside it: wland cascades it 24 px from the left, and a window
+// wider than the frame less that opens moved left just enough for its
+// right edge to be inside, under the prompt, above a low one, and low
+// in a frame that cannot grow. weston at 900 x 600 is 912 px wide with
+// its frame, and opened at 24 px in a 928 px frame lost its right 8 px.
+test("a window nearly as wide as the frame opens inside it", () => {
+  const wide = { ...FOOT, width: FRAME.width - WINDOW_MARGIN / 2 };
+  const flush = FRAME.width - wide.width;
+  const short = { ...FRAME, height: 480 };
+  const capped = 560;
+  const places = [
+    opensAt(wide, { frame: FRAME, prompt: PROMPT_TOP, tallest: TALLEST }),
+    opensAt(wide, { frame: FRAME, prompt: PROMPT_LOW, tallest: TALLEST }),
+    opensAt(wide, { frame: short, prompt: PROMPT_TOP, tallest: capped }),
+  ];
+  for (const at of places) {
+    assert.equal(at.left, flush);
+    assert.ok(at.left + wide.width <= FRAME.width);
+  }
+
+  // A window exactly the frame's width opens at its left edge.
+  const full = { ...FOOT, width: FRAME.width };
+  assert.equal(
+    opensAt(full, { frame: FRAME, prompt: PROMPT_TOP, tallest: TALLEST }).left,
+    0,
+  );
+
+  // placeWindow passes the same place on.
+  const placed = placeWindow(wide, {
+    frame: FRAME,
+    prompt: PROMPT_TOP,
+    tallest: TALLEST,
+    growth: FrameGrowth.GROWS,
+  });
+  assert.equal(placed.maximized, false);
+  assert.equal(placed.left, flush);
+});
+
 // Checks how a new window is placed in a frame that grows and in one
 // held at its height, as the grip leaves it once the reader has sized
 // the terminal: in the held frame the tallest it can be is its height

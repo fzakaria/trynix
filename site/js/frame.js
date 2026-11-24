@@ -77,18 +77,23 @@ export const oversized = (box, frame) =>
 // the frame grows only as far as the window needs. A window that fits
 // above a low prompt without growing the frame stays where wland put
 // it. One that fits in neither place opens as low as it fits whole.
+// Wherever it opens, a window keeps wland's left edge unless its right
+// edge would then be past the frame's, which a window nearly as wide as
+// the frame is at wland's cascade: such a window moves left just enough
+// to be inside.
 export function opensAt(box, { frame, prompt, tallest }) {
   const under = prompt.bottom + WINDOW_MARGIN;
   const fitsUnder = (height) => under + box.height + WINDOW_MARGIN <= height;
+  const left = Math.max(0, Math.min(box.left, frame.width - box.width));
 
   // Under the prompt, in the frame as it is.
   if (fitsUnder(frame.height)) {
-    return { left: box.left, top: under, height: frame.height };
+    return { left, top: under, height: frame.height };
   }
 
   // Above a low prompt, where wland put it.
   if (box.top + box.height + WINDOW_MARGIN <= prompt.top) {
-    return { left: box.left, top: box.top, height: frame.height };
+    return { left, top: box.top, height: frame.height };
   }
 
   // Under the prompt, in a frame grown to fit, up to the tallest.
@@ -97,10 +102,10 @@ export function opensAt(box, { frame, prompt, tallest }) {
     tallest,
   );
   if (fitsUnder(height)) {
-    return { left: box.left, top: under, height };
+    return { left, top: under, height };
   }
   return {
-    left: box.left,
+    left,
     top: Math.max(0, height - box.height - WINDOW_MARGIN),
     height,
   };
