@@ -140,7 +140,10 @@ programs).
 The Settings tab has the choice, as one "Guest" setting: aarch64 on
 unkernel or x86_64 on QEMU. Architecture and engine are not two
 settings because each engine runs one architecture. Choosing the other
-guest reloads the same selection on it.
+guest reloads the same selection on it, with the link's other settings
+(memory, CPUs, downloads, network, relay, sound, the command to run)
+kept. The QEMU guest ignores the ones it has no use for, and switching
+back applies them again.
 
 The guest side is unkernel's base system, with no distro image:
 

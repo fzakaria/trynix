@@ -347,11 +347,14 @@ let network = pickNetwork({
 let linkedSound = readUrl().sound;
 
 // The link for what is on screen, as a URL relative to this page.
-function link({ boot = false } = {}) {
+// `engine` names an engine for the link in place of the one
+// linkEngine picks, which is how the guest choice under Settings moves
+// the page to the other engine with every other setting kept.
+function link({ boot = false, engine = null } = {}) {
   const state = urlState();
   return writeUrl(state, {
     boot,
-    engine: linkEngine(state),
+    engine: engine ?? linkEngine(state),
     memory: linkedMemory,
     cpus: linkedCpus,
     downloads: linkedDownloads,
@@ -478,8 +481,12 @@ function render() {
 //
 // Choosing reloads the page at a link that names the choice, because
 // the engine is fixed for the life of the page (config.js, ENGINE).
-// Package names resolve again on the other side; a store path does not
-// travel, and the boot says so if one is carried across (checkSystem).
+// The link keeps every setting the page's own link carries (memory,
+// CPUs, downloads, network, relay, sound, the command to run), so each
+// engine applies the ones it supports and a switch there and back loses
+// none. Package names resolve again on the other side; a store path
+// does not travel, and the boot says so if one is carried across
+// (checkSystem).
 function wireGuestChoice() {
   const option = (engine) =>
     guestChoice.querySelector(`input[value="${engine}"]`);
@@ -495,7 +502,7 @@ function wireGuestChoice() {
   }
 
   guestChoice.addEventListener("change", (event) => {
-    location.href = writeUrl(urlState(), { engine: event.target.value });
+    location.href = link({ engine: event.target.value });
   });
 }
 wireGuestChoice();
