@@ -464,7 +464,7 @@ GL_PACKAGES = ["mesa-demos"]
 DRIVER_ADDED = re.compile(r"gl: added (/nix/store/\S+-mesa-virgl-\S+)")
 # The gl case's link types the command itself (run=, site/js/url.js),
 # as the page's Try link does; the foot case types its own.
-GL_COMMAND = "es2gears_wayland &"
+GL_COMMAND = "LIBDECOR_PLUGIN_DIR= es2gears_wayland &"
 FPS_LINE = re.compile(r"frames in [\d.]+ seconds = ([\d.]+) FPS")
 FPS_LINES = 2
 FPS_LIMIT_SECONDS = 60

@@ -57,8 +57,11 @@ holds a Wayland program that links libglvnd and no Mesa, the page
 walks in the site's own Mesa, built with the virgl driver alone (see
 [The GL driver](#the-gl-driver)).
 
+The gears demo sets `LIBDECOR_PLUGIN_DIR=` for that command so it can
+draw its first frame without downloading GTK for the window decorations.
+
 ```
-https://trynix.dev/?pkg=mesa-demos&boot=1&run=es2gears_wayland+%26
+https://trynix.dev/?pkg=mesa-demos&boot=1&run=LIBDECOR_PLUGIN_DIR%3D+es2gears_wayland+%26
 ```
 
 Selecting a Mesa is how to opt out: with `pkg=mesa` in the link the
