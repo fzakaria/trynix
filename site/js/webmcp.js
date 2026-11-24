@@ -142,7 +142,7 @@ function toolsFor(page) {
     {
       name: "boot",
       description:
-        "Boot the selection in the tab: fetch its closure from cache.nixos.org into an x86_64 Linux VM and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. An addition that fails says so and why, and calling boot again retries it.",
+        "Boot the selection in the tab: fetch its closure from cache.nixos.org into an x86_64 Linux VM and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. A boot or an addition that fails says so and why, and calling boot again retries a failed addition.",
       inputSchema: { type: "object", properties: {} },
       execute: async () => text(await page.boot()),
     },

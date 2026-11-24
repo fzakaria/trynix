@@ -1662,6 +1662,11 @@ function checkSystem(info, entries, rootDigests) {
 // into the share as it lands, while the rest are still on their way.
 // When the last one is in, the guest is let run and the terminal goes
 // live.
+//
+// Resolves to null once the guest is at its prompt, or to why the boot
+// did not get there, in the words the page shows it with: the status
+// line for a boot the page cannot start, the progress row for one that
+// failed. The boot tool answers with it (page.boot).
 async function boot() {
   // Capture the requested selection before asynchronous work can change it.
   const entries = [...selection.values()];
@@ -1679,7 +1684,7 @@ async function boot() {
     log("not cross-origin isolated: SharedArrayBuffer is unavailable");
     status.textContent =
       "not cross-origin isolated, so SharedArrayBuffer is missing and the engine cannot start — reload once, and if that does not help the browser is blocking the service worker that sets the headers";
-    return;
+    return status.textContent;
   }
 
   // unkernel's kernel switches tasks by suspending WebAssembly, which
@@ -1691,7 +1696,7 @@ async function boot() {
     log("no JSPI: WebAssembly.Suspending is unavailable");
     status.textContent =
       "this browser cannot suspend WebAssembly (JSPI), which the unkernel engine needs; Chrome 137, Firefox 153 and Safari 27 have it. The x86_64 guest runs here: choose it under Settings";
-    return;
+    return status.textContent;
   }
 
   // The boot a link asked for has started: boot=1 leaves the address,
@@ -1895,10 +1900,12 @@ async function boot() {
         commandEntered(line);
       });
     }
+    return null;
   } catch (err) {
     telemetry.finish(stage, mode);
     log(`boot failed: ${err.message}`);
-    vmRow.fail(String(err));
+    const reason = String(err);
+    vmRow.fail(reason);
     // The error is on the progress row. The status line goes back to
     // describing the selection, which names any path no cache holds.
     render();
@@ -1908,6 +1915,7 @@ async function boot() {
     consoleSpinner.hidden = true;
     consoleNote.textContent = BOOT_FAILED_NOTE;
     refreshBootButton();
+    return reason;
   }
 }
 
@@ -2380,9 +2388,10 @@ const page = {
     ),
 
   // A guest that is already running takes the new paths without a
-  // reboot, which is the same thing the button does once it is up. An
-  // addition that fails says why, as its progress row does, so the
-  // caller knows to call boot again.
+  // reboot, which is the same thing the button does once it is up. A
+  // boot or an addition that fails says why, as the page does, so the
+  // caller knows it failed; a failed addition can be retried by calling
+  // boot again.
   async boot() {
     // The button is disabled for a path no cache holds, so the tool
     // answers the same way instead of downloading toward a failure.
@@ -2397,11 +2406,19 @@ const page = {
       }
       return `added to the running guest; ${mounted.size} paths mounted`;
     }
-    await boot();
-    if (!vmStarted) {
-      return `the boot did not start: ${status.textContent}`;
+    const failure = await boot();
+    if (failure === null) {
+      return `booted; ${mounted.size} paths mounted`;
     }
-    return `booted; ${mounted.size} paths mounted`;
+
+    // A boot can fail once the page has started the guest, as when the
+    // guest's store cannot be mounted or linked at /nix. The guest is
+    // there and the page takes the next call as an addition to it, so
+    // the answer says it had started.
+    if (vmStarted) {
+      return `the boot failed after the guest started: ${failure}`;
+    }
+    return `the boot did not start: ${failure}`;
   },
 
   // The caches box under Settings, as an operation. A cache is reachable from a page

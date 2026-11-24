@@ -22,6 +22,7 @@ site:
     nix run .#webmcp-test -- --url https://trynix.dev
 """
 import argparse
+import contextlib
 import importlib.util
 import json
 import os
@@ -77,6 +78,15 @@ REFUSED_PATH_SUFFIX = f"-{PACKAGE}-{BOTH_VERSIONS[1]}"
 REFUSAL_MESSAGE = "Failed to fetch"
 FAILED_ROW = "document.querySelector('#boot-progress .failed')?.textContent ?? ''"
 ADDITION_FAILED = "the addition failed: "
+
+# A boot that fails: once before its guest starts, with the second of
+# BOTH_VERSIONS refused as above, and once after, with the guest's link
+# of its store at /nix failing (BREAK_LINK). The boot tool's answer
+# opens with BOOT_NOT_STARTED or BOOT_FAILED, and carries the error.
+BOOT_NOT_STARTED = "the boot did not start: "
+BOOT_FAILED = "the boot failed after the guest started: "
+LINK_PROGRAM = "/bin/ln"
+LINK_ERROR = "ln: refused by webmcp-test"
 
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
@@ -135,8 +145,9 @@ POLYFILL = """
 })();
 """
 
-# Installed before the page's own scripts for the retried addition. It
-# wraps the page's fetch: the narinfo of the store path ending in
+# Installed before the page's own scripts for the retried addition and
+# the boot that fails before its guest starts. It wraps the page's
+# fetch: the narinfo of the store path ending in
 # REFUSED_PATH_SUFFIX names the NAR to refuse, and while
 # window.refuseTest.refusing is true a download of that NAR fails the
 # way a browser fails a dropped connection. window.refuseTest counts
@@ -169,6 +180,38 @@ REFUSE = (
 """
     .replace("REFUSED_PATH_SUFFIX", json.dumps(REFUSED_PATH_SUFFIX))
     .replace("REFUSAL_MESSAGE", json.dumps(REFUSAL_MESSAGE))
+)
+
+# Installed before the page's own scripts for the boot that fails after
+# its guest starts. The unkernel engine hands the page the guest's
+# kernel as window.trynix.kernel (site/js/unkernel.js), and once the
+# guest is started it runs LINK_PROGRAM in the guest to put the store at
+# /nix. This makes that run exit 1 with LINK_ERROR, and every other run
+# go through as it would.
+BREAK_LINK = (
+    r"""
+(() => {
+  let guest;
+  Object.defineProperty(window, "trynix", {
+    configurable: true,
+    get: () => guest,
+    set(value) {
+      guest = value;
+      const kernel = value?.kernel;
+      if (kernel === undefined) {
+        return;
+      }
+      const exec = kernel.exec.bind(kernel);
+      kernel.exec = (path, ...rest) =>
+        path === LINK_PROGRAM
+          ? Promise.resolve({ exitCode: 1, stdout: "", stderr: LINK_ERROR })
+          : exec(path, ...rest);
+    },
+  });
+})();
+"""
+    .replace("LINK_PROGRAM", json.dumps(LINK_PROGRAM))
+    .replace("LINK_ERROR", json.dumps(LINK_ERROR))
 )
 
 
@@ -406,6 +449,30 @@ def check_addition_keeps_winner(browser, checks, base):
     checks.equal("the same version runs after the addition", version_line(browser), booted)
 
 
+def forget_cached_paths(browser, base):
+    """Empty the page's Cache Storage, where it keeps NARs and narinfos.
+
+    A hit there is read without a fetch REFUSE could refuse, and an
+    earlier check may have fetched the path a check refuses.
+    """
+    origin = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(base))
+    browser.send("Storage.clearDataForOrigin", origin=origin, storageTypes="cache_storage")
+
+
+@contextlib.contextmanager
+def preloaded(browser, source):
+    """Run `source` before the page's own scripts in every document the
+    tab opens while the block runs."""
+    script = browser.send("Page.addScriptToEvaluateOnNewDocument", source=source)
+    try:
+        yield
+    finally:
+        browser.send(
+            "Page.removeScriptToEvaluateOnNewDocument",
+            identifier=script["result"]["identifier"],
+        )
+
+
 def check_retried_addition(browser, checks, base, mode):
     """An addition whose download failed, retried once the download works.
 
@@ -421,14 +488,8 @@ def check_retried_addition(browser, checks, base, mode):
     still said 2.10.
     """
     print(f"an addition retried after its download failed, downloads {mode}")
-
-    # The page keeps NARs and narinfos in its Cache Storage, and a hit is
-    # read without a fetch the preload could refuse. An earlier check
-    # may have fetched the version added here.
-    origin = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(base))
-    browser.send("Storage.clearDataForOrigin", origin=origin, storageTypes="cache_storage")
-    script = browser.send("Page.addScriptToEvaluateOnNewDocument", source=REFUSE)
-    try:
+    forget_cached_paths(browser, base)
+    with preloaded(browser, REFUSE):
         query = urllib.parse.urlencode({"engine": RETRY_ENGINE, "fetch": mode})
         browser.send("Page.navigate", url=f"{base}/?{query}")
         await_tools(browser)
@@ -456,11 +517,45 @@ def check_retried_addition(browser, checks, base, mode):
         print(f"  {said}")
         checks.true("the retry added", said.startswith("added to the running guest;"))
         checks.equal("the added version runs", version_line(browser), VERSION_LINE.format(added))
-    finally:
-        browser.send(
-            "Page.removeScriptToEvaluateOnNewDocument",
-            identifier=script["result"]["identifier"],
-        )
+
+
+def check_failed_boot(browser, checks, base):
+    """A boot that fails, before its guest starts and after.
+
+    The boot tool has to say that the boot failed and why, as the
+    progress row does. A boot that failed once the page had started its
+    guest used to be answered "booted", and one that failed before
+    that was answered with the status line, which by then describes the
+    selection and not the error.
+    """
+    query = urllib.parse.urlencode({"engine": RETRY_ENGINE})
+    booted, refused = BOTH_VERSIONS
+
+    print("a boot whose package's NAR is refused")
+    forget_cached_paths(browser, base)
+    with preloaded(browser, REFUSE):
+        browser.send("Page.navigate", url=f"{base}/?{query}")
+        await_tools(browser)
+        call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": refused}])
+        browser.evaluate("window.refuseTest.refusing = true")
+        said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+        print(f"  {said}")
+        checks.true("the NAR was refused", browser.evaluate("window.refuseTest.refused"))
+        checks.true("the boot tool says the boot did not start", said.startswith(BOOT_NOT_STARTED))
+        checks.true("the boot tool says why", REFUSAL_MESSAGE in said)
+
+    print("a boot whose guest cannot link its store at /nix")
+    with preloaded(browser, BREAK_LINK):
+        browser.send("Page.navigate", url=f"{base}/?{query}")
+        await_tools(browser)
+        call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": booted}])
+        said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+        print(f"  {said}")
+        failed = browser.evaluate(FAILED_ROW)
+        print(f"  {failed}")
+        checks.true("the boot's row failed", LINK_ERROR in failed)
+        checks.true("the boot tool says the boot failed", said.startswith(BOOT_FAILED))
+        checks.true("the boot tool says why", LINK_ERROR in said)
 
 
 def main():
@@ -571,6 +666,9 @@ def main():
         # modes take different paths through an addition.
         for mode in DOWNLOAD_MODES:
             check_retried_addition(browser, checks, base, mode)
+
+        # A fresh page for each boot that fails.
+        check_failed_boot(browser, checks, base)
     finally:
         browser.close()
         if shutdown is not None:

@@ -28,7 +28,10 @@ them instead of synthesising clicks.
 | `read-console`    | everything the guest has said, boot messages included                                                              |
 
 Once a guest is running, selecting more packages and calling `boot`
-again adds them without a reboot, the same way the button does.
+again adds them without a reboot, the same way the button does. A boot
+or an addition that fails is answered with the error the page shows,
+so an agent can tell it failed; calling `boot` again retries a failed
+addition.
 
 Support is thin: ChatGPT Desktop ships WebMCP, Chrome and Edge have it
 behind an origin trial, Firefox and Safari have nothing. The page
