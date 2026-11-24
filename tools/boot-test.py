@@ -91,6 +91,11 @@ CLOCK_SLEEP_SECONDS = 2
 CLOCK_LIMIT_SECONDS = 4.5
 CLOCK_MARKER = "BOOT_TEST_CLOCK"
 
+# How long a launched browser has to offer a page on its debugging port.
+# A browser that does not speak the DevTools protocol never does: Firefox
+# dropped it, and gui-test.py drives Firefox over WebDriver BiDi instead.
+PORT_WAIT_SECONDS = 60
+
 
 def free_port():
     """A port nothing is listening on, for the server or the debugger."""
@@ -160,13 +165,21 @@ class Browser:
             stderr=self.stderr,
             start_new_session=True,
         )
-        self.socket = websocket.create_connection(self._page_socket(), max_size=None, timeout=60)
+        # A browser that never offers a page is stopped before the tool
+        # gives up. It runs in a session of its own, so nothing else
+        # stops it, and a headless one would run on after the tool exits.
+        try:
+            page = self._page_socket()
+        except BaseException:
+            self.close()
+            raise
+        self.socket = websocket.create_connection(page, max_size=None, timeout=60)
         self.message_id = 0
         self.send("Runtime.enable")
         self.send("Page.enable")
 
     def _page_socket(self):
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + PORT_WAIT_SECONDS
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 raise SystemExit(
@@ -295,7 +308,7 @@ def main():
     parser.add_argument(
         "--browser",
         default=os.environ.get("TRYNIX_BROWSER", "chromium"),
-        help="the headless browser to drive",
+        help="the headless browser to drive, one that speaks the DevTools protocol (Chromium)",
     )
     args = parser.parse_args()
 
