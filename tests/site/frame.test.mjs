@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  FrameGrowth,
   WINDOW_GRIP,
   WINDOW_MARGIN,
   WindowsAction,
@@ -15,6 +16,7 @@ import {
   keepReachable,
   opensAt,
   oversized,
+  placeWindow,
   windowsButton,
 } from "../../site/js/frame.js";
 
@@ -77,6 +79,48 @@ test("a new window opens under the prompt, growing the frame to fit", () => {
       height: capped,
     },
   );
+});
+
+// Checks how a new window is placed in a frame that grows and in one
+// held at its height, as the grip leaves it once the reader has sized
+// the terminal: in the held frame the tallest it can be is its height
+// now, so a window taller than that opens maximized in it, and one
+// that fits only low down opens as low as it fits whole, both without
+// asking for a taller frame. Placed against the viewport's height, a
+// console shortened to 192 px opened foot's 494 px window 146 px from
+// the top with 46 px of it in view.
+test("a frame the reader sized holds its windows at its height", () => {
+  const sized = { ...FRAME, height: 192 };
+  const growing = { frame: sized, prompt: PROMPT_TOP, tallest: TALLEST };
+
+  // The frame that grows makes room for foot under the prompt.
+  const grown = placeWindow(FOOT, { ...growing, growth: FrameGrowth.GROWS });
+  assert.equal(grown.maximized, false);
+  assert.equal(grown.top, PROMPT_TOP.bottom + WINDOW_MARGIN);
+  assert.equal(grown.height, grown.top + FOOT.height + WINDOW_MARGIN);
+
+  // The held frame maximizes foot at its own height.
+  assert.deepEqual(
+    placeWindow(FOOT, { ...growing, growth: FrameGrowth.HELD }),
+    { maximized: true, height: sized.height },
+  );
+
+  // A window that fits the held frame only below the prompt's line
+  // opens as low as it fits whole, in the frame as it is.
+  const small = { ...FOOT, height: 150 };
+  const low = placeWindow(small, {
+    frame: sized,
+    prompt: { top: 60, bottom: 80 },
+    tallest: TALLEST,
+    growth: FrameGrowth.HELD,
+  });
+  assert.deepEqual(low, {
+    maximized: false,
+    left: small.left,
+    top: sized.height - small.height - WINDOW_MARGIN,
+    height: sized.height,
+  });
+  assert.ok(low.top + small.height <= sized.height);
 });
 
 // Checks that a window inside the frame stays where it is, and that one

@@ -106,6 +106,36 @@ export function opensAt(box, { frame, prompt, tallest }) {
   };
 }
 
+// Whether the frame grows for a new window. It is held at its height
+// on a touch device, where terminal.js sizes the terminal to what is
+// on screen, in full screen, where the frame fills the screen already,
+// and once the reader has set the height with the grip (grip.js).
+export const FrameGrowth = Object.freeze({
+  GROWS: "grows",
+  HELD: "held",
+});
+
+// How a new window at `box` is placed: `{ maximized: true, height }`
+// when it is larger than the frame can be, the frame then made
+// `height` tall, or `{ maximized: false, left, top, height }`, where
+// it opens and how tall the frame is then (opensAt). `growth` says
+// whether the frame grows (FrameGrowth): one that grows can be as tall
+// as `tallest`, nearly the viewport, and one held at its height can be
+// no taller than it is now.
+export function placeWindow(box, { frame, prompt, tallest, growth }) {
+  const most =
+    growth === FrameGrowth.GROWS
+      ? Math.max(frame.height, tallest)
+      : frame.height;
+  if (oversized(box, { width: frame.width, height: most })) {
+    return { maximized: true, height: most };
+  }
+  return {
+    maximized: false,
+    ...opensAt(box, { frame, prompt, tallest: most }),
+  };
+}
+
 // Where a window at `box` goes so that a grip of it is inside `frame`:
 // its left or right strip within the sides, its top edge between the
 // frame's top and a grip's height above the bottom.
@@ -224,19 +254,26 @@ export function consoleFrame({
     );
   }
 
-  // Grow the frame to `height`, by the terminal's height, which the
-  // frame takes; the terminal refits its rows. Not on a touch device,
-  // where terminal.js sizes the terminal to what is on screen, nor in
-  // full screen, where the frame fills the screen already, nor once the
-  // reader has set the height with the grip (grip.js).
-  function growFrame(height) {
-    const frame = frameSize();
+  // Whether the frame grows for its windows now (FrameGrowth): held on
+  // a touch device, in full screen, and once the reader has sized the
+  // terminal with the grip.
+  function frameGrowth() {
     if (
-      height <= frame.height ||
       terminalBox.dataset.sized === SIZED_BY_READER ||
       matchMedia("(pointer: coarse)").matches ||
       document.fullscreenElement === consoleElement
     ) {
+      return FrameGrowth.HELD;
+    }
+    return FrameGrowth.GROWS;
+  }
+
+  // Grow the frame to `height`, by the terminal's height, which the
+  // frame takes; the terminal refits its rows. A frame held at its
+  // height (frameGrowth) stays as it is.
+  function growFrame(height) {
+    const frame = frameSize();
+    if (height <= frame.height || frameGrowth() === FrameGrowth.HELD) {
       return;
     }
     const grown =
@@ -269,8 +306,11 @@ export function consoleFrame({
   // A new window larger than the frame at its tallest opens maximized
   // in a frame grown that far, which tells the program the frame's
   // size; any other opens under the terminal's prompt, the frame
-  // growing as far as it needs (opensAt). A window is looked at once,
-  // as soon as its first commit has given it a size.
+  // growing as far as it needs (placeWindow). The tallest a frame held
+  // at its height can be is its height now, so a window that does not
+  // fit opens maximized or as low as it fits whole in the frame as it
+  // is. A window is looked at once, as soon as its first commit has
+  // given it a size.
   function placeNew() {
     const entries = new Map(
       desktop.windows().map((entry) => [entry.key, entry]),
@@ -296,15 +336,17 @@ export function consoleFrame({
       if (win.maximized || win.fullscreen) {
         continue;
       }
-      const frame = frameSize();
-      const tallest = tallestFrame();
-      if (oversized(box, { width: frame.width, height: tallest })) {
-        growFrame(tallest);
+      const at = placeWindow(box, {
+        frame: frameSize(),
+        prompt: promptLine(),
+        tallest: tallestFrame(),
+        growth: frameGrowth(),
+      });
+      growFrame(at.height);
+      if (at.maximized) {
         entries.get(win.key)?.setMaximized(true);
         continue;
       }
-      const at = opensAt(box, { frame, prompt: promptLine(), tallest });
-      growFrame(at.height);
       moveWindow(win, box, at);
     }
   }

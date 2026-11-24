@@ -30,7 +30,11 @@ needs, up to nearly the viewport's height; the terminal refits its
 rows and the page scrolls the frame on screen. A window that fits
 above a low prompt without growing the frame stays where the
 compositor put it, and one larger than the tallest frame opens
-maximized. Windows move by their title bar or by Alt+drag.
+maximized. Once the reader has set the terminal's height with the grip
+under the console, the frame keeps that height: a window that does not
+fit under the prompt opens as low as it fits whole, and one taller than
+the frame opens maximized in it. Windows move by their title bar or by
+Alt+drag.
 
 The keyboard goes to one place at a time. A click on a window gives it
 the keyboard; a click on the terminal outside every window gives the
