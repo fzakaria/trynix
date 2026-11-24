@@ -1,6 +1,6 @@
 # Publishes the site to GitHub Pages. The deployed tree is exactly
 # `nix build .#site` — the same one `nix run .#serve` tests locally —
-# so this job builds and uploads, and decides nothing.
+# so the build job builds and uploads, and decides nothing.
 #
 # The engine and the snapshot are not built here: they need docker and
 # emscripten, and a native build of the same QEMU fork (docs/engine.md).
@@ -32,13 +32,15 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Two jobs, as GitHub's own Pages workflow has them. deploy-pages asks
+# the API for the run's artifact, and asked from the job that uploaded
+# it, less than a second later, it got "Found 0 artifact(s)" on every
+# push from 2026-11-24. The job boundary gives the listing time to
+# catch up.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,5 +73,13 @@ jobs:
         with:
           path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
