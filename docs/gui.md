@@ -366,14 +366,96 @@ switches sound off and on, remembered by this browser.
 https://trynix.dev/?pkg=espeak-ng&boot=1&run=espeak-ng+%27Hello%27
 ```
 
-Programs that write to ALSA play: espeak-ng, `aplay`, mpv with
-`--ao=alsa`, SDL programs. A program that needs a PulseAudio or
-PipeWire server stays silent unless it falls back to ALSA, since the
-guest runs neither.
-
 Measured in headless Chromium, 2026-11-23: espeak-ng's 1.9 s greeting,
 held before the click, played whole after it, then a second line live,
 with no underruns and nothing dropped.
+
+### Which programs play
+
+Most programs that speak PulseAudio try it first and fall back to ALSA
+when no server answers. Measured in headless Chromium, 2026-11-23,
+each program selected with no server in the guest, by the chunks of
+audio that reached the page (a headless browser has no speakers):
+
+| program                               | tries                                 | with no server |
+| ------------------------------------- | ------------------------------------- | -------------- |
+| espeak-ng                             | PulseAudio, then ALSA                 | plays          |
+| `aplay`                               | ALSA                                  | plays          |
+| mpv, its default output               | PipeWire, PulseAudio, then ALSA       | plays          |
+| ffplay (SDL 3, through sdl2-compat)   | PipeWire, PulseAudio, then ALSA       | plays          |
+| `gst-launch-1.0` with `autoaudiosink` | pulsesink, then alsasink              | plays          |
+| firefox, a Web Audio tone             | PulseAudio, then ALSA (cubeb)         | plays          |
+| `canberra-gtk-play` (libcanberra)     | PulseAudio, whenever its module loads | silent         |
+| `paplay`, `pacat`                     | PulseAudio only                       | silent         |
+| `pw-play`                             | PipeWire only                         | silent         |
+
+libcanberra plays GTK programs' event sounds and the sounds of games
+that use it, aisleriot's among them (off until turned on in its menu).
+It takes its PulseAudio backend whenever that backend's module loads,
+and when no server answers it fails there, with no fallback. So every
+shell of a guest with no server gets `CANBERRA_DRIVER=alsa`, and
+`canberra-gtk-play` plays.
+
+### A PulseAudio server
+
+When the closure holds nixpkgs' `pulseaudio` package, which carries the
+daemon, the page starts the daemon before the shell is ready
+([site/js/pulse.js](../site/js/pulse.js)). Selecting pulseaudio with a
+program is how to get a server:
+
+```
+https://trynix.dev/?pkg=pulseaudio&pkg=sox&boot=1&run=sox+-n+-t+raw+-r+44100+-e+signed+-b+16+-c+2+-+synth+2+sine+440+%7C+pacat
+```
+
+The daemon loads no default script (`-n`), only three modules: an ALSA
+sink on card 0, the native protocol's socket at
+`$XDG_RUNTIME_DIR/pulse/native` with anonymous access (the guest has
+one user, root), and `module-suspend-on-idle`, which closes the card
+1 s after the last client stops. Shared memory is off, so audio goes
+over the socket. Every shell gets `PULSE_SERVER`. A client of any
+nixpkgs era speaks the native protocol to the daemon over the socket,
+so no library crosses from one era's process into another's
+([design.md](./design.md) says why that matters).
+
+The daemon runs with no realtime thread and no CPU limit
+(`--realtime=no --high-priority=no --no-cpu-limit`). With its defaults
+it was killed, status 137, as soon as a client played: under the
+emulated CPU its realtime thread overruns the time limit the daemon
+sets for it.
+
+With the daemon up, paplay, pacat, `canberra-gtk-play`, espeak-ng, mpv,
+ffplay and firefox played through it. The sink runs at the daemon's
+default 44.1 kHz, the rate most of them play at, and the page
+resamples to the device's rate.
+
+What it costs, measured with `pulseaudio-ctl`, whose closure holds the
+daemon without selecting it, so the daemon's libraries download only
+when it starts (three boots each, lazy downloads):
+
+| boot               | paths written | downloaded | running to prompt |
+| ------------------ | ------------- | ---------- | ----------------- |
+| without the daemon | 15            | 15.8 MB    | 2.2–2.5 s         |
+| with the daemon    | 44            | 32.5 MB    | 4.1–4.9 s         |
+
+The page does not add a daemon of its own to closures that hold only
+the client library. espeak-ng, mpv, firefox and most GTK programs hold
+it, they play without a server, and each boot would pay the 17 MB and
+2.5 s above. A server would also take the card from programs that
+write to ALSA themselves.
+
+The card has one stream. While the daemon plays, and for 1 s after, a
+program that opens the card itself gets EBUSY. The other way round, a
+PulseAudio client started while such a program holds the card waits,
+and goes on waiting after the card is free until it is stopped; the
+next client plays. With the daemon up, programs that try PulseAudio
+first go through it, so this takes a program that writes only to ALSA,
+such as `aplay`, playing at the same moment.
+
+The daemon opens the card as it starts and plays zeros until it
+closes it. The page shows the sound control only once a chunk holds a
+sample that is not zero, and the clip it holds for the first click
+starts there, so a boot with a daemon and nothing playing asks for no
+click.
 
 ## What it costs
 
@@ -458,6 +540,8 @@ compositor:
   the terminal the keyboard, even while a window has it.
 - **`/root` does not exist** in unkernel's base system, so programs
   that write settings under `$HOME` complain and carry on.
+- **PipeWire-only programs**, such as `pw-play`, stay silent: the
+  page starts no PipeWire daemon.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
   60 FPS. Safari has not been run.
