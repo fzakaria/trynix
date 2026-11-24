@@ -11,6 +11,7 @@ import {
   listingAttr,
   listingEntries,
   listingFetcher,
+  listingMismatch,
   nodeAt,
   parseListing,
   programsOfListing,
@@ -160,4 +161,84 @@ test("listings are fetched once each, a few at a time, null on failure", async (
   finish.get("/nix/store/b").resolve(null);
   assert.equal(await fetcher.of(info("b")), null);
   assert.equal(fetcher.count(), 1);
+});
+
+// hello's NAR as the parser (nar.js) gives it, the archive HELLO
+// lists: each entry with its path inside the store path, a file's bytes
+// standing for its size.
+function helloNar() {
+  return [
+    { path: "", type: "directory" },
+    { path: "bin", type: "directory" },
+    {
+      path: "bin/hello",
+      type: "regular",
+      executable: true,
+      data: new Uint8Array(64472),
+    },
+    { path: "bin/hi", type: "symlink", target: "hello" },
+    {
+      path: "bin/README.txt",
+      type: "regular",
+      executable: false,
+      data: new Uint8Array(12),
+    },
+    { path: "share", type: "directory" },
+  ];
+}
+
+// Checks a listing against the NAR it describes, on everything the page
+// answers the guest from a listing: the names, each one's type, a
+// file's size and executable bit and a symlink's target. A listing that
+// agrees is passed; one that differs anywhere is refused, with the path
+// it differs at.
+test("a listing is checked against the NAR it describes", () => {
+  assert.equal(listingMismatch(HELLO.root, helloNar()), null);
+
+  const differing = [
+    // A library the listing hides.
+    [
+      ...helloNar(),
+      {
+        path: "share/libhello.so",
+        type: "regular",
+        executable: false,
+        data: new Uint8Array(1),
+      },
+    ],
+    // A file of another size.
+    helloNar().map((entry) =>
+      entry.path === "bin/README.txt"
+        ? { ...entry, data: new Uint8Array(13) }
+        : entry,
+    ),
+    // A program that is not executable.
+    helloNar().map((entry) =>
+      entry.path === "bin/hello" ? { ...entry, executable: false } : entry,
+    ),
+    // A symlink to somewhere else.
+    helloNar().map((entry) =>
+      entry.path === "bin/hi" ? { ...entry, target: "/bin/sh" } : entry,
+    ),
+    // A directory where the listing has a file.
+    helloNar().map((entry) =>
+      entry.path === "bin/README.txt"
+        ? { path: entry.path, type: "directory" }
+        : entry,
+    ),
+  ];
+  const at = [
+    "share/libhello.so",
+    "bin/README.txt",
+    "bin/hello",
+    "bin/hi",
+    "bin/README.txt",
+  ];
+  differing.forEach((entries, which) => {
+    assert.match(
+      listingMismatch(HELLO.root, entries) ?? "",
+      new RegExp(at[which].replace(".", "\\.")),
+      at[which],
+    );
+  });
 });

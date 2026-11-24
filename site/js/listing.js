@@ -18,7 +18,7 @@
 // cannot decode fails like any other: a path without a listing is
 // downloaded whole the first time the guest touches it.
 
-import { cachedResponse, storeInCache } from "./cache.js";
+import { cachedResponse, evictFromCache, storeInCache } from "./cache.js";
 import { CACHE_URL, DIGEST_LENGTH } from "./config.js";
 
 // A listing's node types, as the cache writes them.
@@ -142,6 +142,62 @@ export function programsOfListing(root) {
     .map(([name]) => name);
 }
 
+// How a listing differs from the NAR it describes, or null when it does
+// not. `entries` is the NAR as nar.js parses it. Compared is everything
+// the page answers the guest from a listing: the names, each one's type,
+// a file's size and executable bit and a symlink's target.
+//
+// A listing is not covered by the narinfo's signature, and the NAR is,
+// through its NarHash (store.js), so the NAR is the one to believe. The
+// lookups answered from a listing before its NAR arrived cannot be taken
+// back; what a mismatch can still do is keep the listing from answering
+// again, on this visit or the next (lazy.js).
+export function listingMismatch(root, entries) {
+  const listed = new Map();
+  const walk = (node, path) => {
+    listed.set(path, node);
+    if (node.type !== Node.DIRECTORY) {
+      return;
+    }
+    for (const [name, child] of Object.entries(node.entries ?? {})) {
+      walk(child, path === "" ? name : `${path}/${name}`);
+    }
+  };
+  walk(root, "");
+
+  // Every name in the NAR, as the listing has it.
+  for (const entry of entries) {
+    const at = entry.path === "" ? "/" : entry.path;
+    const node = listed.get(entry.path);
+    if (node === undefined) {
+      return `${at} is in the NAR and not listed`;
+    }
+    if (node.type !== entry.type) {
+      return `${at} is a ${entry.type}, listed as a ${node.type}`;
+    }
+    if (entry.type === Node.REGULAR && (node.size ?? 0) !== entry.data.length) {
+      return `${at} is ${entry.data.length} bytes, listed as ${node.size}`;
+    }
+    if (
+      entry.type === Node.REGULAR &&
+      (node.executable === true) !== entry.executable
+    ) {
+      return `${at} is${entry.executable ? "" : " not"} executable, listed otherwise`;
+    }
+    if (entry.type === Node.SYMLINK && node.target !== entry.target) {
+      return `${at} points to ${entry.target}, listed as ${node.target}`;
+    }
+    listed.delete(entry.path);
+  }
+
+  // And nothing listed that the NAR lacks.
+  const [extra] = listed.keys();
+  if (extra !== undefined) {
+    return `${extra} is listed and not in the NAR`;
+  }
+  return null;
+}
+
 // Where a path's listing is: beside its narinfo, in whichever cache
 // served the narinfo.
 const listingUrl = (info) =>
@@ -174,6 +230,10 @@ export async function fetchListing(info) {
   await storeInCache(url, new TextEncoder().encode(text));
   return { root, bytes: Number(res.headers.get("Content-Length") ?? 0) };
 }
+
+// Forget the copy of a path's listing the browser keeps, so the next
+// visit asks the cache again.
+export const forgetListing = (info) => evictFromCache(listingUrl(info));
 
 // Listings by store path, each fetched once and at most `concurrency` at
 // a time, with fetchOne(info) doing the fetch (fetchListing's answer).

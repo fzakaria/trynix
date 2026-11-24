@@ -20,7 +20,12 @@ import {
 import { walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
 import { lazyStore, Priority, References } from "./lazy.js";
-import { fetchListing, listingFetcher, programsOfListing } from "./listing.js";
+import {
+  fetchListing,
+  forgetListing,
+  listingFetcher,
+  programsOfListing,
+} from "./listing.js";
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
 import { fullScreenButton } from "./frame.js";
@@ -1152,6 +1157,7 @@ function serveLazily(vmPromise, listings) {
   const store = lazyStore({
     concurrency: NAR_CONCURRENCY,
     listing: (info) => listings.of(info),
+    dropListing: forgetListing,
     async fetch(info) {
       const entries = await fetchNar(
         info,

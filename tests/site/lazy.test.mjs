@@ -747,6 +747,83 @@ test("a file's attributes are the same before and after its path arrives", async
   );
 });
 
+// Checks that a path's listing is held to its NAR when the NAR arrives:
+// a listing is not covered by the narinfo's signature, and the NAR is,
+// through its hash. One that differs is named in the page's log and
+// dropped, so no later visit answers from it; one that agrees is kept.
+test("a listing that differs from its NAR is logged and dropped on arrival", async () => {
+  const nar = [
+    { path: "", type: "directory" },
+    { path: "lib", type: "directory" },
+    {
+      path: "lib/libz.so.1",
+      type: "regular",
+      executable: false,
+      data: new Uint8Array(3),
+    },
+  ];
+  const listings = {
+    "y-zlib": { type: "directory", entries: { lib: nodeOf(nar, "lib") } },
+    "z-zlib": {
+      type: "directory",
+      entries: { lib: { type: "directory", entries: {} } },
+    },
+  };
+  const dropped = [];
+  const store = lazyStore({
+    concurrency: 4,
+    listing: (narinfo) =>
+      listings[narinfo.storePath.slice(STORE.length + 1)] ?? null,
+    fetch: () => nar,
+    write: () => {},
+    dropListing: (narinfo) => dropped.push(narinfo.storePath),
+  });
+  store.add([info("y-zlib"), info("z-zlib")]);
+
+  for (const basename of ["y-zlib", "z-zlib"]) {
+    await store.list(basename);
+    await store.ensure(basename, Priority.DEMAND);
+  }
+  assert.deepEqual(dropped, [`${STORE}/z-zlib`]);
+  assert.match(
+    logLines(),
+    /\/nix\/store\/z-zlib: the listing.*lib\/libz\.so\.1/,
+  );
+  assert.equal(store.listed("z-zlib"), null);
+});
+
+// The listing node a parsed NAR (nar.js) holds at `path`: what the cache
+// would list for it.
+function nodeOf(entries, path) {
+  const entry = entries.find((candidate) => candidate.path === path);
+  if (entry.type === "regular") {
+    return {
+      type: "regular",
+      size: entry.data.byteLength,
+      ...(entry.executable ? { executable: true } : {}),
+    };
+  }
+  if (entry.type === "symlink") {
+    return { type: "symlink", target: entry.target };
+  }
+  const prefix = path === "" ? "" : `${path}/`;
+  const children = entries.filter(
+    (candidate) =>
+      candidate.path.startsWith(prefix) &&
+      candidate.path !== path &&
+      !candidate.path.slice(prefix.length).includes("/"),
+  );
+  return {
+    type: "directory",
+    entries: Object.fromEntries(
+      children.map((child) => [
+        child.path.slice(prefix.length),
+        nodeOf(entries, child.path),
+      ]),
+    ),
+  };
+}
+
 // Checks the fallback: a path the cache has no listing for is downloaded
 // whole the first time the guest touches it, as before there were
 // listings.

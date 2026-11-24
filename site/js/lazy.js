@@ -48,7 +48,13 @@
 //   about to run it.
 
 import { loaderStorePaths } from "./elf.js";
-import { listingAttr, listingEntries, nodeAt, rootType } from "./listing.js";
+import {
+  listingAttr,
+  listingEntries,
+  listingMismatch,
+  nodeAt,
+  rootType,
+} from "./listing.js";
 import { log } from "./log.js";
 import { absoluteTarget } from "./store.js";
 
@@ -107,11 +113,19 @@ const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
 // only start while fewer than `concurrency` downloads of any kind are
 // running.
 // listing(info), when given, resolves to a path's NAR listing's root,
-// or to null when there is none to be had (listing.js).
+// or to null when there is none to be had (listing.js), and
+// dropListing(info) forgets a listing its NAR proved wrong.
 // onWritten(basename), when given, hears of each path once the path
 // counts as written in stats() and ready(); inside write() the path
 // does not count yet.
-export function lazyStore({ fetch, write, concurrency, listing, onWritten }) {
+export function lazyStore({
+  fetch,
+  write,
+  concurrency,
+  listing,
+  dropListing,
+  onWritten,
+}) {
   // basename -> { info, written, promise, settle, queued, listing }.
   // `promise` is the download every lookup of the path waits on, from
   // the moment the path is asked for until the download ends; null
@@ -128,6 +142,25 @@ export function lazyStore({ fetch, write, concurrency, listing, onWritten }) {
   const next = [];
   const background = [];
   let running = 0;
+
+  // Hold the path's listing, if it has one, to the NAR that has just
+  // arrived (listing.js, listingMismatch): one that differs is named in
+  // the log and dropped.
+  function checkListing(path, entries) {
+    const root = path.listing;
+    if (root === undefined || root === null || root instanceof Promise) {
+      return;
+    }
+    const problem = listingMismatch(root, entries);
+    if (problem === null) {
+      return;
+    }
+    log(
+      `${path.info.storePath}: the listing differs from the NAR (${problem}); dropped`,
+    );
+    path.listing = null;
+    dropListing?.(path.info);
+  }
 
   // Download, check and write one path, and settle the promise its
   // lookups wait on. A failure leaves the path unwritten and forgets
@@ -157,7 +190,10 @@ export function lazyStore({ fetch, write, concurrency, listing, onWritten }) {
     };
 
     download
-      .then((entries) => write(basename, entries))
+      .then((entries) => {
+        checkListing(path, entries);
+        return write(basename, entries);
+      })
       .then(
         () => {
           path.written = true;
