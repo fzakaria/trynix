@@ -234,7 +234,8 @@ async function pump(shell, port, console_) {
 // engine: { main, kernel, gl }, the versioned URLs of the SDK's
 // browser entry, of the kernel and of the GL renderer's module.
 // desktopElement is where GUI programs' windows go (gui.js), and
-// soundControl the console bar's sound switch (sound.js). memory is
+// soundControl the console bar's sound switch (sound.js). net is the
+// network device's spec, or null for none (network.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
 // to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
@@ -248,6 +249,7 @@ export async function startUnkernel({
   keyBarElement,
   desktopElement,
   soundControl,
+  net,
   memory,
   cpus,
   engine,
@@ -331,6 +333,7 @@ export async function startUnkernel({
     gpu: true,
     gl: { module: new URL(engine.gl, location.href).href },
     sound,
+    ...(net === null ? {} : { net }),
     log,
   });
   if (kernel.memoryMiB !== memory.mib) {

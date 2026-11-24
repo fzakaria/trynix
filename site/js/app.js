@@ -106,6 +106,17 @@ import {
   rememberDownloads,
   rememberedDownloads,
 } from "./downloads.js";
+import {
+  DEFAULT_RELAY,
+  Network,
+  netSpec,
+  pickNetwork,
+  relayOf,
+  rememberNetwork,
+  rememberRelay,
+  rememberedNetwork,
+  rememberedRelay,
+} from "./network.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -138,6 +149,9 @@ const cpuCounts = document.getElementById("cpu-counts");
 const cpuStatus = document.getElementById("cpu-status");
 const downloadsChoice = document.getElementById("downloads");
 const downloadsStatus = document.getElementById("downloads-status");
+const networkChoice = document.getElementById("network");
+const networkRelay = document.getElementById("network-relay");
+const networkStatus = document.getElementById("network-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -321,6 +335,18 @@ let downloads = pickDownloads({
 // for the Boot button.
 const linkedRun = readUrl().run;
 
+// Whether the next boot has a network, and through which Wisp relay
+// (network.js, url.js `net`): the link's choice, then this browser's,
+// then on through unkernel's relay. A link carries the choice only when
+// it was opened with one, and never a relay.
+let linkedNetwork = readUrl().network;
+let network = pickNetwork({
+  linked: linkedNetwork,
+  remembered: rememberedNetwork(),
+  rememberedRelay: rememberedRelay(),
+  engine: ENGINE,
+});
+
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
   const state = urlState();
@@ -330,6 +356,7 @@ function link({ boot = false } = {}) {
     memory: linkedMemory,
     cpus: linkedCpus,
     downloads: linkedDownloads,
+    network: linkedNetwork,
     run: linkedRun,
   });
 }
@@ -587,6 +614,66 @@ function wireDownloadsChoice() {
   });
 }
 wireDownloadsChoice();
+
+// The network choice under Settings: on or off, and the relay, empty
+// for unkernel's. A choice is remembered by this browser, replaces the
+// link's when the link named one, and takes effect at the next boot. A
+// relay that is not a ws: or wss: URL is refused, and says so.
+function wireNetworkChoice() {
+  const option = (mode) =>
+    networkChoice.querySelector(`input[name="network"][value="${mode}"]`);
+  option(network.mode).checked = true;
+  networkRelay.value = rememberedRelay() ?? "";
+
+  if (ENGINE === Engine.QEMU) {
+    option(Network.ON).disabled = true;
+    networkRelay.disabled = true;
+    networkStatus.textContent = "The x86_64 guest has no network device.";
+    return;
+  }
+
+  // What the status line says once something changed.
+  const fromNextBoot = () =>
+    vmStarted
+      ? "from the next boot; this guest keeps the network it booted with"
+      : "";
+
+  networkChoice.addEventListener("change", (event) => {
+    // On or off.
+    if (event.target.name === "network") {
+      const mode = event.target.value;
+      network = { ...network, mode, why: "chosen in Settings" };
+      rememberNetwork(mode);
+      if (linkedNetwork !== null) {
+        linkedNetwork = mode;
+        history.replaceState(null, "", link());
+      }
+      networkStatus.textContent = fromNextBoot();
+      return;
+    }
+    if (event.target !== networkRelay) {
+      return;
+    }
+
+    // The relay: empty goes back to unkernel's.
+    const text = networkRelay.value.trim();
+    if (text === "") {
+      rememberRelay(null);
+      network = { ...network, relay: DEFAULT_RELAY };
+      networkStatus.textContent = fromNextBoot();
+      return;
+    }
+    const relay = relayOf(text);
+    if (relay === null) {
+      networkStatus.textContent = `Not used: a relay is a ws:// or wss:// URL, and "${text}" is not one.`;
+      return;
+    }
+    rememberRelay(relay);
+    network = { ...network, relay };
+    networkStatus.textContent = fromNextBoot();
+  });
+}
+wireNetworkChoice();
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {
@@ -1266,6 +1353,11 @@ function unkernelEngine(panel) {
     consoleTty.textContent = "pts/0";
     log(`unkernel memory: ${memory.mib} MiB (${memory.why})`);
     log(`unkernel CPUs: ${cpus.count} (${cpus.why})`);
+    log(
+      network.mode === Network.ON
+        ? `unkernel network: through ${network.relay} (${network.why})`
+        : `unkernel network: off (${network.why})`,
+    );
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
@@ -1273,6 +1365,7 @@ function unkernelEngine(panel) {
       soundControl,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,
+      net: netSpec(network),
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),

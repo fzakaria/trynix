@@ -247,7 +247,8 @@ code {
 #guest,
 #memory,
 #cpus,
-#downloads {
+#downloads,
+#network {
   margin: 0 0 1.2rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--line);
@@ -256,12 +257,14 @@ code {
 #guest legend,
 #memory legend,
 #cpus legend,
-#downloads legend {
+#downloads legend,
+#network legend {
   padding: 0 0.3rem;
   font-weight: 600;
 }
 #guest label,
-#downloads label {
+#downloads label,
+#network > label {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -269,7 +272,8 @@ code {
   cursor: pointer;
 }
 #guest label .muted,
-#downloads label .muted {
+#downloads label .muted,
+#network > label .muted {
   display: block;
   font-size: 13px;
 }
@@ -295,14 +299,29 @@ code {
 }
 #memory p,
 #cpus p,
-#downloads p {
+#downloads p,
+#network p {
   margin: 0.4rem 0 0;
   font-size: 13px;
 }
 #memory-status:empty,
 #cpu-status:empty,
-#downloads-status:empty {
+#downloads-status:empty,
+#network-status:empty {
   display: none;
+}
+/* The relay's field under the network choice, its label beside it. */
+#network .relay {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0;
+  font-size: 14px;
+}
+#network .relay input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
 }
 .lane h3 {
   margin: 0 0 0.4rem;

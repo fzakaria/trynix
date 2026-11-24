@@ -140,3 +140,22 @@ test("the command to run is written only when given", () => {
     "/?pkg=aisleriot&engine=unkernel&run=sol+%26&boot=1",
   );
 });
+
+// Checks that a link can turn the guest's network on or off, that an
+// unknown value is no choice, and that the choice is written only when
+// given, after the downloads choice and ahead of the command.
+test("the network choice travels in the link", () => {
+  at("?pkg=curl&net=off");
+  assert.equal(readUrl().network, "off");
+
+  at("?pkg=curl&net=maybe");
+  assert.equal(readUrl().network, null);
+
+  at("");
+  const state = { pkgs: [{ attr: "curl", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=curl");
+  assert.equal(
+    writeUrl(state, { downloads: "all", network: "off", run: "curl -I x" }),
+    "/?pkg=curl&fetch=all&net=off&run=curl+-I+x",
+  );
+});

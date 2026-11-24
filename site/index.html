@@ -355,6 +355,49 @@
           <p id="downloads-status" class="muted"></p>
         </fieldset>
 
+        <!-- The guest's network (site/js/network.js): on through a Wisp
+             relay, the default, or off, and the relay to use. Remembered
+             by this browser and used at the next boot; the x86_64 guest
+             has none (app.js says so). -->
+        <fieldset id="network">
+          <legend>Network</legend>
+          <label>
+            <input type="radio" name="network" value="on" />
+            <span>
+              <strong>On</strong>
+              <span class="muted">
+                The default. Programs in the guest reach the internet: each connection goes over one
+                WebSocket to a Wisp relay, which opens it for the guest. The relay sees which hosts
+                the guest connects to, and anything sent unencrypted; HTTPS stays encrypted from the
+                guest to the server.
+              </span>
+            </span>
+          </label>
+          <label>
+            <input type="radio" name="network" value="off" />
+            <span>
+              <strong>Off</strong>
+              <span class="muted">The guest has no network device.</span>
+            </span>
+          </label>
+          <div class="relay">
+            <label for="network-relay">Relay</label>
+            <input
+              id="network-relay"
+              type="url"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="wss://wisp.unkernel.dev:6680"
+            />
+          </div>
+          <p class="muted">
+            Empty means unkernel's relay at wisp.unkernel.dev, which lets this site use it. Another
+            relay must speak Wisp v1 and accept this page's origin. A link can turn the network off
+            with <code>net=off</code>, but cannot name a relay.
+          </p>
+          <p id="network-status" class="muted"></p>
+        </fieldset>
+
         <!-- GUI programs (docs/gui.md). Nothing to toggle: the devices are
              always there and cost nothing until used, and the GL driver's
              opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->
