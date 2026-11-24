@@ -5,9 +5,9 @@
 // the guest. The relay keeps the program's file descriptors and sends
 // the rest of the protocol to the page over vsock, where wland's
 // compositor, compiled to wasm, runs on the page's thread and draws
-// each toplevel as a window in the desktop element. Nothing leaves the
-// tab: the guest, the relay, the compositor and the GL renderer all run
-// in it (docs/gui.md).
+// each toplevel as a window over the terminal, in the console's frame
+// (frame.js). Nothing leaves the tab: the guest, the relay, the
+// compositor and the GL renderer all run in it (docs/gui.md).
 //
 // The pixels do not travel over the link. A program's shared-memory
 // buffers are exported through unkernel's /dev/kwshm and the compositor
@@ -333,13 +333,14 @@ function gpuSource(gpu) {
 }
 
 // The page half: listen for the relay, load wland on its first dial,
-// and show the guest's windows in `container`. `show` is called once,
-// when the first program connects, to put the container on the page.
+// and show the guest's windows in the console's frame (frame.js,
+// consoleFrame): in its container, opened when the first program
+// connects, with the frame told of every change to the windows.
 //
 // The relay dials once per link. A link ends when the relay exits, and
 // a relay started again dials again; each dial after the first is
 // served by the same compositor, which starts afresh on it.
-export function attachDesktop({ kernel, container, show }) {
+export function attachDesktop({ kernel, frame }) {
   if (!kernel.vsock || !kernel.shm) {
     log("gui: the kernel has no vsock or no kwshm; no desktop");
     return;
@@ -376,13 +377,16 @@ export function attachDesktop({ kernel, container, show }) {
     link.close = () => listener.close();
 
     // The output apps are told about is the container's size, so the
-    // container is on the page before the compositor measures it.
-    show();
+    // frame is open, and grown, before the compositor measures it.
+    frame.open();
     const desktop = await wland.createWland({
-      container,
+      container: frame.container,
       link: wland.createStreamLink(link),
       buffers: handleSource(kernel.shm),
       ...(gpu ? { gpu: gpuSource(gpu) } : {}),
+      // Window changes and keyboard focus changes alike: wland calls
+      // this for both when no focus callback of its own is given.
+      onWindowsChange: frame.changed,
       onEvent(event) {
         if (event.type === "commit") {
           stats.commits++;
@@ -396,6 +400,7 @@ export function attachDesktop({ kernel, container, show }) {
     });
     log(`gui: compositor started${gpu ? ", GL buffers by GPU resource" : ""}`);
 
+    frame.attach(desktop);
     window.trynix.desktop = desktop;
   }
 

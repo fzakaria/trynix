@@ -19,7 +19,10 @@ take a frame from it.
 The cases:
 
     foot   a terminal that draws into shared memory. Also types into
-           its window and checks that the keys reached the program.
+           its window and checks that the keys reached the program,
+           then presses the page's terminal, behind the window, and
+           checks that keys typed next reach the page's shell and no
+           window.
     gl     es2gears from mesa-demos, selected alone, so the page adds
            the site's GL driver itself (site/js/gldriver.js), rendered
            by Mesa's virgl driver through the page's WebGL2
@@ -88,11 +91,60 @@ FOOT_TYPED_FILE = "/tmp/foot-typed"
 FOOT_TYPED = f"touch {FOOT_TYPED_FILE}\r"
 TYPED_LIMIT_SECONDS = 30
 
+# The foot case's second half: a line typed into the page's terminal
+# after a press on it, which the page's shell runs. foot runs a shell
+# too, so the file alone does not say which one ran the line; the keys
+# wland sent to any window are counted while the line is typed, and
+# must stay at none.
+TERMINAL_TYPED_FILE = "/tmp/terminal-typed"
+TERMINAL_TYPED = f"touch {TERMINAL_TYPED_FILE}\r"
+
+# Counts the key presses wland sends to any window from now on, in
+# window.trynixKeysToWindows: every key a window takes goes through the
+# compositor's key call (wland's lib/input.ts), which this wraps.
+COUNT_WINDOW_KEYS = """(() => {
+  const engine = window.trynix.desktop.engine;
+  const key = engine.key.bind(engine);
+  window.trynixKeysToWindows = 0;
+  engine.key = (conn, time, code, pressed) => {
+    if (pressed) {
+      window.trynixKeysToWindows++;
+    }
+    return key(conn, time, code, pressed);
+  };
+  return true;
+})()"""
+
+# Whether wland holds any window focused, which its window bindings
+# (Alt+F9 and the rest) act on.
+ANY_WINDOW_FOCUSED = "window.trynix.desktop.windows().some((w) => w.focused)"
+
+# A point on the page's terminal that no window covers, or null: a grid
+# over the console's body, from the bottom right, where windows are
+# least likely, each point asked what is on top there.
+TERMINAL_POINT_STEP = 16
+FREE_TERMINAL_POINT = f"""(() => {{
+  const body = document.getElementById('console-body');
+  const terminal = document.getElementById('terminal');
+  body.scrollIntoView({{ block: 'nearest' }});
+  const r = body.getBoundingClientRect();
+  const step = {TERMINAL_POINT_STEP};
+  for (let y = Math.min(r.bottom, innerHeight) - step; y > Math.max(r.top, 0); y -= step) {{
+    for (let x = Math.min(r.right, innerWidth) - step; x > Math.max(r.left, 0); x -= step) {{
+      const hit = document.elementFromPoint(x, y);
+      if (hit && terminal.contains(hit)) {{
+        return {{ x, y }};
+      }}
+    }}
+  }}
+  return null;
+}})()"""
+
 # How far into a window's content the click that focuses it lands.
 CLICK_DEPTH = 20
 
-# The browser window's size: a desktop's, so the page's desktop element
-# is as tall as a reader would see it and a program's window fits.
+# The browser window's size: a desktop's, so the console is as tall as
+# a reader would see it and a program's window floats over the terminal.
 VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 1000
 
@@ -452,12 +504,13 @@ def first_frame(browser):
 
 
 def screenshot(browser, directory, name):
-    """Save the desktop element as a PNG in `directory`."""
+    """Save the console, the terminal and the windows over it, as a PNG
+    in `directory`."""
     if directory is None:
         return
-    browser.evaluate("document.getElementById('desktop').scrollIntoView()")
+    browser.evaluate("document.getElementById('console').scrollIntoView()")
     clip = browser.evaluate(
-        "(() => { const r = document.getElementById('desktop')"
+        "(() => { const r = document.getElementById('console')"
         ".getBoundingClientRect(); return { x: r.x + scrollX, y: r.y + scrollY,"
         " width: r.width, height: r.height }; })()"
     )
@@ -471,13 +524,24 @@ def type_into_window(browser, text):
     """Click near the top of the newest window's content, which is on
     screen however tall the window is, then type `text` as key events."""
     # Scrolled into view first: Firefox refuses a click outside the
-    # viewport, and the desktop sits under the terminal.
+    # viewport, and the console can be taller than the viewport.
     point = browser.evaluate(
         "(() => { const c = [...document.querySelectorAll('#desktop canvas')].at(-1);"
         " c.scrollIntoView({ block: 'start' });"
         " const r = c.getBoundingClientRect();"
         f" return {{ x: r.x + r.width / 2, y: r.y + {CLICK_DEPTH} }}; }})()"
     )
+    browser.click(point["x"], point["y"])
+    for char in text:
+        browser.press(char)
+
+
+def type_into_terminal(browser, text):
+    """Press the page's terminal where no window covers it, then type
+    `text` as key events."""
+    point = browser.evaluate(FREE_TERMINAL_POINT)
+    if point is None:
+        raise SystemExit("FAIL windows cover the whole terminal")
     browser.click(point["x"], point["y"])
     for char in text:
         browser.press(char)
@@ -494,7 +558,8 @@ def guest_has(browser, path):
 
 
 def run_foot(browser, base, screenshots, fetch):
-    """foot: boot it, start it, wait for its window, type into it."""
+    """foot: boot it, start it, wait for its window, type into it, then
+    type into the page's terminal behind it."""
     print("foot")
     seconds = boot(browser, base, FOOT_PACKAGES, fetch)
     print(f"  shell after {seconds:.1f} s")
@@ -509,15 +574,36 @@ def run_foot(browser, base, screenshots, fetch):
     screenshot(browser, screenshots, "foot")
 
     type_into_window(browser, FOOT_TYPED)
+    if not wait_for_file(browser, FOOT_TYPED_FILE):
+        screenshot(browser, screenshots, "foot-typed")
+        raise SystemExit("FAIL keys typed into foot's window never reached it")
+    print(f"  keys reached foot: {FOOT_TYPED_FILE} written")
+    screenshot(browser, screenshots, "foot-typed")
+
+    browser.evaluate(COUNT_WINDOW_KEYS)
+    type_into_terminal(browser, TERMINAL_TYPED)
+    ran = wait_for_file(browser, TERMINAL_TYPED_FILE)
+    screenshot(browser, screenshots, "terminal-typed")
+    if not ran:
+        raise SystemExit("FAIL keys typed into the terminal never reached a shell")
+    if TERMINAL_TYPED_FILE not in browser.transcript():
+        raise SystemExit("FAIL the terminal's shell never echoed the line typed into it")
+    window_keys = browser.evaluate("window.trynixKeysToWindows")
+    if window_keys != 0:
+        raise SystemExit(f"FAIL {window_keys} keys typed into the terminal went to a window")
+    if browser.evaluate(ANY_WINDOW_FOCUSED):
+        raise SystemExit("FAIL a window kept the keyboard while the terminal had it")
+    print(f"  keys reached the terminal's shell and no window: {TERMINAL_TYPED_FILE} written")
+
+
+def wait_for_file(browser, path):
+    """Whether `path` appears in the guest within TYPED_LIMIT_SECONDS."""
     started = time.monotonic()
     while time.monotonic() - started < TYPED_LIMIT_SECONDS:
-        if guest_has(browser, FOOT_TYPED_FILE):
-            print(f"  keys reached foot: {FOOT_TYPED_FILE} written")
-            screenshot(browser, screenshots, "foot-typed")
-            return
+        if guest_has(browser, path):
+            return True
         time.sleep(POLL_SECONDS * 5)
-    screenshot(browser, screenshots, "foot-typed")
-    raise SystemExit("FAIL keys typed into foot's window never reached it")
+    return False
 
 
 def run_gl(browser, base, screenshots, fetch):
@@ -588,7 +674,7 @@ def main():
         help="the browser's binary (default: --with's name on PATH, or $TRYNIX_BROWSER for chromium)",
     )
     parser.add_argument("--case", action="append", choices=CASES)
-    parser.add_argument("--screenshots", help="a directory to save the windows in")
+    parser.add_argument("--screenshots", help="a directory to save the console in")
     parser.add_argument(
         "--fetch",
         choices=FETCH_MODES,

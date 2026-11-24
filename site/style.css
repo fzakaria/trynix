@@ -591,6 +591,7 @@ code {
   --console-bg: #16181d;
   --console-bar: #0f1013;
   --console-fg: #9a9a9a;
+  --window-edge: #3a3d45;
 }
 #console {
   margin-top: 0.8rem;
@@ -636,20 +637,39 @@ code {
 #console-body {
   position: relative;
 }
-/* The desktop GUI programs' windows go in. Its size is the output the
-   programs are told about, so it is fixed rather than fitted to what
-   it holds; wland positions the windows inside it. */
+/* The desktop GUI programs' windows go in, over the terminal: it
+   covers the console's body, and its size is the output the programs
+   are told about. It takes no pointer, so a press outside every window
+   reaches the terminal; wland's window canvases take their own. Under
+   the veil, which is only up while there is no shell. */
 #desktop {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   overflow: hidden;
-  margin-top: 0.8rem;
-  height: 70vh;
-  min-height: 480px;
-  border-radius: 6px;
-  background: var(--console-bg);
+  pointer-events: none;
 }
 #desktop[hidden] {
   display: none;
+}
+/* A window's edge against the terminal behind it: a hairline and a
+   shadow around the window geometry, which wland gives each window
+   element. A full-screen window has nothing behind it. */
+#desktop .wland-window {
+  box-shadow:
+    0 0 0 1px var(--window-edge),
+    0 8px 24px rgb(0 0 0 / 50%);
+}
+#desktop .wland-window[data-wland-fullscreen] {
+  box-shadow: none;
+}
+/* Once a GUI program has connected, the terminal grows to nearly the
+   viewport's height, so windows fit over it and the whole frame still
+   fits on screen (site/js/frame.js scrolls it there). The terminal
+   refits its rows to the new height. On a touch device the terminal
+   already fills the screen (site/js/terminal.js). */
+#console.windowed #terminal {
+  height: max(30rem, calc(100vh - 4rem));
 }
 #console-veil {
   position: absolute;

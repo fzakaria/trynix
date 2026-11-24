@@ -403,7 +403,7 @@
              opt-out is selecting a Mesa of one's own (site/js/gldriver.js). -->
         <h3>GUI programs</h3>
         <p class="muted">
-          On the aarch64 guest a Wayland program opens a window under the terminal: type its name at
+          On the aarch64 guest a Wayland program opens a window over the terminal: type its name at
           the shell. Programs that only speak X11 do not start, since the guest has no X server. A GL
           program also downloads the site's GL driver, Mesa with only the virgl driver, which draws
           through your browser's WebGL2; to use another, select a <code>mesa</code> with the program
@@ -468,14 +468,15 @@
         <div id="console-body">
           <div id="console-veil"><span class="spinner" id="console-spinner"></span><span id="console-note"></span></div>
           <div id="terminal"></div>
+          <!-- GUI programs' windows, composited in the page by wland
+               (site/js/gui.js) over the terminal; shown when the first
+               one connects. -->
+          <div id="desktop" hidden></div>
         </div>
         <!-- The keys a phone's keyboard lacks; shown on touch devices
              only (site/js/keybar.js fills it). -->
         <div id="keybar" aria-label="terminal keys"></div>
       </div>
-      <!-- GUI programs' windows, composited in the page by wland
-           (site/js/gui.js); shown when the first one connects. -->
-      <div id="desktop" hidden></div>
     </section>
 
     <details id="debug">

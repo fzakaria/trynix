@@ -21,9 +21,21 @@ https://trynix.dev/?pkg=foot&boot=1&run=foot+%26
 https://trynix.dev/?pkg=galculator&boot=1&run=galculator+%26
 ```
 
-The first window opens a desktop under the terminal, and every window
-after it goes there too. Windows move by their title bar or by
-Alt+drag, and take the keyboard when clicked.
+Windows open over the terminal, inside the console's frame, with the
+terminal drawn behind them. When the first program connects the frame
+grows to nearly the viewport's height, the terminal refits its rows,
+and the page scrolls the whole frame on screen. Windows move by their
+title bar or by Alt+drag.
+
+The keyboard goes to one place at a time. A click on a window gives it
+the keyboard; a click on the terminal outside every window gives the
+keyboard back to the terminal, and wland's window bindings (Alt+F9 and
+the rest) stop acting on keys. When the window holding the keyboard
+closes or is minimized, the next window takes it, and with none left
+the terminal does.
+
+What programs are told about the screen is the frame's size, so
+maximize fills the frame.
 
 GL programs need a driver, and the page adds one: when the closure
 holds a Wayland program that links libglvnd and no Mesa, the page
@@ -44,14 +56,19 @@ line says why.
 ```
  guest (aarch64, unkernel)                 page
  ─────────────────────────                 ────
- foot ──wayland──> wlandr ──vsock 1023──>  wland compositor (wasm) ──> #desktop
+ foot ──wayland──> wlandr ──vsock 1023──>  wland compositor (wasm) ──> #desktop over #terminal
    │                                          ▲
    └─ wl_shm buffer ── /dev/kwshm ────────────┘  read in place
  es2gears ── Mesa virgl ── virtio-gpu ──────> virglrenderer (wasm) on WebGL2
                                               └─> frame by GPU resource ──┘
 ```
 
-[site/js/gui.js](../site/js/gui.js) has both halves.
+[site/js/gui.js](../site/js/gui.js) has both halves, and
+[site/js/frame.js](../site/js/frame.js) the console frame the windows
+open in: its size and the keyboard between the windows and the
+terminal. `#desktop` covers the console's
+body and takes no pointer itself, so a press outside every window
+reaches the terminal; wland gives each window's canvases their own.
 
 The guest half is wland's relay, `wlandr`, a 353 KB static aarch64
 binary built from source ([nix/wlandr.nix](../nix/wlandr.nix)).
@@ -417,6 +434,8 @@ compositor:
 - **Reloads end the programs**, as they end the guest: the page boots a
   fresh kernel every time.
 - **Keyboard layout** is US, which is wland's.
+- **The touch key bar** types into the terminal only. A tap on it gives
+  the terminal the keyboard, even while a window has it.
 - **`/root` does not exist** in unkernel's base system, so programs
   that write settings under `$HOME` complain and carry on.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
@@ -428,13 +447,16 @@ compositor:
 `nix run .#gui-test -- --site <site>` boots foot and es2gears from
 links (es2gears alone, so the page has to add the driver), starts each at the shell and waits for the compositor's first
 frame. It types into foot's window and checks that the keys reached the
-program, and checks that es2gears' frames went through the page's GL
-renderer by GPU resource and not through llvmpipe. `--with firefox`
+program, then presses the terminal beside the window, types a line,
+and checks that the page's shell ran it while wland sent no key to any
+window and holds none focused. It checks that es2gears' frames went
+through the page's GL renderer by GPU resource and not through
+llvmpipe. `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
 `--gpu hardware` draws Chromium's WebGL with the host's GPU instead of
 SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
-each window.
+the console, terminal and windows, at each step.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline.

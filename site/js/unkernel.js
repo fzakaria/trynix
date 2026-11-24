@@ -33,6 +33,7 @@ import {
 import { Precedence } from "./store.js";
 import { lazyFs } from "./lazy.js";
 import { openTerminal } from "./terminal.js";
+import { consoleFrame } from "./frame.js";
 import { guestDriver } from "./agent.js";
 import { createSoundOut } from "./sound.js";
 import { caBundleShell } from "./network.js";
@@ -255,9 +256,10 @@ async function pump(shell, port, console_) {
 
 // engine: { main, kernel, gl }, the versioned URLs of the SDK's
 // browser entry, of the kernel and of the GL renderer's module.
-// desktopElement is where GUI programs' windows go (gui.js), and
-// soundControl the console bar's sound switch (sound.js). net is the
-// network device's spec, or null for none (network.js). memory is
+// desktopElement is where GUI programs' windows go (gui.js), over the
+// terminal in consoleElement (frame.js), and soundControl the console
+// bar's sound switch (sound.js). net is the network device's spec, or
+// null for none (network.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
 // to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
@@ -269,6 +271,7 @@ async function pump(shell, port, console_) {
 export async function startUnkernel({
   terminalElement,
   keyBarElement,
+  consoleElement,
   desktopElement,
   soundControl,
   net,
@@ -441,10 +444,12 @@ export async function startUnkernel({
   };
   attachDesktop({
     kernel,
-    container: desktopElement,
-    show: () => {
-      desktopElement.hidden = false;
-    },
+    frame: consoleFrame({
+      consoleElement,
+      container: desktopElement,
+      terminal: ui.terminal,
+      focusTerminal: ui.focus,
+    }),
   });
 
   return {

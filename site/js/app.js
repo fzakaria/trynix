@@ -133,6 +133,7 @@ const bootSection = document.getElementById("boot");
 const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
 const keyBarElement = document.getElementById("keybar");
+const consoleElement = document.getElementById("console");
 const desktopElement = document.getElementById("desktop");
 const soundControl = document.getElementById("sound-control");
 const consoleVeil = document.getElementById("console-veil");
@@ -1361,6 +1362,7 @@ function unkernelEngine(panel) {
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
+      consoleElement,
       desktopElement,
       soundControl,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },

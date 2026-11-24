@@ -112,8 +112,9 @@ function handleCopyKey(terminal) {
   });
 }
 
-// Returns { terminal, attach } — attach wires a guest's port (see
-// bridge) to it. keyBarElement holds the touch key bar (keybar.js).
+// Returns { terminal, focus, attach }: focus gives the terminal the
+// keyboard, and attach wires a guest's port (see bridge) to it.
+// keyBarElement holds the touch key bar (keybar.js).
 export async function openTerminal(element, keyBarElement) {
   const {
     init,
@@ -172,6 +173,7 @@ export async function openTerminal(element, keyBarElement) {
 
   return {
     terminal,
+    focus,
     attach: (port) => {
       const keyBar = new KeyBar(keyBarElement, {
         send: (data) => port.send(data),
