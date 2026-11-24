@@ -140,3 +140,39 @@ test("a path the site does not list is never asked of the site", async () => {
 
   assert.deepEqual(asked, [`${CACHE_URL}/${UPSTREAM_DIGEST}.narinfo`]);
 });
+
+// Checks how a manifest that did not arrive is remembered. A server
+// error is passing, so the next call asks again and gets the drivers:
+// a 503 once used to leave the page without the site's GL driver until
+// a reload. A 404 says the site publishes none, so it is kept and asked
+// for once. Each case loads a copy of the module of its own, since a
+// page reads its manifest once.
+test("a manifest the server failed to send is asked for again, a missing one is not", async () => {
+  const drivers = [{ name: "mesa-virgl" }];
+  const cases = [
+    { first: 503, asked: 2, second: drivers },
+    { first: 404, asked: 1, second: [] },
+  ];
+  for (const { first, asked, second } of cases) {
+    const { siteManifest } = await import(
+      `../../site/js/substituters.js?first=${first}`
+    );
+    let requests = 0;
+    globalThis.fetch = async (url) => {
+      assert.equal(String(url), GL_DRIVERS);
+      requests += 1;
+      if (requests === 1) {
+        return new Response("", { status: first });
+      }
+      return Response.json({ paths: [], drivers });
+    };
+
+    assert.deepEqual((await siteManifest()).drivers, [], `after a ${first}`);
+    assert.deepEqual(
+      (await siteManifest()).drivers,
+      second,
+      `the call after a ${first}`,
+    );
+    assert.equal(requests, asked, `requests after a ${first}`);
+  }
+});

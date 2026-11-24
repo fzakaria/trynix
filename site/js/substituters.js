@@ -83,9 +83,14 @@ const NO_MANIFEST = Object.freeze({ paths: [], drivers: [] });
 // whichever comes first: the paths decide which cache a lookup asks,
 // and a store path the site serves, pasted into a page that has just
 // opened, used to be asked of cache.nixos.org alone and called missing.
-// A site with no manifest has none for the life of the page; a
-// manifest that could not be fetched is asked for again next time.
+// A site with no manifest, which answers 404, has none for the life of
+// the page. A manifest that could not be fetched, for a server error or
+// no answer at all, is asked for again next time: one 503 would
+// otherwise keep the site's GL driver from the page until a reload.
 let manifest = null;
+
+// The status of a site that publishes no manifest.
+const HTTP_NOT_FOUND = 404;
 
 export function siteManifest() {
   manifest ??= readManifest().catch(() => {
@@ -97,8 +102,11 @@ export function siteManifest() {
 
 async function readManifest() {
   const res = await fetch(GL_DRIVERS);
-  if (!res.ok) {
+  if (res.status === HTTP_NOT_FOUND) {
     return NO_MANIFEST;
+  }
+  if (!res.ok) {
+    throw new Error(`${GL_DRIVERS}: HTTP ${res.status}`);
   }
   const read = await res.json();
   const paths = read.paths ?? [];
