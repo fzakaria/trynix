@@ -48,6 +48,7 @@ import {
   linkGlDriver,
   linkX11Server,
   sessionEnv,
+  ShellUpdate,
   speaksWayland,
   x11Env,
 } from "./gui.js";
@@ -180,12 +181,17 @@ async function visible(kernel, paths) {
 // pointed at the CA bundle in the share (`caBundle`, or null without
 // one). Sound clients are told about the PulseAudio daemon the page
 // starts (`daemon`, a store basename, or null without one; pulse.js).
+// A variable given null is unset, which a shell started from another
+// shell needs as much as the exports: it inherits the older shell's
+// environment, and sources this over it.
 function manifest({ caBundle, daemon, x11Server }) {
   const session = Object.entries({
     ...sessionEnv(),
     ...soundEnv(daemon),
     ...(x11Server === null ? {} : x11Env()),
-  }).map(([name, value]) => `export ${name}="${value}"`);
+  }).map(([name, value]) =>
+    value === null ? `unset ${name}` : `export ${name}="${value}"`,
+  );
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
@@ -445,7 +451,9 @@ export async function startUnkernel({
   let x11Linked = null;
 
   // The shell fragment, written into the share for every shell that
-  // starts from now on, with the PulseAudio daemon the closure holds.
+  // starts from now on, with the PulseAudio daemon the closure holds,
+  // started or not: at the boot the page's shell sources the fragment
+  // before the daemon is up.
   async function writeManifest() {
     FS.writeFile(
       MANIFEST_FILE,
@@ -482,6 +490,9 @@ export async function startUnkernel({
     );
   }
 
+  // Whether the PulseAudio daemon is up, as soundSetup last left it.
+  let soundServerRunning = false;
+
   // Start the PulseAudio daemon of the closure, if it holds one
   // (pulse.js). Resolves once the daemon is up with card 0 as its sink,
   // so a client typed at the prompt finds it. A failure is logged rather
@@ -494,9 +505,12 @@ export async function startUnkernel({
     if (daemon === null) {
       return;
     }
-    await server
-      .start(daemon)
-      .catch((err) => log(`sound: ${err.message ?? err}`));
+    try {
+      await server.start(daemon);
+      soundServerRunning = true;
+    } catch (err) {
+      log(`sound: ${err.message ?? err}`);
+    }
   }
 
   // The handle everything outside the page reaches the guest through
@@ -628,7 +642,9 @@ export async function startUnkernel({
     // page-side memory the guest reads through 9p, so writing a path
     // here is enough: no remount, no reboot. Resolves once the guest
     // sees the new paths and the roots' programs (see visible), so
-    // "added" is true by the time the page says so.
+    // "added" is true by the time the page says so, to
+    // { shellUpdates }: what this addition brought that the shell
+    // already running lacks (gui.js, ShellUpdate).
     //
     // `written` names paths of this addition already written into the
     // share, which a lazily served closure does as each path arrives.
@@ -642,11 +658,24 @@ export async function startUnkernel({
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
-      const told = x11Server;
+
+      // Whether an X server and a running daemon were there before this
+      // addition: a shell already running was told of neither otherwise.
+      const hadX11Server = x11Server !== null;
+      const hadSoundServer = soundServerRunning;
       await guiSetup(lazyStore === null ? basenames : closure());
       await soundSetup();
-      if (x11Server !== told) {
-        await writeManifest();
+
+      // Every shell from now on is told of what this addition brought,
+      // and the reader is told how to bring the one already running up
+      // to date.
+      await writeManifest();
+      const shellUpdates = [];
+      if (!hadX11Server && x11Server !== null) {
+        shellUpdates.push(ShellUpdate.X11);
+      }
+      if (!hadSoundServer && soundServerRunning) {
+        shellUpdates.push(ShellUpdate.PULSE);
       }
 
       const added = roots.filter((basename) => basenames.includes(basename));
@@ -656,6 +685,7 @@ export async function startUnkernel({
           share.programsOf(basename).map((name) => `${GUEST_BIN_DIR}/${name}`),
         ),
       ]);
+      return { shellUpdates };
     },
 
     // The memory the guest booted with, in MiB: the size asked for, or

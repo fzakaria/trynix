@@ -65,14 +65,17 @@ test("of two daemons the newer is started", () => {
 // Checks what every shell is told: with a daemon, where its socket is,
 // under the session's runtime directory; without one, libcanberra is
 // sent to ALSA, since it otherwise picks its PulseAudio backend
-// whenever that loads and has nothing to fall back to.
+// whenever that loads and has nothing to fall back to. With a daemon,
+// libcanberra's driver is unset (null): a shell typed at a prompt from
+// before the daemon came inherits CANBERRA_DRIVER=alsa, and kept, it
+// sent libcanberra to a card the daemon holds.
 test("the shell's environment follows whether a daemon runs", () => {
   const runtimeDir = sessionEnv().XDG_RUNTIME_DIR;
   assert.ok(PULSE_SOCKET.startsWith(`${runtimeDir}/`));
 
   const served = soundEnv(path("pulseaudio-17.0"));
   assert.equal(served.PULSE_SERVER, `unix:${PULSE_SOCKET}`);
-  assert.equal(served.CANBERRA_DRIVER, undefined);
+  assert.equal(served.CANBERRA_DRIVER, null);
 
   const alone = soundEnv(null);
   assert.equal(alone.CANBERRA_DRIVER, "alsa");

@@ -12,6 +12,8 @@ import {
   isGlDriver,
   linkX11Server,
   sessionEnv,
+  ShellUpdate,
+  shellNote,
   speaksWayland,
   X11_DISPLAY,
   x11Env,
@@ -352,4 +354,22 @@ test("a session writes X resources that give xterm a font", async () => {
   );
   assert.match(resources, /^XTerm\*faceName: monospace$/m);
   assert.match(resources, /^XTerm\*faceSize: \d+$/m);
+});
+
+// Checks what the reader is told after an addition that changed the
+// shells' environment: nothing when it changed nothing, and otherwise
+// one line naming everything that works now, with the command that
+// brings the shell already running up to date. That command sources
+// again the file the shell's ENV names, which every shell sources as it
+// starts, so it carries whatever the addition brought.
+test("one note names what an addition brought the running shell", () => {
+  assert.equal(shellNote([]), null);
+  assert.equal(
+    shellNote([ShellUpdate.PULSE]),
+    "PulseAudio clients work now in new shells (type sh for one), or in this one after . $ENV",
+  );
+  assert.equal(
+    shellNote([ShellUpdate.X11, ShellUpdate.PULSE]),
+    "X11 programs and PulseAudio clients work now in new shells (type sh for one), or in this one after . $ENV",
+  );
 });

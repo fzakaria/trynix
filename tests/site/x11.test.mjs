@@ -11,7 +11,6 @@ import { reachable } from "../../site/js/closure.js";
 import {
   chooseX11Server,
   isX11Server,
-  ShellStart,
   X11_SERVER_ATTR,
   X11Choice,
   x11Note,
@@ -162,20 +161,18 @@ test("xwayland-satellite is the X server, xwayland alone is not", () => {
   assert.equal(isX11Server(basename("xeyes-1.3.1")), false);
 });
 
-// Checks what the reader is told: nothing on a boot, whose shells all
-// start with DISPLAY set, and how to reach the X server from the
-// shell already running when an addition brought it.
-test("only an X server added to a running guest gets a note", () => {
-  const before = ShellStart.BEFORE_SERVER;
-  const after = ShellStart.AFTER_SERVER;
-  assert.equal(x11Note({ choice: X11Choice.NOT_NEEDED }, before), null);
-  assert.equal(x11Note({ choice: X11Choice.ADD }, after), null);
-  assert.equal(x11Note({ choice: X11Choice.PRESENT }, after), null);
-  assert.match(x11Note({ choice: X11Choice.ADD }, before), /export DISPLAY=:0/);
-  assert.match(
-    x11Note({ choice: X11Choice.PRESENT }, before),
-    /export DISPLAY=:0/,
-  );
+// Checks that a server the page has, added or there already, gets no
+// note of its own: the shell already running when an addition brought
+// it is told how to reach it by the note for every change to the
+// shells' environment (gui.js, shellNote).
+test("an X server the page has gets no note of its own", () => {
+  for (const choice of [
+    X11Choice.NOT_NEEDED,
+    X11Choice.ADD,
+    X11Choice.PRESENT,
+  ]) {
+    assert.equal(x11Note({ choice }), null);
+  }
 });
 
 // Checks that the X server is looked up by the attribute the index
@@ -184,13 +181,11 @@ test("the X server is the index's xwayland-satellite", () => {
   assert.equal(X11_SERVER_ATTR, "xwayland-satellite");
 });
 
-// Checks that a selection whose X server could not be found says so
-// whenever the shell started, and names what to select instead.
+// Checks that a selection whose X server could not be found says so,
+// and names what to select instead.
 test("an X server the index could not give is reported", () => {
-  for (const shellStart of Object.values(ShellStart)) {
-    assert.match(
-      x11Note({ choice: X11Choice.UNAVAILABLE }, shellStart),
-      /select xwayland-satellite/,
-    );
-  }
+  assert.match(
+    x11Note({ choice: X11Choice.UNAVAILABLE }),
+    /select xwayland-satellite/,
+  );
 });

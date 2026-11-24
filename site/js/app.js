@@ -106,14 +106,8 @@ import {
   isGlDriverPath,
   publishedDrivers,
 } from "./gldriver.js";
-import {
-  chooseX11Server,
-  ShellStart,
-  X11_SERVER_ATTR,
-  X11Choice,
-  x11Note,
-  x11ServerIn,
-} from "./x11.js";
+import { chooseX11Server, X11_SERVER_ATTR, X11Choice, x11Note } from "./x11.js";
+import { shellNote } from "./gui.js";
 import { Downloads, pickDownloads } from "./downloads.js";
 import {
   DEFAULT_RELAY,
@@ -1033,20 +1027,22 @@ async function x11ServerPaths(known, rootDigests, onProgress) {
   return { added, result };
 }
 
-// Whether the shell on the page started with an X server in the
-// closure, given what the guest held before an addition (`before`): it
-// sourced its environment at the boot, and an addition changes it only
-// for shells started later.
-const shellStartOf = (before) =>
-  x11ServerIn([...before.values()].map(basenameOf)) === null
-    ? ShellStart.BEFORE_SERVER
-    : ShellStart.AFTER_SERVER;
+// Say what the selection's X11 programs lack (x11.js, x11Note), unless
+// the status names silent selections.
+function reportX11(result) {
+  const note = x11Note(result);
+  if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
+    return;
+  }
+  status.textContent = note;
+}
 
-// Say what the selection's X11 programs lack, or how the shell already
-// running reaches an X server an addition brought (x11.js, x11Note),
-// unless the status names silent selections.
-function reportX11(result, shellStart) {
-  const note = x11Note(result, shellStart);
+// Say how the shell already running gets what an addition brought it,
+// an X server or a PulseAudio daemon (`added`, what the engine's add
+// resolved to; gui.js, shellNote), unless the status names silent
+// selections.
+function reportShell(added) {
+  const note = shellNote(added.shellUpdates);
   if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
     return;
   }
@@ -1766,7 +1762,7 @@ async function boot() {
     log("virtual machine running");
     reportSilent(vm, closure, roots);
     reportGl(gl.result);
-    reportX11(x11.result, ShellStart.AFTER_SERVER);
+    reportX11(x11.result);
     bootButton.textContent = "Add to the running VM";
     rebootLink.hidden = false;
     addNote.hidden = false;
@@ -1878,7 +1874,6 @@ async function addToRunningVM() {
     for (const [digest, info] of x11.added) {
       fresh.set(digest, info);
     }
-    const before = new Map(mounted);
     if (fresh.size === 0 && unfetchedSelections(rootDigests).length === 0) {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
@@ -1894,7 +1889,6 @@ async function addToRunningVM() {
         rootDigests,
         gl,
         x11,
-        before,
         panel,
         row,
         telemetry,
@@ -1920,10 +1914,11 @@ async function addToRunningVM() {
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }
-    await vm.add(unpacked, basenamesOf(mounted, rootDigests));
+    const added = await vm.add(unpacked, basenamesOf(mounted, rootDigests));
     reportSilent(vm, mounted, roots);
     reportGl(gl.result);
-    reportX11(x11.result, shellStartOf(before));
+    reportX11(x11.result);
+    reportShell(added);
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
@@ -1977,7 +1972,6 @@ async function addLazily({
   rootDigests,
   gl,
   x11,
-  before,
   panel,
   row,
   telemetry,
@@ -2000,10 +1994,15 @@ async function addLazily({
   await fetchEager(served.store, eager, rootDigests);
   await listed(offered);
 
-  await vm.add([], basenamesOf(mounted, rootDigests), eager.map(basenameOf));
+  const added = await vm.add(
+    [],
+    basenamesOf(mounted, rootDigests),
+    eager.map(basenameOf),
+  );
   reportSilent(vm, mounted, roots);
   reportGl(gl.result);
-  reportX11(x11.result, shellStartOf(before));
+  reportX11(x11.result);
+  reportShell(added);
   telemetry.finish(LoadStage.READY);
   row.done(`${fresh.size} paths added, ${eager.length} fetched`);
   renderClosure(mounted);

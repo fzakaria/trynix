@@ -92,12 +92,14 @@ export function pulseDaemonIn(basenames) {
 }
 
 // What every guest shell is told about sound, given the daemon the page
-// starts (a store basename) or null. A daemon's clients are given its
-// socket. Without one, libcanberra is sent to ALSA: left to choose, it
-// takes PulseAudio and plays nothing.
+// starts (a store basename) or null; a variable given null is unset. A
+// daemon's clients are given its socket, and libcanberra is left to
+// choose, which a shell started from one told otherwise before the
+// daemon came would inherit. Without a daemon, libcanberra is sent to
+// ALSA: left to choose, it takes PulseAudio and plays nothing.
 export function soundEnv(daemon) {
   if (daemon !== null) {
-    return { PULSE_SERVER: `unix:${PULSE_SOCKET}` };
+    return { PULSE_SERVER: `unix:${PULSE_SOCKET}`, CANBERRA_DRIVER: null };
   }
   return { CANBERRA_DRIVER: CANBERRA_ALSA };
 }

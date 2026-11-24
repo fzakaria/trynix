@@ -328,6 +328,10 @@ export async function startVM({
     // find it — no remount, no reboot. The farm is what lets the
     // guest's PATH stay as it was: the new roots replace any link of
     // the same name, so the package added last wins.
+    //
+    // Returns what the unkernel engine's add returns (unkernel.js). This
+    // guest gets no X server or PulseAudio daemon from the page, so an
+    // addition brings its shell nothing.
     add(unpacked, roots) {
       const basenames = [];
       while (unpacked.length > 0) {
@@ -336,6 +340,7 @@ export async function startVM({
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
+      return { shellUpdates: [] };
     },
 
     // The programs a written path offers, by basename.

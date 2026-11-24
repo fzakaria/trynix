@@ -27,7 +27,7 @@
 // selecting xwayland-satellite with it is the way in.
 
 import { reachable } from "./closure.js";
-import { speaksWayland, X11_DISPLAY } from "./gui.js";
+import { speaksWayland } from "./gui.js";
 
 // What the chooser decided.
 export const X11Choice = Object.freeze({
@@ -46,15 +46,6 @@ export const X11Choice = Object.freeze({
 
 // The X server's attribute in the index.
 export const X11_SERVER_ATTR = "xwayland-satellite";
-
-// Whether the page's shell started after the X server joined the
-// closure, and so sourced an environment that names the X display.
-export const ShellStart = Object.freeze({
-  // The shell was started with the X server in the closure.
-  AFTER_SERVER: "after-server",
-  // The shell was running when an addition brought the X server.
-  BEFORE_SERVER: "before-server",
-});
 
 // Store basenames, by the nixpkgs package each one is. libX11 is
 // xorg.libX11 (libX11-1.6.5) in older nixpkgs and libx11 in newer;
@@ -111,25 +102,17 @@ export function chooseX11Server(closure, rootDigests) {
   return { choice: X11Choice.ADD, programs };
 }
 
-// What the page tells the reader about a choice, or null. A shell
-// sources its environment once, as it starts, so the one already
-// running when an addition brought the X server has no DISPLAY; every
-// shell started later has it.
-export function x11Note(result, shellStart) {
-  if (result.choice === X11Choice.NOT_NEEDED) {
-    return null;
-  }
-  if (result.choice === X11Choice.UNAVAILABLE) {
-    return (
-      `these programs speak only X11, and the index gave no X server for them: ` +
-      `select ${X11_SERVER_ATTR} with them`
-    );
-  }
-  if (shellStart === ShellStart.AFTER_SERVER) {
+// What the page tells the reader about a choice, or null: only that
+// programs need a server the index could not give. How the shell
+// already running when an addition brought the server reaches it is
+// the engine's to say (gui.js, shellNote), with whatever else the
+// addition changed in the shells' environment.
+export function x11Note(result) {
+  if (result.choice !== X11Choice.UNAVAILABLE) {
     return null;
   }
   return (
-    `X11 programs can run now in new shells (type sh for one), ` +
-    `or in this one after export DISPLAY=${X11_DISPLAY}`
+    `these programs speak only X11, and the index gave no X server for them: ` +
+    `select ${X11_SERVER_ATTR} with them`
   );
 }

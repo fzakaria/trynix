@@ -381,11 +381,12 @@ restart.
 Shells get `DISPLAY=:0` once the closure holds the server, and not
 before: a program with both backends that tries X11 first would
 otherwise find a display with nothing behind it. A shell sources its
-environment as it starts, so the shell on the page has no `DISPLAY`
-after an addition brought the server, until `export DISPLAY=:0`; the
-status line says so, and suggests a new shell (`sh`), which gets the X
-resources below as well. Shells started later have both, at the
-prompt or in a terminal window.
+environment as it starts, from the file `ENV` names, so the shell on
+the page has no `DISPLAY` after an addition brought the server. The
+status line says so and names two ways to it: a new shell (`sh`), or
+`. $ENV`, which sources the environment again in the shell already
+running, the X resources below included. Shells started later have
+both, at the prompt or in a terminal window.
 
 Xwayland runs with `XWAYLAND_NO_GLAMOR=1`: it draws with pixman into
 shared memory, which the compositor reads through kwshm like any
@@ -569,7 +570,12 @@ sink on card 0, the native protocol's socket at
 `$XDG_RUNTIME_DIR/pulse/native` with anonymous access (the guest has
 one user, root), and `module-suspend-on-idle`, which closes the card
 1 s after the last client stops. Shared memory is off, so audio goes
-over the socket. Every shell gets `PULSE_SERVER`. A client of any
+over the socket. Every shell gets `PULSE_SERVER`, and has
+`CANBERRA_DRIVER` unset, which a shell typed at a prompt from before
+the daemon would otherwise inherit as `alsa`. A daemon an addition
+starts reaches shells started after it; for the shell already on the
+page, the status line names `sh` and `. $ENV`, as it does for an X
+server, in one line when an addition brings both. A client of any
 nixpkgs era speaks the native protocol to the daemon over the socket,
 so no library crosses from one era's process into another's
 ([design.md](./design.md) says why that matters).
@@ -703,9 +709,9 @@ compositor:
   with `DISPLAY` get: the satellite does not reparent windows, and
   without it a Swing window stayed blank. openjdk's `java` is not on
   `PATH` (see [What X11 costs](#what-x11-costs)).
-- **An X server an addition brings** reaches shells started after it;
-  the shell already on the page needs `export DISPLAY=:0`, or a new
-  shell (`sh`), which also gets xterm's font.
+- **An X server or PulseAudio daemon an addition brings** reaches
+  shells started after it; the shell already on the page needs
+  `. $ENV`, or a new shell (`sh`).
 - **GLX programs** have not been run. Xwayland draws without glamor
   here, and the site's Mesa has no GLX.
 - **Downloads set to all** fetch the X server's whole closure before

@@ -164,6 +164,32 @@ export function x11Env() {
   };
 }
 
+// What a shell started before an addition can lack: the addition
+// brought an X server or a running PulseAudio daemon, and the shell
+// sourced its environment (unkernel.js, manifest) before either was
+// there. Each value is how the reader is told what needs it.
+export const ShellUpdate = Object.freeze({
+  // DISPLAY and the rest of x11Env.
+  X11: "X11 programs",
+  // PULSE_SERVER, and libcanberra's driver left to choose (pulse.js,
+  // soundEnv).
+  PULSE: "PulseAudio clients",
+});
+
+// What the page tells the reader after an addition whose `updates`
+// (ShellUpdate) the shell already running lacks, or null for none. A
+// shell sources the file ENV names as it starts, so a new one has them,
+// and sourcing the file again brings the running one up to date.
+export function shellNote(updates) {
+  if (updates.length === 0) {
+    return null;
+  }
+  return (
+    `${updates.join(" and ")} work now in new shells (type sh for one), ` +
+    "or in this one after . $ENV"
+  );
+}
+
 // Whether a set of store basenames holds a Wayland program.
 export const speaksWayland = (basenames) =>
   basenames.some((basename) => WAYLAND_PATH.test(basename));
