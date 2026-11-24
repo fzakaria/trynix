@@ -1,9 +1,0 @@
-StorePath: /nix/store/0ay6gpnslc38zhgs3d21hai3f8rjc55b-mesa-virgl-26.2.2
-URL: nar/1j1n6ggpfahs3bjvxjnln929yv7g0ifw7rxlck0r4gm3khmwclsc.nar.xz
-Compression: xz
-FileHash: sha256:1j1n6ggpfahs3bjvxjnln929yv7g0ifw7rxlck0r4gm3khmwclsc
-FileSize: 2997056
-NarHash: sha256:1vzcx2vizbdnl947vyna84d188gnwscxq0b9fi4wka4di4ad2z2d
-NarSize: 20748984
-References: 0ay6gpnslc38zhgs3d21hai3f8rjc55b-mesa-virgl-26.2.2 11hx7k584dcpkdbr9dv9pishmnph0r6j-expat-2.8.3 18i86lckwga1s9sk9y4ccz8xvqxljlcf-mesa-libgbm-26.1.3 60afk5jlqmx8xh5pr76j7j8vdrhwzrmv-gcc-15.3.0-lib 6wjykzqf6w3kzfhjc4z7dcd84j0dzsgm-glibc-2.42-84 7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134 n61nc0cr8qmrb4923k82a26qvixpk0b8-zstd-1.5.7 njzsfgfwsb3vnh3x1aps082m3jviis54-wayland-1.26.0
-Deriver: w23d1nc8rpx3yhfdr191ssccbjk25j6a-mesa-virgl-26.2.2.drv

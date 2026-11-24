@@ -205,19 +205,27 @@ libdrm's headers and test programs in the runtime closure. The build
 refuses to finish if LLVM, python3, hwdata, libpciaccess or libdrm's
 dev and bin outputs are in its closure.
 
-Mesa carries two patches for unkernel's renderer. In the first,
+Mesa carries two patches for unkernel's renderer, which can go once
+the renderer stops passing these draws to WebGL
+([pithings/unkernel#27](https://github.com/pithings/unkernel/issues/27)).
+In the first,
 [patches/mesa/0001](../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch),
 a draw that renders into a level of a texture
 while a sampler view of the draw covers that level is a feedback loop:
-GL leaves what it samples undefined, and WebGL 2 refuses the draw even
-when the shader never reads the texture. unkernel's renderer takes the
-refusal as a context error and refuses every later draw of that
-program's context, so a program that leaves a texture on a unit and
-then renders into it goes blank. Firefox's WebRender does that, and
-Firefox's window stopped drawing about 100 s into a page of CSS
-effects and canvas copies. With the patch the virgl driver gives the
-renderer a view of a 1x1 texture in that slot for such a draw. It can
-go once unkernel's renderer stops passing the loop to WebGL.
+WebGL 2 refuses the draw even when the shader never reads the texture.
+unkernel's renderer takes the refusal as a context error and refuses
+every later draw of that program's context, so a program that leaves a
+texture on a unit and then renders into it goes blank. Firefox's
+WebRender does that, and Firefox's window stopped drawing about 100 s
+into a page of CSS effects and canvas copies. With the patch the virgl
+driver gives the renderer a stand-in view in that slot for such a
+draw. When the draw renders into a level above the view's first, the
+stand-in is the same texture with its levels cut below the one
+rendered into, so a sampler without mipmaps still reads the first
+level's contents, as GL defines; the renderer sets those levels as the
+texture's base and max level, and WebGL 2 looks for the loop only
+between them. When the view's first level is rendered into, GL leaves
+every read undefined and the stand-in is a 1x1 texture.
 
 The second,
 [patches/mesa/0002](../patches/mesa/0002-virgl-stand-in-for-a-sampler-view-of-another-type.patch),
@@ -229,7 +237,9 @@ when an integer sampler's unit has no complete texture, since it puts
 an RGBA8 one there. Firefox in the guest, opening a trynix page that
 ran es2gears in its own guest, stopped drawing the lower part of its
 window 4.5 minutes in. The virgl driver now gives the renderer a 1x1
-texture of the sampler's type in that slot.
+texture of the sampler's type in that slot. An integer one holds
+(0, 0, 0, 1), the opaque black GLES samples from an incomplete texture
+or an empty unit.
 
 The result is Mesa 26.2.2 with `libgallium` holding the one driver:
 
@@ -832,12 +842,16 @@ page's GL renderer by GPU resource and not through llvmpipe, and types
 a line into xterm's window and checks that xterm's shell ran it.
 The feedback case runs
 [tools/gl-feedback.py](../tools/gl-feedback.py) with python3 in the
-guest: seven draws, each read back. The second renders into a texture
+guest: ten draws, each read back. The second renders into a texture
 still bound to a sampler unit of its program, and the fifth and sixth
 leave a texture of another type than its sampler on a unit (an integer
 texture on a float sampler, a float one or none on an integer
 sampler). WebGL 2 refuses those draws, and unkernel's renderer then
-refuses every later draw of the program's context; the case fails on a
+refuses every later draw of the program's context. The last three
+sample what GL defines next to the stand-ins: level 0 of a texture
+with NEAREST filters while the draw renders into its level 1, which
+reads level 0's red, and an integer sampler with an incomplete texture
+or none on its unit, which reads (0, 0, 0, 1). The case fails on a
 wrong colour or a context error in the renderer's log.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the

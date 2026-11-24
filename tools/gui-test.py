@@ -35,12 +35,15 @@ The cases:
            the keys reached xterm's shell.
     feedback
            tools/gl-feedback.py, run in the guest with python3 through
-           the site's GL driver: seven draws into textures, the second
+           the site's GL driver: ten draws into textures, the second
            into a texture still bound to a sampler of its program, the
            fifth and sixth with a texture of another type than its
-           sampler on a unit, which WebGL refuses (patches/mesa/).
-           Checks that each draw read back its colour and that the
-           renderer reported no context error.
+           sampler on a unit, which WebGL refuses (patches/mesa/). The
+           last three sample what GL defines next to those: a level
+           below the one the draw renders into, and an integer sampler
+           with an incomplete texture or none on its unit. Checks that
+           each draw read back its colour and that the renderer
+           reported no context error.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell

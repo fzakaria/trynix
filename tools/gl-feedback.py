@@ -17,9 +17,15 @@ The same goes for a sampler whose unit holds a texture of another type:
 an integer texture where the shader declares a float sampler, or a float
 one where it declares an integer sampler. Firefox's WebRender makes such
 draws. GL calls the values undefined, WebGL 2 refuses the draw, and the
-site's Mesa sends a stand-in of the sampler's type. A unit with no texture counts too: Mesa
-puts an RGBA8 texture there, which an integer sampler cannot take on
-WebGL 2.
+site's Mesa sends a stand-in of the sampler's type. A unit with no
+texture counts too: Mesa puts an RGBA8 texture there, which an integer
+sampler cannot take on WebGL 2.
+
+A stand-in must not change what GL defines, and the last steps sample
+for real. A draw into level 1 of a texture whose sampler has NEAREST
+filters reads level 0 alone, which GL calls no loop, so it reads level
+0's colour. A shader that reads an integer sampler whose unit holds an
+incomplete texture, or none, reads opaque black, (0, 0, 0, 1), in GLES.
 
     python3 gl-feedback.py [<libEGL.so.1> <libGLESv2.so.2>]
 
@@ -67,6 +73,15 @@ GL_NEAREST = 0x2600
 # each has.
 SIZE = 64
 LEVELS = 1
+
+# The levels a draw renders into: the first, and the second of the
+# mipmapped texture, which has two and is sampled at the first.
+FIRST_LEVEL = 0
+SECOND_LEVEL = 1
+MIPMAPPED_LEVELS = 2
+
+# The bytes of an RGBA8 texel, as uploaded and read back.
+BYTES_PER_TEXEL = 4
 
 # Two triangles that cover the target, as x, y pairs.
 QUAD = (-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1)
@@ -120,10 +135,30 @@ void main() {
 }
 """
 
+# Shaders that write what their sampler reads: a float one, and an
+# integer one, converted to floats.
+FS_SAMPLE = b"""#version 300 es
+precision mediump float;
+uniform sampler2D s;
+out vec4 o;
+void main() {
+  o = texture(s, vec2(0.5));
+}
+"""
+FS_SAMPLE_INTEGER = b"""#version 300 es
+precision mediump float;
+uniform highp isampler2D i;
+out vec4 o;
+void main() {
+  o = vec4(texture(i, vec2(0.5)));
+}
+"""
+
 RED = (1.0, 0.0, 0.0, 1.0)
 GREEN = (0.0, 1.0, 0.0, 1.0)
 BLUE = (0.0, 0.0, 1.0, 1.0)
 WHITE = (1.0, 1.0, 1.0, 1.0)
+OPAQUE_BLACK = (0.0, 0.0, 0.0, 1.0)
 CHANNEL_MAX = 255
 
 PASS = "FEEDBACK-TEST PASS"
@@ -177,7 +212,8 @@ def compile_shader(gl, kind, text):
 
 def program(gl, fragment, units):
     """Link a program of VS and `fragment` whose samplers read the units
-    `units` names; returns the program and the location of its
+    `units` names; returns the program and the location of its colour,
+    which is -1 in a program that writes what it samples, and takes no
     colour."""
     linked = gl.glCreateProgram()
     gl.glAttachShader(linked, compile_shader(gl, GL_VERTEX_SHADER, VS))
@@ -225,7 +261,6 @@ def textures(gl):
     framebuffer = ctypes.c_uint()
     gl.glGenFramebuffers(1, ctypes.byref(framebuffer))
     gl.glBindFramebuffer(GL_FRAMEBUFFER, framebuffer)
-    gl.glViewport(0, 0, SIZE, SIZE)
     return names[0], names[1]
 
 
@@ -241,13 +276,45 @@ def integer_texture(gl):
     return name.value
 
 
-def draw(gl, linked, target, bound, color):
-    """Draw `color` with `linked`, a program and its colour's location,
-    into `target`, with each (unit, texture) of `bound` on its unit, and
-    read the middle pixel back."""
-    gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, 0)
+def incomplete_integer_texture(gl):
+    """An RGBA8I texture left with its default filters, LINEAR ones,
+    which leave an integer texture incomplete."""
+    name = ctypes.c_uint()
+    gl.glGenTextures(1, ctypes.byref(name))
+    gl.glBindTexture(GL_TEXTURE_2D, name)
+    gl.glTexStorage2D(GL_TEXTURE_2D, LEVELS, GL_RGBA8I, SIZE, SIZE)
+    return name.value
+
+
+def mipmapped_texture(gl):
+    """An RGBA8 texture of two levels, the first red, with NEAREST
+    filters, which sample the first level alone."""
+    name = ctypes.c_uint()
+    gl.glGenTextures(1, ctypes.byref(name))
+    gl.glBindTexture(GL_TEXTURE_2D, name)
+    gl.glTexStorage2D(GL_TEXTURE_2D, MIPMAPPED_LEVELS, GL_RGBA8, SIZE, SIZE)
+    gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+    # The first level, red all over.
+    texel = bytes(round(channel * CHANNEL_MAX) for channel in RED)
+    red = (ctypes.c_ubyte * (SIZE * SIZE * BYTES_PER_TEXEL)).from_buffer_copy(texel * (SIZE * SIZE))
+    gl.glTexSubImage2D(GL_TEXTURE_2D, FIRST_LEVEL, 0, 0, SIZE, SIZE, GL_RGBA, GL_UNSIGNED_BYTE, red)
+    return name.value
+
+
+def draw(gl, linked, target, level, bound, color):
+    """Draw with `linked`, a program and its colour's location, into
+    level `level` of `target`, with each (unit, texture) of `bound` on
+    its unit and `color` as the colour, and read the middle pixel
+    back."""
+    gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, level)
     if gl.glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
         raise SystemExit("framebuffer incomplete")
+
+    # The level's side, for the viewport and the middle pixel.
+    size = SIZE >> level
+    gl.glViewport(0, 0, size, size)
 
     name, color_location = linked
     gl.glUseProgram(name)
@@ -258,8 +325,8 @@ def draw(gl, linked, target, bound, color):
     gl.glDrawArrays(GL_TRIANGLES, 0, QUAD_VERTICES)
     gl.glFinish()
 
-    pixel = (ctypes.c_ubyte * 4)()
-    gl.glReadPixels(SIZE // 2, SIZE // 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel)
+    pixel = (ctypes.c_ubyte * BYTES_PER_TEXEL)()
+    gl.glReadPixels(size // 2, size // 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel)
     return tuple(pixel)
 
 
@@ -273,18 +340,22 @@ def main():
     print("renderer:", gl.glGetString(GL_RENDERER).decode(), flush=True)
     feedback = program(gl, FS, {b"s": SAMPLER_UNIT})
     types = program(gl, FS_TYPES, {b"f": FLOAT_UNIT, b"i": INTEGER_UNIT})
+    sample = program(gl, FS_SAMPLE, {b"s": SAMPLER_UNIT})
+    sample_integer = program(gl, FS_SAMPLE_INTEGER, {b"i": INTEGER_UNIT})
     quad(gl)
     a, b = textures(gl)
     integer = integer_texture(gl)
+    incomplete = incomplete_integer_texture(gl)
+    mipmapped = mipmapped_texture(gl)
 
     # 1: into B with A on the sampler's unit (no loop); 2: into A with A
     # still on the unit (a loop WebGL refuses, never sampled); 3: into B
     # with no texture on the unit (no loop), which fails too when the
     # second draw put the context in error.
     steps = [
-        ("draw into B, A bound", feedback, b, [(SAMPLER_UNIT, a)], RED),
-        ("draw into A, A bound", feedback, a, [(SAMPLER_UNIT, a)], GREEN),
-        ("draw into B, nothing bound", feedback, b, [(SAMPLER_UNIT, 0)], BLUE),
+        ("draw into B, A bound", feedback, b, FIRST_LEVEL, [(SAMPLER_UNIT, a)], RED),
+        ("draw into A, A bound", feedback, a, FIRST_LEVEL, [(SAMPLER_UNIT, a)], GREEN),
+        ("draw into B, nothing bound", feedback, b, FIRST_LEVEL, [(SAMPLER_UNIT, 0)], BLUE),
     ]
 
     # 4: each sampler with a texture of its type; 5: the integer texture
@@ -294,14 +365,26 @@ def main():
     # too when an earlier draw put the context in error. Each draw has a
     # colour none of the group's earlier draws left in B.
     steps += [
-        ("draw into B, each sampler its type", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], RED),
-        ("draw into B, the types swapped", types, b, [(FLOAT_UNIT, integer), (INTEGER_UNIT, a)], GREEN),
-        ("draw into B, nothing on the integer sampler", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, 0)], BLUE),
-        ("draw into B, each its type again", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], WHITE),
+        ("draw into B, each sampler its type", types, b, FIRST_LEVEL, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], RED),
+        ("draw into B, the types swapped", types, b, FIRST_LEVEL, [(FLOAT_UNIT, integer), (INTEGER_UNIT, a)], GREEN),
+        ("draw into B, nothing on the integer sampler", types, b, FIRST_LEVEL, [(FLOAT_UNIT, a), (INTEGER_UNIT, 0)], BLUE),
+        ("draw into B, each its type again", types, b, FIRST_LEVEL, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], WHITE),
+    ]
+
+    # The steps that sample, whose colour is the one the shader should
+    # read rather than one it is given. 8: into the mipmapped texture's
+    # second level, sampling its first, red one with NEAREST filters,
+    # which GL calls no loop. 9: an integer sampler with an incomplete
+    # integer texture on its unit, and 10: with none, which both read
+    # opaque black. Each draw's target held another colour before.
+    steps += [
+        ("draw into M's level 1, sampling its level 0", sample, mipmapped, SECOND_LEVEL, [(SAMPLER_UNIT, mipmapped)], RED),
+        ("draw into B, sampling an incomplete integer texture", sample_integer, b, FIRST_LEVEL, [(INTEGER_UNIT, incomplete)], OPAQUE_BLACK),
+        ("draw into A, sampling no integer texture", sample_integer, a, FIRST_LEVEL, [(INTEGER_UNIT, 0)], OPAQUE_BLACK),
     ]
     failed = 0
-    for label, linked, target, bound, color in steps:
-        got = draw(gl, linked, target, bound, color)
+    for label, linked, target, level, bound, color in steps:
+        got = draw(gl, linked, target, level, bound, color)
         want = tuple(round(channel * CHANNEL_MAX) for channel in color)
         verdict = "ok" if got == want else "WRONG"
         if got != want:
