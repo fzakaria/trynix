@@ -29,6 +29,7 @@ import {
 import { startVM } from "./boot.js";
 import { startUnkernel } from "./unkernel.js";
 import { fullScreenButton } from "./frame.js";
+import { resizeGrip } from "./grip.js";
 import {
   DEFAULT_ENGINE,
   Engine,
@@ -713,6 +714,12 @@ wireNetworkChoice();
 // The console bar's full-screen button, for the terminal and any GUI
 // windows over it, whichever engine boots.
 fullScreenButton({ consoleElement, button: fullScreenElement });
+
+// The grip along the console's bottom edge, which resizes the terminal.
+resizeGrip({
+  grip: document.getElementById("console-grip"),
+  terminal: terminalElement,
+});
 
 // The debug pane mirrors the log as it is written.
 onLog((lines) => {

@@ -670,6 +670,32 @@ code {
 #desktop .wland-window[data-wland-fullscreen] {
   box-shadow: none;
 }
+/* The resize grip: a strip along the frame's bottom edge, a short line
+   in its middle saying it can be taken hold of (site/js/grip.js). */
+#console-grip {
+  height: 0.6rem;
+  cursor: ns-resize;
+  background: var(--console-bar);
+  touch-action: none;
+}
+#console-grip::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 2px;
+  margin: calc(0.3rem - 1px) auto 0;
+  border-radius: 1px;
+  background: var(--console-fg);
+  opacity: 0.35;
+}
+#console-grip:hover::after,
+#console-grip:focus-visible::after {
+  opacity: 0.8;
+}
+#console-grip[hidden],
+#console:fullscreen #console-grip {
+  display: none;
+}
 /* Full screen: the bar on top, the key bar at the bottom, and the
    terminal and windows filling what is between. */
 #console:fullscreen {

@@ -465,6 +465,17 @@
                one connects. -->
           <div id="desktop" hidden></div>
         </div>
+        <!-- The resize grip along the frame's bottom edge
+             (site/js/grip.js): drag it, or focus it and use the arrow
+             keys; a double click gives the terminal its own height. -->
+        <div
+          id="console-grip"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the terminal"
+          title="Drag to resize the terminal; double-click for its own height"
+          tabindex="0"
+        ></div>
         <!-- The keys a phone's keyboard lacks; shown on touch devices
              only (site/js/keybar.js fills it). -->
         <div id="keybar" aria-label="terminal keys"></div>

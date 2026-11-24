@@ -24,6 +24,7 @@
 // it is inside.
 
 import { log } from "./log.js";
+import { SIZED_BY_READER } from "./grip.js";
 
 // The class the console takes once a GUI program has connected.
 const WINDOWED_CLASS = "windowed";
@@ -226,11 +227,13 @@ export function consoleFrame({
   // Grow the frame to `height`, by the terminal's height, which the
   // frame takes; the terminal refits its rows. Not on a touch device,
   // where terminal.js sizes the terminal to what is on screen, nor in
-  // full screen, where the frame fills the screen already.
+  // full screen, where the frame fills the screen already, nor once the
+  // reader has set the height with the grip (grip.js).
   function growFrame(height) {
     const frame = frameSize();
     if (
       height <= frame.height ||
+      terminalBox.dataset.sized === SIZED_BY_READER ||
       matchMedia("(pointer: coarse)").matches ||
       document.fullscreenElement === consoleElement
     ) {
