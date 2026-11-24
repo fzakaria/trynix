@@ -125,6 +125,7 @@ import {
   relayOf,
 } from "./network.js";
 import { Sound } from "./sound.js";
+import { rootRecord } from "./roots.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -1200,8 +1201,8 @@ let vm = null;
 let mounted = new Map();
 
 // The digests of every package selected into the guest, at its boot and
-// by additions since.
-const guestRoots = [];
+// by each addition since that succeeded (roots.js).
+const guestRoots = rootRecord();
 
 // The strip under the terminal that says what the guest is waiting on
 // (activity.js): a download, or a program that opens windows starting.
@@ -1222,7 +1223,7 @@ function windowPrograms() {
   if (vm?.programsOf === undefined) {
     return programs;
   }
-  for (const digest of new Set(guestRoots)) {
+  for (const digest of guestRoots.all()) {
     const own = reachable(mounted, [digest]);
     const root = own.get(digest);
     if (
@@ -1726,7 +1727,7 @@ async function boot() {
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
     const rootDigests = digestsOf(roots);
-    guestRoots.push(...rootDigests);
+    guestRoots.booted(rootDigests);
 
     // Served lazily, each path's listing is on its way the moment the
     // walk finds the path.
@@ -1951,10 +1952,10 @@ async function addToRunningVM() {
     // added package wins (the page's add note). Every selected root
     // used to, and the one selected last took each name it shared:
     // adding figlet switched which of two hellos booted together ran.
-    const newRootDigests = rootDigests.filter(
-      (digest) => !guestRoots.includes(digest),
-    );
-    guestRoots.push(...newRootDigests);
+    // They are the guest's once the addition is in (addition.done), so
+    // an addition that fails leaves them to its retry (roots.js).
+    const addition = guestRoots.adding(rootDigests);
+    const newRootDigests = addition.roots;
 
     const fresh = await walkRoots(
       rootDigests,
@@ -1978,6 +1979,7 @@ async function addToRunningVM() {
       fresh.set(digest, info);
     }
     if (fresh.size === 0 && unfetchedSelections(rootDigests).length === 0) {
+      addition.done();
       telemetry.finish(LoadStage.READY);
       row.done("already there");
       refreshBootButton();
@@ -1997,6 +1999,7 @@ async function addToRunningVM() {
         row,
         telemetry,
       });
+      addition.done();
       return;
     }
     const infos = [...fresh.values()];
@@ -2019,6 +2022,7 @@ async function addToRunningVM() {
       mounted.set(digest, info);
     }
     const added = await vm.add(unpacked, basenamesOf(mounted, newRootDigests));
+    addition.done();
     reportSilent(vm, mounted, roots);
     reportGl(gl.result);
     reportX11(x11.result);

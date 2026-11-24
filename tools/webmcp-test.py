@@ -64,6 +64,18 @@ BOTH_VERSIONS = ["2.10", "2.12.2"]
 VERSION_COMMAND = f"{PACKAGE} --version"
 VERSION_LINE = "hello (GNU Hello) {}"
 
+# An addition retried after its download failed: the first of
+# BOTH_VERSIONS is booted on the unkernel engine and the second is
+# added, in each of the engine's download modes (site/js/downloads.js,
+# the link's fetch), with the added version's NAR refused on the first
+# try. A refused download fails in the page as a dropped connection
+# does, and the addition's progress row says so.
+RETRY_ENGINE = "unkernel"
+DOWNLOAD_MODES = ["lazy", "all"]
+REFUSED_PATH_SUFFIX = f"-{PACKAGE}-{BOTH_VERSIONS[1]}"
+REFUSAL_MESSAGE = "Failed to fetch"
+FAILED_ROW = "document.querySelector('#boot-progress .failed')?.textContent ?? ''"
+
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
 CACHE_URL = "https://trynix.cachix.org"
@@ -120,6 +132,42 @@ POLYFILL = """
   });
 })();
 """
+
+# Installed before the page's own scripts for the retried addition. It
+# wraps the page's fetch: the narinfo of the store path ending in
+# REFUSED_PATH_SUFFIX names the NAR to refuse, and while
+# window.refuseTest.refusing is true a download of that NAR fails the
+# way a browser fails a dropped connection. window.refuseTest counts
+# the refusals, so a check cannot pass without one.
+REFUSE = (
+    r"""
+(() => {
+  const state = { refusing: false, nar: null, refused: 0 };
+  window.refuseTest = state;
+  const pageFetch = window.fetch.bind(window);
+
+  window.fetch = async (resource, options) => {
+    const url = resource instanceof Request ? resource.url : String(resource);
+    if (state.refusing && url === state.nar) {
+      state.refused += 1;
+      throw new TypeError(REFUSAL_MESSAGE);
+    }
+    const response = await pageFetch(resource, options);
+    if (url.endsWith(".narinfo") && response.ok) {
+      const text = await response.clone().text();
+      const storePath = text.match(/^StorePath: (\S+)$/m)?.[1] ?? "";
+      const narUrl = text.match(/^URL: (\S+)$/m)?.[1];
+      if (narUrl !== undefined && storePath.endsWith(REFUSED_PATH_SUFFIX)) {
+        state.nar = new URL(narUrl, url).href;
+      }
+    }
+    return response;
+  };
+})();
+"""
+    .replace("REFUSED_PATH_SUFFIX", json.dumps(REFUSED_PATH_SUFFIX))
+    .replace("REFUSAL_MESSAGE", json.dumps(REFUSAL_MESSAGE))
+)
 
 
 def load(name, filename):
@@ -356,6 +404,58 @@ def check_addition_keeps_winner(browser, checks, base):
     checks.equal("the same version runs after the addition", version_line(browser), booted)
 
 
+def check_retried_addition(browser, checks, base, mode):
+    """An addition whose download failed, retried once the download works.
+
+    The first of BOTH_VERSIONS is booted with downloads in `mode`, and
+    the second is added while its NAR is refused, so the addition fails.
+    Then the NAR is let through and boot is called again: the retry has
+    to link the second version's programs, so hello --version says the
+    second version. The first try used to record the second version as
+    the guest's before its download, and the retry, finding it recorded,
+    linked nothing: hello --version still said 2.10.
+    """
+    print(f"an addition retried after its download failed, downloads {mode}")
+
+    # The page keeps NARs and narinfos in its Cache Storage, and a hit is
+    # read without a fetch the preload could refuse. An earlier check
+    # may have fetched the version added here.
+    origin = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(base))
+    browser.send("Storage.clearDataForOrigin", origin=origin, storageTypes="cache_storage")
+    script = browser.send("Page.addScriptToEvaluateOnNewDocument", source=REFUSE)
+    try:
+        query = urllib.parse.urlencode({"engine": RETRY_ENGINE, "fetch": mode})
+        browser.send("Page.navigate", url=f"{base}/?{query}")
+        await_tools(browser)
+        booted, added = BOTH_VERSIONS
+        call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": booted}])
+        said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+        checks.true("booted", said.startswith("booted;"))
+        checks.equal("the booted version runs", version_line(browser), VERSION_LINE.format(booted))
+
+        # The first try: the added version's NAR is refused.
+        call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": added}])
+        browser.evaluate("window.refuseTest.refusing = true")
+        said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+        print(f"  {said}")
+        checks.true("the NAR was refused", browser.evaluate("window.refuseTest.refused"))
+        failed = browser.evaluate(FAILED_ROW)
+        print(f"  {failed}")
+        checks.true("the addition's row failed", REFUSAL_MESSAGE in failed)
+
+        # The retry, with the NAR let through.
+        browser.evaluate("window.refuseTest.refusing = false")
+        said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+        print(f"  {said}")
+        checks.true("the retry added", said.startswith("added to the running guest;"))
+        checks.equal("the added version runs", version_line(browser), VERSION_LINE.format(added))
+    finally:
+        browser.send(
+            "Page.removeScriptToEvaluateOnNewDocument",
+            identifier=script["result"]["identifier"],
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
@@ -459,6 +559,11 @@ def main():
 
         # A fresh page and guest, since this boot selects two versions.
         check_addition_keeps_winner(browser, checks, base)
+
+        # A fresh page and guest for each download mode, since the two
+        # modes take different paths through an addition.
+        for mode in DOWNLOAD_MODES:
+            check_retried_addition(browser, checks, base, mode)
     finally:
         browser.close()
         if shutdown is not None:
