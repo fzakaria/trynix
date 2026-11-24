@@ -43,7 +43,7 @@ const FONTS_CONF = `${GUI_SHARE_DIR}/fonts.conf`;
 
 // The session's runtime directory and socket, as logind would make
 // them for root, the user the guest's shell runs as.
-const RUNTIME_DIR = "/run/user/0";
+export const RUNTIME_DIR = "/run/user/0";
 const DISPLAY_NAME = "wayland-0";
 const RELAY_LOG = `${RUNTIME_DIR}/wlandr.log`;
 

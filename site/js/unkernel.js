@@ -36,6 +36,7 @@ import { openTerminal } from "./terminal.js";
 import { consoleFrame } from "./frame.js";
 import { guestDriver } from "./agent.js";
 import { createSoundOut } from "./sound.js";
+import { pulseDaemonIn, soundEnv, soundServer } from "./pulse.js";
 import { caBundleShell } from "./network.js";
 import { CA_BUNDLE, CERTS_DIR } from "./config.js";
 import { consoleRecorder, pause } from "./console.js";
@@ -168,11 +169,14 @@ async function visible(kernel, paths) {
 // shell gets the Wayland session's environment too (gui.js), so a GUI
 // program added after the boot finds the relay from the shell it is
 // typed into. With a network, TLS clients are pointed at the CA bundle
-// in the share (`caBundle`, or null without one).
-function manifest({ caBundle }) {
-  const session = Object.entries(sessionEnv()).map(
-    ([name, value]) => `export ${name}="${value}"`,
-  );
+// in the share (`caBundle`, or null without one). Sound clients are told
+// about the PulseAudio daemon the page starts (`daemon`, a store
+// basename, or null without one; pulse.js).
+function manifest({ caBundle, daemon }) {
+  const session = Object.entries({
+    ...sessionEnv(),
+    ...soundEnv(daemon),
+  }).map(([name, value]) => `export ${name}="${value}"`);
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
@@ -401,9 +405,11 @@ export async function startUnkernel({
     }
   }
 
-  // A command in the guest's shell, for the GUI session's setup.
+  // A command in the guest's shell, for the GUI session's and the sound
+  // server's setup.
   const sh = (command) => kernel.exec(SHELL, ["-c", command]);
   const session = guestSession({ FS, exec: sh });
+  const server = soundServer({ exec: sh });
 
   // Every path of the closure the guest sees: the written ones, and on a
   // lazily served share the ones still to come.
@@ -430,6 +436,20 @@ export async function startUnkernel({
     await Promise.all(steps).catch((err) =>
       log(`gui: setup failed: ${err.message ?? err}`),
     );
+  }
+
+  // Start the PulseAudio daemon of `basenames`, if they hold one
+  // (pulse.js). Resolves once its socket is open, so a client typed at
+  // the prompt finds it. A failure is logged rather than thrown: the
+  // shell works without it, and ALSA programs still play.
+  async function soundSetup(basenames) {
+    const daemon = pulseDaemonIn(basenames);
+    if (daemon === null) {
+      return;
+    }
+    await server
+      .start(daemon)
+      .catch((err) => log(`sound: ${err.message ?? err}`));
   }
 
   // The handle everything outside the page reaches the guest through
@@ -474,7 +494,13 @@ export async function startUnkernel({
     // arrived waits for it.
     async run(roots, { store = null } = {}) {
       share.linkAll(share.known(), roots, Precedence.KEEP);
-      FS.writeFile(MANIFEST_FILE, manifest({ caBundle: await caBundle }));
+      FS.writeFile(
+        MANIFEST_FILE,
+        manifest({
+          caBundle: await caBundle,
+          daemon: pulseDaemonIn(closure()),
+        }),
+      );
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
@@ -541,11 +567,14 @@ export async function startUnkernel({
       // The shell is ready once it has sourced the manifest, taken the
       // handshake and redrawn its prompt on a cleared screen (see
       // HANDSHAKE for why that moment and no earlier one). The GUI
-      // session comes up meanwhile, and is waited for as well.
+      // session and the sound server come up meanwhile, and are waited
+      // for as well.
       const gui = guiSetup(closure());
+      const soundServerUp = soundSetup(closure());
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
       await gui;
+      await soundServerUp;
     },
 
     // Add store paths to a guest that is already running. The share is
@@ -567,6 +596,7 @@ export async function startUnkernel({
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
       await guiSetup(lazyStore === null ? basenames : closure());
+      await soundSetup(lazyStore === null ? basenames : closure());
 
       const added = roots.filter((basename) => basenames.includes(basename));
       await visible(kernel, [

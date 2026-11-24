@@ -23,6 +23,7 @@
 import { GL_DRIVERS } from "./config.js";
 import { speaksWayland } from "./gui.js";
 import { setSitePaths } from "./substituters.js";
+import { compareVersions as compare } from "./version.js";
 
 // What the chooser decided.
 export const DriverChoice = Object.freeze({
@@ -50,22 +51,6 @@ const GCC_LIB_PATH = /^[0-9a-z]{32}-gcc-(\d+(?:\.\d+)*)-lib$/;
 // (app.js), since the guest links a driver only once it has seen the
 // driver's files.
 export const isGlDriverPath = (basename) => MESA_PATH.test(basename);
-
-// A dotted version as numbers, for comparing: "2.42" -> [2, 42].
-const numbers = (version) => version.split(".").map(Number);
-
-// a - b, componentwise, a missing component counting as 0.
-function compare(a, b) {
-  const x = numbers(a);
-  const y = numbers(b);
-  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
-    const difference = (x[i] ?? 0) - (y[i] ?? 0);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return 0;
-}
 
 // The oldest version among a closure's paths of one package, or null.
 // A selection can mix nixpkgs revisions, so a closure can hold two
