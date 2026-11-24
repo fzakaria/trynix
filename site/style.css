@@ -590,6 +590,30 @@ code {
     12px/1.5 ui-monospace,
     monospace;
 }
+#console-bar .console-bar-end {
+  display: flex;
+  gap: 1rem;
+}
+/* The sound switch reads as the bar's other labels, underlined while it
+   waits for the reader's click. */
+#sound-control {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+#sound-control[hidden] {
+  display: none;
+}
+#sound-control[data-state="waiting"] {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+#sound-control[data-state="off"] {
+  opacity: 0.6;
+}
 #console-body {
   position: relative;
 }

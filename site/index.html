@@ -96,9 +96,9 @@
       <span class="claim">Nothing runs on a server.</span>
     </p>
 
-    <!-- GUI programs (docs/gui.md); the Settings lane says where that
-         holds. -->
-    <p>GUI programs open as windows on the page too.</p>
+    <!-- GUI programs and sound (docs/gui.md); the Settings lane says
+         where that holds. -->
+    <p>GUI programs open as windows on the page, and sound works too.</p>
 
     <!-- Each example boots on click and types its command at the shell
          once the guest is up (boot=1, run=; site/js/url.js), so the
@@ -146,6 +146,15 @@
         title="the emulator's throughput probe: each instruction class's speed"
         >benchmark the emulator</a
       > ·
+      <!-- A program that speaks through the guest's sound card
+           (site/js/sound.js). The browser plays it at the reader's first
+           click on the page, which is why the title asks for one. -->
+      <a
+        href="?pkg=espeak-ng&engine=unkernel&run=espeak-ng%20%27Hello%20from%20the%20Nix%20multiverse%27&boot=1"
+        title="a speech synthesizer: click the page to hear it"
+        >a voice</a
+      >
+      ·
       <!-- GUI programs, each started by its link and seen to draw. -->
       <a
         href="?pkg=foot&engine=unkernel&run=foot%20%26&boot=1"
@@ -358,6 +367,17 @@
           and the page adds none of its own. Tested in Chrome and Firefox.
         </p>
 
+        <!-- The guest's sound (site/js/sound.js, docs/gui.md). The switch
+             is on the console bar, where it shows once a program plays. -->
+        <h3>Sound</h3>
+        <p class="muted">
+          The aarch64 guest has a sound card, and what a program plays through ALSA comes out of
+          your speakers. Browsers start sound only after a click or key press on the page, so what a
+          program plays before that is held and plays at your first click. The console bar's sound
+          switch turns it off. A program that needs a PulseAudio or PipeWire server stays silent
+          unless it falls back to ALSA.
+        </p>
+
         <h3>Binary caches</h3>
         <p class="muted">
           Extra binary caches, one per line, as a URL and its public key. They go into this page's
@@ -395,7 +415,12 @@
       <div id="console">
         <div id="console-bar">
           <span id="console-tty">ttyS0</span>
-          <span title="libghostty-vt, compiled to wasm">ghostty</span>
+          <span class="console-bar-end">
+            <!-- The guest's sound (site/js/sound.js): shown once a
+                 program opens the sound card, as a switch. -->
+            <button type="button" id="sound-control" hidden></button>
+            <span title="libghostty-vt, compiled to wasm">ghostty</span>
+          </span>
         </div>
         <div id="console-body">
           <div id="console-veil"><span class="spinner" id="console-spinner"></span><span id="console-note"></span></div>

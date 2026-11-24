@@ -34,6 +34,7 @@ import { Precedence } from "./store.js";
 import { lazyFs } from "./lazy.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
+import { createSoundOut } from "./sound.js";
 import { consoleRecorder, pause } from "./console.js";
 import { log } from "./log.js";
 import {
@@ -232,7 +233,8 @@ async function pump(shell, port, console_) {
 
 // engine: { main, kernel, gl }, the versioned URLs of the SDK's
 // browser entry, of the kernel and of the GL renderer's module.
-// desktopElement is where GUI programs' windows go (gui.js). memory is
+// desktopElement is where GUI programs' windows go (gui.js), and
+// soundControl the console bar's sound switch (sound.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
 // to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
@@ -245,6 +247,7 @@ export async function startUnkernel({
   terminalElement,
   keyBarElement,
   desktopElement,
+  soundControl,
   memory,
   cpus,
   engine,
@@ -310,12 +313,14 @@ export async function startUnkernel({
   // virtio-gpu device with 3D, which Mesa's virgl driver renders on.
   // Neither costs a download until a program uses it: the GL renderer
   // is fetched on the guest's first GL use, the compositor on the
-  // relay's first dial.
+  // relay's first dial. The sound card is there for the same reason,
+  // and nothing plays until a program opens it (sound.js).
   //
   // The SDK's own notes (the GL renderer loading, its link connecting)
   // go to the page's log with the rest of the boot. Without a `log` the
   // SDK prints them with console.error, and every boot showed the
   // reader a column of red lines that were not errors.
+  const sound = createSoundOut({ log, control: soundControl });
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
     memoryMiB: memory.mib,
@@ -325,6 +330,7 @@ export async function startUnkernel({
     shm: true,
     gpu: true,
     gl: { module: new URL(engine.gl, location.href).href },
+    sound,
     log,
   });
   if (kernel.memoryMiB !== memory.mib) {
@@ -393,6 +399,7 @@ export async function startUnkernel({
     }),
     terminal: ui.terminal,
     kernel,
+    sound: sound.stats,
   };
   attachDesktop({
     kernel,

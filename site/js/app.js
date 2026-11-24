@@ -123,6 +123,7 @@ const bootProgress = document.getElementById("boot-progress");
 const terminalElement = document.getElementById("terminal");
 const keyBarElement = document.getElementById("keybar");
 const desktopElement = document.getElementById("desktop");
+const soundControl = document.getElementById("sound-control");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const consoleSpinner = document.getElementById("console-spinner");
@@ -1269,6 +1270,7 @@ function unkernelEngine(panel) {
       terminalElement,
       keyBarElement,
       desktopElement,
+      soundControl,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,
       engine: {
