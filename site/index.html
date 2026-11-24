@@ -290,7 +290,8 @@
           <div id="cpu-counts"></div>
           <p class="muted">
             For the aarch64 guest, each CPU in a worker of its own. The default leaves half your
-            machine's threads to the browser. A link can ask for a count with <code>cpus=</code>.
+            machine's threads to the browser; you can give it up to all of them, at most 16, the
+            guest kernel's limit. A link can ask for a count with <code>cpus=</code>.
           </p>
           <p id="cpu-status" class="muted"></p>
         </fieldset>

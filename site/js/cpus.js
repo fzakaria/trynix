@@ -10,19 +10,24 @@
 // deschedules stalls the others that wait for it (docs/unkernel.md,
 // "CPUs").
 //
-// A link can ask for a count (url.js, `cpus`), and the Settings lane can
-// choose one, which this browser then remembers.
+// A link can ask for any count up to the kernel's 16 (url.js, `cpus`),
+// and the Settings lane can choose 1, 2, 4, 8 or 16, which this browser
+// then remembers. Either is held to the host's threads.
 
 import { Pointer } from "./memory.js";
 
-// The counts the Settings lane offers.
-export const CPU_COUNTS = [1, 2, 4];
+// The most CPUs unkernel's SMP kernel boots (NR_CPUS in its
+// kw_smp.config).
+export const MAX_CPUS = 16;
+
+// The counts the Settings lane offers, where the host has the threads.
+export const CPU_COUNTS = [1, 2, 4, 8, 16];
 
 // The most CPUs the page suggests, by device and browser.
 const SUGGESTED = Object.freeze({ desktop: 4, firefox: 2, touch: 2 });
 
-// The guest CPUs a host thread count leaves room for: half of them.
-const THREADS_PER_CPU = 2;
+// The default leaves half the host's threads to the browser.
+const THREADS_PER_DEFAULT_CPU = 2;
 
 // Where this browser keeps the count chosen in Settings.
 const STORAGE_KEY = "trynix.cpus";
@@ -48,13 +53,24 @@ export function thisDevice({ pointer }) {
   };
 }
 
-// The most CPUs this device can be given: half its threads, and one
-// without shared memory.
+// The most CPUs this device can be given: one per host thread, up to
+// the kernel's limit, and one without shared memory.
 function mostFor({ threads, shared }) {
   if (!shared) {
     return 1;
   }
-  return Math.max(1, Math.floor(threads / THREADS_PER_CPU));
+  return threadsUpToKernel(threads);
+}
+
+// A host's threads, at least one and at most the kernel's limit.
+const threadsUpToKernel = (threads) => Math.max(1, Math.min(MAX_CPUS, threads));
+
+// The counts the Settings lane shows this device: those it has the
+// threads for. A page without shared memory still shows them, disabled
+// above one (app.js), so the reader sees what isolation would give.
+export function offeredCpus({ threads }) {
+  const most = threadsUpToKernel(threads);
+  return CPU_COUNTS.filter((count) => count <= most);
 }
 
 // The largest offered count no larger than `limit`.
@@ -72,25 +88,45 @@ export function defaultCpus(device) {
       : device.browser === Browser.FIREFOX
         ? SUGGESTED.firefox
         : SUGGESTED.desktop;
-  const count = offeredUpTo(Math.min(suggested, mostFor(device)));
+  const half = Math.max(
+    1,
+    Math.floor(device.threads / THREADS_PER_DEFAULT_CPU),
+  );
+  const count = offeredUpTo(Math.min(suggested, half));
   return {
     count,
     why: `half of ${device.threads} threads, at most ${suggested}`,
   };
 }
 
-// A count the page offers and the device can run, or null.
-function usable(count, device) {
-  return CPU_COUNTS.includes(count) && count <= mostFor(device) ? count : null;
-}
+// Whether a link's count is one the kernel can boot: a whole number
+// from 1 to MAX_CPUS.
+const bootable = (count) =>
+  Number.isInteger(count) && count >= 1 && count <= MAX_CPUS;
 
 // The count to boot with: the link's, then the one this browser
-// remembers, then the device's default. Each with why, for the log.
+// remembers, then the device's default. Each with why, for the log and
+// for the Settings lane when the link asked for more than it gets.
+//
+// A link asking for more CPUs than the host has threads gets one per
+// thread rather than the default: the reader asked for many. A
+// remembered count the host cannot run is this browser's choice from
+// another day, and gives way to the default.
 export function pickCpus({ linked, remembered, device }) {
-  if (usable(linked, device) !== null) {
+  if (!device.shared) {
+    return defaultCpus(device);
+  }
+  const most = mostFor(device);
+  if (bootable(linked)) {
+    if (linked > most) {
+      return {
+        count: most,
+        why: `the link asks for ${linked}, and this browser has ${device.threads} threads`,
+      };
+    }
     return { count: linked, why: "the link asks for it" };
   }
-  if (usable(remembered, device) !== null) {
+  if (CPU_COUNTS.includes(remembered) && remembered <= most) {
     return { count: remembered, why: "chosen in Settings" };
   }
   return defaultCpus(device);

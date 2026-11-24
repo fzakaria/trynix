@@ -86,7 +86,8 @@ import {
   thisDevice,
 } from "./memory.js";
 import {
-  CPU_COUNTS,
+  MAX_CPUS,
+  offeredCpus,
   pickCpus,
   rememberCpus,
   rememberedCpus,
@@ -505,10 +506,13 @@ function wireMemoryChoice() {
 }
 wireMemoryChoice();
 
-// The CPU choice under Settings, wired as the memory choice is. A page
-// without shared memory boots one CPU whatever is chosen, and says so.
+// The CPU choice under Settings, wired as the memory choice is, with
+// the counts this host has the threads for. A page without shared
+// memory boots one CPU whatever is chosen, and says so. A link can ask
+// for a count Settings does not show, such as 3, or for more than the
+// host has threads; the lane says what the guest gets then.
 function wireCpuChoice() {
-  for (const count of CPU_COUNTS) {
+  for (const count of offeredCpus(cpuHost)) {
     const label = document.createElement("label");
     const input = document.createElement("input");
     input.type = "radio";
@@ -522,6 +526,12 @@ function wireCpuChoice() {
   if (!cpuHost.shared) {
     cpuStatus.textContent =
       "This page is not cross-origin isolated, so the guest runs on one CPU.";
+  } else if (
+    linkedCpus !== null &&
+    linkedCpus <= MAX_CPUS &&
+    cpus.count < linkedCpus
+  ) {
+    cpuStatus.textContent = `The link asks for ${linkedCpus} CPUs; this browser has ${cpuHost.threads} threads, so the guest gets ${cpus.count}.`;
   }
 
   cpuCounts.addEventListener("change", (event) => {

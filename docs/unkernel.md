@@ -209,8 +209,16 @@ own thread, on one CPU.
   Firefox and on a touch screen, and never more than half of
   `navigator.hardwareConcurrency`, since a guest CPU whose thread the
   host deschedules stalls the CPUs that wait for it.
-- A link can ask for a count, `cpus=1`, `2` or `4`, and the Settings
-  lane offers the same three, remembered by this browser.
+- The most is one CPU per host thread, up to 16, the SMP kernel's
+  `NR_CPUS` (unkernel's own page has the same limit). The Settings lane
+  offers 1, 2, 4, 8 and 16, those the host has the threads for, and
+  this browser remembers the choice. A link can ask for any count from
+  1 to 16 with `cpus=`; asking for more than the host has threads boots
+  one CPU per thread, and the Settings lane says so.
+- unkernel's profile of its own page (Chrome, a 14-thread desktop) is
+  why the default stays at 4: 8 CPUs gain only on work that is 8 wide,
+  and each CPU past 4 costs 3-7% on single-threaded work, about 40 ms
+  of boot and 9 MiB.
 - The page reports the count the guest runs on (the kernel's
   `stats().cpus`), and says so under Settings when that is fewer than
   asked for.
