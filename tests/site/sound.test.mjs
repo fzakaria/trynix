@@ -4,13 +4,15 @@
 // it starts, plays the samples in order, runs dry and waits again,
 // plays out the end of a stream, and drops the oldest audio when too
 // much is queued), and the clip the page holds until the reader's first
-// click lets it play. Each is driven directly, with plain arrays for
-// the worklet's output channels.
+// click lets it play, which leaves out the silence before the first
+// sound. Each is driven directly, with plain arrays for the worklet's
+// output channels.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
   HeldClip,
+  isSilent,
   MAX_S,
   Overflow,
   PcmQueue,
@@ -127,4 +129,33 @@ test("the held clip keeps the latest audio", () => {
   assert.equal(taken.at(-1).d[0], 4);
   assert.equal(held.seconds, 0);
   assert.equal(held.take().length, 0);
+});
+
+// Checks which chunks count as silence: all zeros, as a sound server
+// plays while no client does, and nothing else, however quiet.
+test("silence is a chunk of zeros", () => {
+  assert.equal(isSilent(chunk(0.01, 0)), true);
+  const quiet = chunk(0.01, 0);
+  quiet[quiet.length - 1] = 1 / 32768;
+  assert.equal(isSilent(quiet), false);
+});
+
+// Checks that the clip held before the first click does not start with
+// silence: a sound server opens the card as it starts and plays zeros
+// until it lets go of it, and that is nothing to hold or to click for.
+// Silence after the first sound is kept, as the pauses in a voice are.
+test("the held clip drops the silence before the first sound", () => {
+  const held = new HeldClip();
+  held.push(chunk(0.5, 0), 2, RATE);
+  assert.equal(held.seconds, 0);
+  assert.equal(held.take().length, 0);
+
+  held.push(chunk(0.5, 0), 2, RATE);
+  held.push(chunk(0.5, 0.5), 2, RATE);
+  held.push(chunk(0.5, 0), 2, RATE);
+  const taken = held.take();
+  assert.deepEqual(
+    taken.map((piece) => piece.d[0]),
+    [0.5, 0],
+  );
 });

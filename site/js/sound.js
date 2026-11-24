@@ -24,7 +24,7 @@
 // The control is also the switch: sound on, or off, which this browser
 // remembers.
 
-import { HeldClip, Overflow, toFloat32 } from "./sound-queue.js";
+import { HeldClip, isSilent, Overflow, toFloat32 } from "./sound-queue.js";
 
 // The events that count as the reader's activation in Chrome, Firefox
 // and Safari, iOS included (which needs touchend or click).
@@ -44,7 +44,7 @@ const STORED_OFF = "off";
 
 // What the console bar's control shows.
 export const SoundControl = Object.freeze({
-  // No program has opened the sound device: no control.
+  // No program has played anything but silence: no control.
   HIDDEN: "hidden",
   // Sound is held until the reader clicks.
   WAITING: "waiting",
@@ -104,7 +104,9 @@ export function createSoundOut({ log, control }) {
   let unsupported = false;
   let off = rememberedOff();
 
-  // Whether a program has had the device open, which shows the control.
+  // Whether a program has played anything but silence, which shows the
+  // control. Opening the card is not enough: a sound server in the guest
+  // opens it as it starts and plays zeros until it lets go of it.
   let heard = false;
   // Whether a stream is running in the guest now.
   let streamPlaying = false;
@@ -291,7 +293,6 @@ export function createSoundOut({ log, control }) {
     rate: PREFERRED_RATE,
 
     onState(state, event) {
-      heard = heard || state.open;
       streamPlaying = state.playing;
       if (event === "start") {
         node?.port.postMessage({ kind: "start" });
@@ -314,8 +315,8 @@ export function createSoundOut({ log, control }) {
 
     onChunk(chunk) {
       chunks++;
-      heard = true;
       const samples = toFloat32(chunk.data, chunk.format);
+      heard = heard || !isSilent(samples);
       const { channels, rate } = chunk.format;
       if (!ready()) {
         held.push(samples, channels, rate);

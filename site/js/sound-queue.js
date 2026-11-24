@@ -21,6 +21,9 @@
 //   HeldClip keeps the latest audio a program played before the reader's
 //   first click or key press, when a browser does not let a page start
 //   sound. A program that spoke at boot is then heard after the click.
+//   Silence before the first sound is not held (isSilent): a sound
+//   server in the guest opens the card as it starts and plays zeros
+//   until it lets go of it.
 
 // What a chunk's samples are: kwsnd's ALSA formats (SNDRV_PCM_FORMAT_*).
 export const SoundFormat = Object.freeze({ U8: 1, S16_LE: 2 });
@@ -63,6 +66,10 @@ export function toFloat32(data, { format }) {
   }
   return samples;
 }
+
+// Whether a chunk's samples are all zero, which is what a sound server
+// plays while none of its clients does.
+export const isSilent = (samples) => samples.every((sample) => sample === 0);
 
 // The queue the AudioWorklet plays from. Chunks are interleaved floats
 // with their channel count and rate; render fills one render quantum of
@@ -204,6 +211,12 @@ export class HeldClip {
   }
 
   push(samples, channels, rate) {
+    // Nothing held yet and nothing to hear: the clip starts at the
+    // first sound.
+    if (this.chunks.length === 0 && isSilent(samples)) {
+      return;
+    }
+
     this.chunks.push({ d: samples, ch: channels, rate });
     this.seconds += samples.length / channels / rate;
     while (this.seconds > this.limitSeconds && this.chunks.length > 1) {
