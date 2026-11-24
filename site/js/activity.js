@@ -67,6 +67,23 @@ export function commandProgram(line) {
   return word.slice(word.lastIndexOf("/") + 1);
 }
 
+// A line being typed, after `data` is sent: printable text added, a
+// backspace taking the last character off, and anything else (arrows,
+// control keys, escape sequences) left out.
+const BACKSPACE = "\x7f";
+const ESCAPE_SEQUENCE = /\x1b(\[[0-9;?]*[ -/]*[@-~]|[@-Z\\-_])/g;
+export function typedLine(line, data) {
+  let next = line;
+  for (const char of data.replace(ESCAPE_SEQUENCE, "")) {
+    if (char === BACKSPACE) {
+      next = next.slice(0, -1);
+    } else if (char >= " ") {
+      next += char;
+    }
+  }
+  return next;
+}
+
 // Whether a package opens windows, from the basenames of its own
 // closure: a Wayland client library, libX11 or libxcb among them.
 export const opensWindows = (basenames) =>

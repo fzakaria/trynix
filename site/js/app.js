@@ -31,7 +31,12 @@ import { startUnkernel } from "./unkernel.js";
 import { fullScreenButton } from "./frame.js";
 import { resizeGrip } from "./grip.js";
 import { wireHints } from "./hints.js";
-import { activityStrip, commandProgram, opensWindows } from "./activity.js";
+import {
+  activityStrip,
+  commandProgram,
+  opensWindows,
+  typedLine,
+} from "./activity.js";
 import {
   DEFAULT_ENGINE,
   Engine,
@@ -1791,14 +1796,20 @@ async function boot() {
       if (linkedRun !== null) {
         commandEntered(linkedRun);
       }
+      // What was sent since the last Enter, for a line pasted whole,
+      // whose text the shell has not echoed onto the row yet.
+      let typed = "";
       vm.terminal.onData((data) => {
-        if (!data.includes("\r")) {
+        const enter = data.indexOf("\r");
+        if (enter === -1) {
+          typed = typedLine(typed, data);
           return;
         }
-        const line = enteredLine(vm.terminal);
-        if (line !== null) {
-          commandEntered(line);
-        }
+        const sent = typedLine(typed, data.slice(0, enter));
+        typed = "";
+        const shown = enteredLine(vm.terminal);
+        const line = shown !== null && shown.trim() !== "" ? shown : sent;
+        commandEntered(line);
       });
     }
   } catch (err) {

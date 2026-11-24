@@ -11,6 +11,7 @@ import {
   commandProgram,
   opensWindows,
   startLook,
+  typedLine,
 } from "../../site/js/activity.js";
 
 const DIGEST = "0".repeat(32);
@@ -117,4 +118,13 @@ test("the wait for a program ends on a window, its exit, or a limit", () => {
     absent: 1,
   });
   assert.equal(look({ elapsedMs: 200_000 }).done, true);
+});
+
+// Checks the line the page keeps from what is sent to the terminal, for
+// a line pasted whole: printable text kept, a backspace taking off the
+// last character, arrow keys and other escape sequences left out.
+test("a typed line keeps text and backspaces, not escapes", () => {
+  assert.equal(typedLine("", "foot &"), "foot &");
+  assert.equal(typedLine("foox", "\x7ft &"), "foot &");
+  assert.equal(typedLine("sol", "\x1b[A\x1b[D &"), "sol &");
 });
