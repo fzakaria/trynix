@@ -22,6 +22,25 @@ https://trynix.dev/?pkg=foot&boot=1&run=foot+%26
 https://trynix.dev/?pkg=galculator&boot=1&run=galculator+%26
 ```
 
+Until the first window, a strip under the terminal says `starting
+<program>` with the time since the command, for a program whose closure
+holds a Wayland client library, libX11 or libxcb (site/js/activity.js).
+Paths downloading on first use show on the same strip, by name or count,
+with their bytes. The wait ends when a window more than before appears,
+or when the program, once seen running, is gone for three looks a
+second apart. A program run in the foreground that switches the
+terminal to its alternate screen, as `emacs -nw` and vim do, is a
+terminal program, and that ends the wait too. Two limits end it
+otherwise, and time with a download in flight counts toward neither:
+20 s for a program never seen running, which covers a command that
+failed, and 15 minutes in all. firefox's first start is 37 s on a
+laptop (see [Firefox](#firefox-and-whole-compositors)); a 3 minute
+limit ran out with firefox still starting in a guest nested in another
+trynix guest, and 15 minutes is 24 times the laptop's start. A program
+that links X11 or Wayland but opens no window and keeps the normal
+screen, such as a REPL, shows as starting for those 15 minutes, unless
+it exits or the reader enters another command that opens windows.
+
 Windows open over the terminal, inside the console's frame, with the
 terminal drawn behind them. A new window opens just under the shell's
 prompt line, so the command that started it stays in view with the

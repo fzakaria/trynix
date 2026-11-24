@@ -33,6 +33,7 @@ import { resizeGrip } from "./grip.js";
 import { wireHints } from "./hints.js";
 import {
   activityStrip,
+  commandJob,
   commandProgram,
   opensWindows,
   typedLine,
@@ -1206,6 +1207,7 @@ const guestRoots = [];
 const activity = activityStrip({
   element: document.getElementById("console-activity"),
   windowCount: () => desktopElement.querySelectorAll(".wland-window").length,
+  screen: () => vm?.terminal?.buffer.active.type,
   isRunning: (program) =>
     vm?.isRunning === undefined
       ? Promise.resolve(false)
@@ -1243,7 +1245,7 @@ function commandEntered(line) {
     return;
   }
   log(`waiting for ${program}'s first window`);
-  activity.started(program);
+  activity.started(program, commandJob(line));
 }
 
 // The command line the reader just entered at the terminal: the row the

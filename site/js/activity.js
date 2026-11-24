@@ -7,10 +7,11 @@
 //   top edge that fills;
 //
 //   a program starting that opens windows (opensWindows), from the
-//   moment its command is entered until its first window appears or
-//   it is no longer running. firefox's first start is half a minute of
-//   work inside the emulator with nothing on screen; the strip counts
-//   it, with a line that sweeps along the top edge.
+//   moment its command is entered until its first window appears, it
+//   is no longer running, or, run in the foreground, it has taken the
+//   terminal's screen as emacs -nw does. firefox's first start is half
+//   a minute of work inside the emulator with nothing on screen; the
+//   strip counts it, with a line that sweeps along the top edge.
 //
 // The strip shows only once the guest is at its prompt; before that,
 // the boot's progress rows say what is happening. It sits between the
@@ -33,6 +34,26 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 // What separates commands on one line.
 const COMMAND_SEPARATOR = /[;&|]/;
 
+// What ends a line's first command: a semicolon, or an ampersand that
+// is not part of && or of a redirection (2>&1, <&, &>, |&).
+const COMMAND_END = /(^|[^&<>|])&(?![&>])|;/;
+const BACKGROUND_END = "&";
+
+// Where a command line runs its first command: in the foreground,
+// holding the terminal, or in the background, after a lone &.
+export const Job = Object.freeze({
+  FOREGROUND: "foreground",
+  BACKGROUND: "background",
+});
+
+// The terminal's screens, as its buffer's type names them (xterm.js,
+// which ghostty-web follows): a full-screen terminal program such as
+// emacs -nw, vim or top switches to the alternate one while it runs.
+export const Screen = Object.freeze({
+  NORMAL: "normal",
+  ALTERNATE: "alternate",
+});
+
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 
@@ -41,12 +62,24 @@ const SECONDS_PER_MINUTE = 60;
 const WATCH_INTERVAL_MS = 1000;
 
 // How many looks in a row may find a program not running, once it has
-// been seen running, before the strip stops waiting for it; how long a
-// program never seen is waited on (its files may still be downloading,
-// or the command failed); and the longest the strip waits at all.
+// been seen running, before the strip stops waiting for it.
 const ABSENT_LOOKS = 3;
+
+// How long a program never seen running is waited on: the command
+// failed, or the program exited between two looks. Time with a
+// download in flight is left out (startLook), since the program's own
+// files may still be on their way.
 const UNSEEN_GRACE_MS = 20_000;
-const START_LIMIT_MS = 180_000;
+
+// The longest the strip waits for a program, again leaving out time
+// with a download in flight. The limit ends the wait for a program that
+// links X11 or Wayland, opens no window and does not take the screen,
+// such as a REPL. firefox's first start is 37 s on a laptop
+// (docs/gui.md); 15 minutes is 24 times that, for a phone or a guest
+// nested in another trynix guest, where a 3 minute limit ran out with
+// firefox still starting.
+const START_LIMIT_MINUTES = 15;
+const START_LIMIT_MS = START_LIMIT_MINUTES * SECONDS_PER_MINUTE * MS_PER_SECOND;
 
 // How long the strip stays open after the last thing it showed ended,
 // so a run of small downloads does not open and close it each time.
@@ -65,6 +98,16 @@ export function commandProgram(line) {
     return null;
   }
   return word.slice(word.lastIndexOf("/") + 1);
+}
+
+// Where a command line runs its first command: in the background when
+// a lone & ends it, in the foreground otherwise.
+export function commandJob(line) {
+  const end = line.match(COMMAND_END);
+  if (end === null || !end[0].endsWith(BACKGROUND_END)) {
+    return Job.FOREGROUND;
+  }
+  return Job.BACKGROUND;
 }
 
 // A line being typed, after `data` is sent: printable text added, a
@@ -144,43 +187,106 @@ export function activityLine({ starting, downloads, now }) {
   };
 }
 
+// The time downloads have been in flight, over the page's life: a
+// clock that runs while at least one download is in flight, told the
+// count as it changes and read at `now`, in milliseconds.
+export function downloadClock() {
+  // The time from runs that ended, and when the one running began, or
+  // null while none is in flight.
+  let totalMs = 0;
+  let since = null;
+
+  return {
+    inFlight(count, now) {
+      if (count > 0 && since === null) {
+        since = now;
+        return;
+      }
+      if (count === 0 && since !== null) {
+        totalMs += now - since;
+        since = null;
+      }
+    },
+    read(now) {
+      return since === null ? totalMs : totalMs + (now - since);
+    },
+  };
+}
+
 // One look at a program starting: whether the wait is over, and what to
 // carry to the next look. Over once a window more than before has
-// appeared; once the program, seen running, has been gone for
-// ABSENT_LOOKS looks; once a program never seen has had its grace; and
-// at START_LIMIT_MS.
+// appeared; once the program, run in the foreground, has switched the
+// terminal to its alternate screen; once the program, seen running, has
+// been gone for ABSENT_LOOKS looks; once a program never seen has had
+// its grace; and at START_LIMIT_MS. `elapsedMs` is the time since the
+// command, and `downloadingMs` the part of it with a download in
+// flight, which the limits leave out.
 export function startLook({
   windowsBefore,
   windowsNow,
+  job,
+  screenBefore,
+  screenNow,
   running,
   seen,
   absent,
   elapsedMs,
+  downloadingMs,
 }) {
-  if (windowsNow > windowsBefore || elapsedMs > START_LIMIT_MS) {
+  // A window more than before: the program has opened its first one.
+  if (windowsNow > windowsBefore) {
     return { done: true, seen, absent };
   }
+
+  // A foreground program that switched the terminal to the alternate
+  // screen is a full-screen terminal program the reader now uses, like
+  // emacs -nw, and opens no window. For a program in the background the
+  // alternate screen is another program's, such as top opened while
+  // firefox starts, and a screen already alternate when the command was
+  // entered belongs to a program like tmux; neither ends the wait.
+  if (
+    job === Job.FOREGROUND &&
+    screenBefore !== Screen.ALTERNATE &&
+    screenNow === Screen.ALTERNATE
+  ) {
+    return { done: true, seen, absent };
+  }
+
+  // Time with a download in flight is progress, since the program waits
+  // for its files: the limits count only the rest.
+  const waitedMs = elapsedMs - downloadingMs;
+  if (waitedMs > START_LIMIT_MS) {
+    return { done: true, seen, absent };
+  }
+
+  // Running: wait on, and start the count of absent looks over.
   if (running) {
     return { done: false, seen: true, absent: 0 };
   }
+
+  // Never seen running: wait out the grace.
   if (!seen) {
-    return { done: elapsedMs > UNSEEN_GRACE_MS, seen, absent };
+    return { done: waitedMs > UNSEEN_GRACE_MS, seen, absent };
   }
+
+  // Seen running, and now gone: over after ABSENT_LOOKS looks.
   const gone = absent + 1;
   return { done: gone >= ABSENT_LOOKS, seen, absent: gone };
 }
 
 // The strip on the page. `element` is the strip; `windowCount()` says
-// how many GUI windows the page shows, and `isRunning(program)` resolves
+// how many GUI windows the page shows, `screen()` which of the
+// terminal's screens shows (Screen), and `isRunning(program)` resolves
 // to whether a process of that name runs in the guest.
-export function activityStrip({ element, windowCount, isRunning }) {
+export function activityStrip({ element, windowCount, screen, isRunning }) {
   const primary = element.querySelector(".activity-primary");
   const secondary = element.querySelector(".activity-secondary");
   const elapsed = element.querySelector(".activity-elapsed");
   const fill = element.querySelector(".activity-fill");
 
-  // Downloads in flight, by basename.
+  // Downloads in flight, by basename, and the time any have been.
   const downloads = new Map();
+  const downloading = downloadClock();
   // The program starting, or null, and its watch.
   let starting = null;
   let watch = null;
@@ -247,6 +353,7 @@ export function activityStrip({ element, windowCount, isRunning }) {
     // more at a time; it ended, whichever way.
     downloadStarted(basename, total) {
       downloads.set(basename, { basename, bytes: 0, total });
+      downloading.inFlight(downloads.size, Date.now());
       render();
     },
     downloadBytes(basename, bytes) {
@@ -259,16 +366,20 @@ export function activityStrip({ element, windowCount, isRunning }) {
     },
     downloadEnded(basename) {
       downloads.delete(basename);
+      downloading.inFlight(downloads.size, Date.now());
       render();
     },
 
     // A command line was entered that starts `program`, which opens
-    // windows: wait for a window more than the page shows now, or for
+    // windows, as `job` (Job): wait for a window more than the page
+    // shows now, for the program to take the terminal's screen, or for
     // the program to be gone. A new command replaces the one waited on.
-    started(program) {
+    started(program, job) {
       stopStarting();
       const windowsBefore = windowCount();
+      const screenBefore = screen();
       const since = Date.now();
+      const downloadedBefore = downloading.read(since);
       starting = { program, since };
       let carried = { seen: false, absent: 0 };
       let looking = false;
@@ -284,12 +395,17 @@ export function activityStrip({ element, windowCount, isRunning }) {
         if (starting?.since !== since) {
           return;
         }
+        const now = Date.now();
         const look = startLook({
           windowsBefore,
           windowsNow: windowCount(),
+          job,
+          screenBefore,
+          screenNow: screen(),
           running,
           ...carried,
-          elapsedMs: Date.now() - since,
+          elapsedMs: now - since,
+          downloadingMs: downloading.read(now) - downloadedBefore,
         });
         carried = { seen: look.seen, absent: look.absent };
         if (look.done) {
