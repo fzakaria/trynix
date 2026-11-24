@@ -69,12 +69,14 @@ VERSION_LINE = "hello (GNU Hello) {}"
 # added, in each of the engine's download modes (site/js/downloads.js,
 # the link's fetch), with the added version's NAR refused on the first
 # try. A refused download fails in the page as a dropped connection
-# does, and the addition's progress row says so.
+# does, and the addition's progress row says so. The boot tool's answer
+# for a failed addition opens with ADDITION_FAILED.
 RETRY_ENGINE = "unkernel"
 DOWNLOAD_MODES = ["lazy", "all"]
 REFUSED_PATH_SUFFIX = f"-{PACKAGE}-{BOTH_VERSIONS[1]}"
 REFUSAL_MESSAGE = "Failed to fetch"
 FAILED_ROW = "document.querySelector('#boot-progress .failed')?.textContent ?? ''"
+ADDITION_FAILED = "the addition failed: "
 
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
@@ -409,11 +411,14 @@ def check_retried_addition(browser, checks, base, mode):
 
     The first of BOTH_VERSIONS is booted with downloads in `mode`, and
     the second is added while its NAR is refused, so the addition fails.
-    Then the NAR is let through and boot is called again: the retry has
-    to link the second version's programs, so hello --version says the
-    second version. The first try used to record the second version as
-    the guest's before its download, and the retry, finding it recorded,
-    linked nothing: hello --version still said 2.10.
+    The boot tool has to say so and why, as the progress row does: it
+    used to answer that the packages were added, which left a caller no
+    reason to retry. Then the NAR is let through and boot is called
+    again: the retry has to link the second version's programs, so
+    hello --version says the second version. The first try used to
+    record the second version as the guest's before its download, and
+    the retry, finding it recorded, linked nothing: hello --version
+    still said 2.10.
     """
     print(f"an addition retried after its download failed, downloads {mode}")
 
@@ -442,6 +447,8 @@ def check_retried_addition(browser, checks, base, mode):
         failed = browser.evaluate(FAILED_ROW)
         print(f"  {failed}")
         checks.true("the addition's row failed", REFUSAL_MESSAGE in failed)
+        checks.true("the boot tool says the addition failed", said.startswith(ADDITION_FAILED))
+        checks.true("the boot tool says why", REFUSAL_MESSAGE in said)
 
         # The retry, with the NAR let through.
         browser.evaluate("window.refuseTest.refusing = false")

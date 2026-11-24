@@ -1931,6 +1931,10 @@ rebootLink.addEventListener("click", (event) => {
 // lookups straight through to it, and the programs land as links in
 // the one directory the guest already has on PATH. Only paths it does
 // not already have are fetched.
+//
+// Resolves to null once the selection is in the guest, or to why the
+// addition failed, in the words its progress row fails with. The boot
+// tool answers with it, so an agent knows the addition needs a retry.
 async function addToRunningVM() {
   // Count only new selected roots when extending an existing guest.
   const entries = [...selection.values()].filter(
@@ -1983,7 +1987,7 @@ async function addToRunningVM() {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
       refreshBootButton();
-      return;
+      return null;
     }
 
     stage = LoadStage.DOWNLOAD;
@@ -2000,7 +2004,7 @@ async function addToRunningVM() {
         telemetry,
       });
       addition.done();
-      return;
+      return null;
     }
     const infos = [...fresh.values()];
     row.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
@@ -2030,9 +2034,12 @@ async function addToRunningVM() {
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
+    return null;
   } catch (err) {
     telemetry.finish(stage);
-    row.fail(String(err));
+    const reason = String(err);
+    row.fail(reason);
+    return reason;
   } finally {
     refreshBootButton();
   }
@@ -2373,7 +2380,9 @@ const page = {
     ),
 
   // A guest that is already running takes the new paths without a
-  // reboot, which is the same thing the button does once it is up.
+  // reboot, which is the same thing the button does once it is up. An
+  // addition that fails says why, as its progress row does, so the
+  // caller knows to call boot again.
   async boot() {
     // The button is disabled for a path no cache holds, so the tool
     // answers the same way instead of downloading toward a failure.
@@ -2382,7 +2391,10 @@ const page = {
       return `the boot did not start: ${missingNote(missing)}`;
     }
     if (vmStarted) {
-      await addToRunningVM();
+      const failure = await addToRunningVM();
+      if (failure !== null) {
+        return `the addition failed: ${failure}; call boot again to retry it`;
+      }
       return `added to the running guest; ${mounted.size} paths mounted`;
     }
     await boot();
