@@ -11,9 +11,34 @@
 
 importScripts("../vendor/xzwasm.js", "../vendor/fzstd.js");
 
+// A copy of store.js's unzstd, which says why the archive goes to the
+// decoder in pieces: a module's export is out of reach of a classic
+// worker.
+const ZSTD_CHUNK = 1024 * 1024;
+
+function unzstd(compressed) {
+  const parts = [];
+  let total = 0;
+  const decoder = new fzstd.Decompress((part) => {
+    parts.push(part);
+    total += part.byteLength;
+  });
+  for (let at = 0; at < compressed.byteLength; at += ZSTD_CHUNK) {
+    const end = at + ZSTD_CHUNK;
+    decoder.push(compressed.subarray(at, end), end >= compressed.byteLength);
+  }
+  const nar = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    nar.set(part, offset);
+    offset += part.byteLength;
+  }
+  return nar;
+}
+
 async function decode(compression, bytes) {
   if (compression === "zstd") {
-    return fzstd.decompress(bytes);
+    return unzstd(bytes);
   }
   const stream = new xzwasm.XzReadableStream(new Response(bytes).body);
   return new Uint8Array(await new Response(stream).arrayBuffer());

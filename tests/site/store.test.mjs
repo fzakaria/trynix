@@ -260,6 +260,84 @@ test(
   },
 );
 
+// Tests the zstd path against the vendored decoder, fed in pieces the
+// way store.js feeds it (unzstd says why). fzstd is a UMD script the
+// page loads with a <script> tag; run as a script here, it sets the
+// same global store.js reads. Skipped, like the bzip2 tests, where
+// site/vendor has not been assembled.
+import { runInThisContext } from "node:vm";
+import { unzstd } from "../../site/js/store.js";
+
+const fzstdScript = new URL("../../site/vendor/fzstd.js", import.meta.url);
+if (existsSync(fzstdScript)) {
+  runInThisContext(await readFile(fzstdScript, "utf8"));
+}
+const noFzstd =
+  globalThis.fzstd === undefined &&
+  "site/vendor is only assembled by the nix build";
+
+const zstdFrame = new URL("../fixtures/sample.nar.zst", import.meta.url);
+
+// 5,000 frames is 1.1 MB, which crosses one piece boundary mid-frame.
+// zstd frames concatenate as bzip2 streams do, and what it asserts
+// through is NarHash over every copy.
+test(
+  "a zstd archive longer than one piece unpacks whole",
+  { skip: noFzstd },
+  async () => {
+    const nar = new Uint8Array(await readFile(narFixture));
+    const frame = new Uint8Array(await readFile(zstdFrame));
+    const copies = 5000;
+    const compressed = new Uint8Array(frame.byteLength * copies);
+    const unpacked = new Uint8Array(nar.byteLength * copies);
+    for (let i = 0; i < copies; i += 1) {
+      compressed.set(frame, i * frame.byteLength);
+      unpacked.set(nar, i * nar.byteLength);
+    }
+    globalThis.fetch = async () => new Response(compressed);
+
+    const info = narinfo(unpacked, {
+      compression: "zstd",
+      narHash: `sha256:${createHash("sha256").update(unpacked).digest("hex")}`,
+    });
+    const entries = await fetchNar(info, () => {});
+    assert.equal(entries.length > 0, true);
+  },
+);
+
+// The smallest archive the one-shot decoder failed on: one frame whose
+// first 256 MiB are raw blocks of zeroes, then the fixture's compressed
+// block. Raw blocks are copied without bit offsets; the compressed
+// block's sequences are where the offsets wrapped.
+test("a zstd frame past 256 MiB unpacks", { skip: noFzstd }, async () => {
+  const nar = new Uint8Array(await readFile(narFixture));
+  const frame = new Uint8Array(await readFile(zstdFrame));
+  // The fixture's header is 7 bytes: magic, a descriptor saying single
+  // segment, two-byte content size and no checksum, then its one block.
+  assert.equal(frame[4], 0x60);
+  const block = frame.subarray(7);
+
+  const raw = 128 * 1024;
+  const raws = 2 ** 28 / raw;
+  // Magic, a descriptor with no content size, a 128 KiB window.
+  const header = [0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x38];
+  const archive = new Uint8Array(
+    header.length + raws * (3 + raw) + block.byteLength,
+  );
+  archive.set(header);
+  let at = header.length;
+  for (let i = 0; i < raws; i += 1) {
+    // A raw block of 128 KiB, not the last.
+    archive.set([0x00, 0x00, 0x10], at);
+    at += 3 + raw;
+  }
+  archive.set(block, at);
+
+  const out = unzstd(archive);
+  assert.equal(out.byteLength, raws * raw + nar.byteLength);
+  assert.deepEqual(out.subarray(raws * raw), nar);
+});
+
 // Checks a package whose bin is a symlink to a directory inside it, as
 // openjdk's is (bin -> lib/openjdk/bin): its programs are what that
 // directory holds, reached through bin. A bin that points out of the
