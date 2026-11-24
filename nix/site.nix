@@ -1,7 +1,8 @@
 # `nix build .#site` — the whole deployable tree, so the pages workflow
 # only has to upload what nix built:
 #
-#   index.html, style.css, js.<hash>/   the site itself
+#   index.html, style.<hash>.css,       the site itself
+#   js.<hash>/
 #   vendor/                             pinned browser dependencies,
 #                                       the unkernel engine among them
 #   qemu/                               the qemu engine and the snapshot
@@ -90,6 +91,18 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mv $out/certs "$out/certs.$hash"
   substituteInPlace $out/js/config.js \
     --replace-fail '"certs"' "\"certs.$hash\""
+
+  # The stylesheet, renamed after a hash of its contents as js/ is
+  # below. Under one fixed name a browser could keep an earlier deploy's
+  # stylesheet and pair it with the new modules: GitHub Pages lets it
+  # keep files for ten minutes, and `nix run .#serve` serves the store's
+  # 1970 mtimes, which let it keep them for years.
+  hash=$(sha256sum $out/style.css | cut -c1-12)
+  mv $out/style.css "$out/style.$hash.css"
+  substituteInPlace $out/index.html \
+    --replace-fail 'href="style.css"' "href=\"style.$hash.css\""
+  substituteInPlace $out/bench/index.html \
+    --replace-fail 'href="../style.css"' "href=\"../style.$hash.css\""
 
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).
