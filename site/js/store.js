@@ -10,7 +10,9 @@
 // vendored UMD scripts the page loads, so globals are used for those
 // rather than imports; the bzip2 decoder is wasm and is imported the
 // first time a boot meets a bzip2 path, which for most boots is never.
-/* global xzwasm, fzstd */
+// unzstd.js, which feeds fzstd, is a classic script the decode workers
+// share, so it is imported for the global it sets.
+/* global xzwasm, unzstd */
 
 import { CACHE_URL, NAR_CONCURRENCY } from "./config.js";
 import { workerPool } from "./pool.js";
@@ -20,6 +22,7 @@ import { evictFromCache } from "./cache.js";
 import { verifyHash } from "./hash.js";
 import { log } from "./log.js";
 import { programDirectory } from "./listing.js";
+import "./unzstd.js";
 
 // Decompression happens in workers where the browser has them, several
 // archives at once, and on this thread, one at a time, where it does
@@ -235,7 +238,11 @@ async function decompressInWorker(info, compressed) {
 
   try {
     const { nar } = await pool.run(
-      { compression: info.compression, bytes: compressed },
+      {
+        compression: info.compression,
+        bytes: compressed,
+        narSize: info.narSize,
+      },
       [compressed.buffer],
     );
     return nar;
@@ -268,7 +275,7 @@ async function decompress(info, compressed) {
   return serialize(async () => {
     try {
       if (info.compression === "zstd") {
-        return unzstd(compressed);
+        return unzstd(compressed, info.narSize);
       }
       if (info.compression === "bzip2") {
         return await unbzip2(compressed, info.narSize);
@@ -401,31 +408,6 @@ async function unbzip2(compressed, narSize) {
     throw new Error(`unpacked to ${filled} bytes, narinfo says ${narSize}`);
   }
   return nar;
-}
-
-// How much of a zstd archive is handed to the decoder at a time.
-//
-// Not a detail either. fzstd's one-shot decompress() works out bit
-// offsets into its whole input with 32-bit arithmetic, so past 256 MiB
-// of compressed archive they wrap and a sound archive fails as "invalid
-// zstd data": wesnoth 1.18.8's is 405 MiB. The streaming decoder only
-// offsets into the piece it was handed plus at most one unfinished
-// block, so fed in pieces it reads an archive of any size.
-// decode-worker.js keeps a copy of this for the workers.
-const ZSTD_CHUNK = 1024 * 1024;
-
-export function unzstd(compressed) {
-  const parts = [];
-  let total = 0;
-  const decoder = new fzstd.Decompress((part) => {
-    parts.push(part);
-    total += part.byteLength;
-  });
-  for (let at = 0; at < compressed.byteLength; at += ZSTD_CHUNK) {
-    const end = at + ZSTD_CHUNK;
-    decoder.push(compressed.subarray(at, end), end >= compressed.byteLength);
-  }
-  return concat(parts, total);
 }
 
 function concat(parts, total) {

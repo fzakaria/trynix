@@ -4,49 +4,25 @@
 //
 // A classic worker rather than a module, because the two decoders are
 // the same vendored UMD scripts the page loads, and importScripts is
-// how a worker loads those. The bzip2 decoder is not here: the page
-// keeps that one path, which the cache serves only for the oldest
-// packages, on its own thread.
-/* global importScripts, xzwasm, fzstd */
+// how a worker loads those. unzstd.js, which feeds fzstd and which
+// store.js uses too, is a classic script for the same reason. The bzip2
+// decoder is not here: the page keeps that one path, which the cache
+// serves only for the oldest packages, on its own thread.
+/* global importScripts, xzwasm, unzstd */
 
-importScripts("../vendor/xzwasm.js", "../vendor/fzstd.js");
+importScripts("../vendor/xzwasm.js", "../vendor/fzstd.js", "unzstd.js");
 
-// A copy of store.js's unzstd, which says why the archive goes to the
-// decoder in pieces: a module's export is out of reach of a classic
-// worker.
-const ZSTD_CHUNK = 1024 * 1024;
-
-function unzstd(compressed) {
-  const parts = [];
-  let total = 0;
-  const decoder = new fzstd.Decompress((part) => {
-    parts.push(part);
-    total += part.byteLength;
-  });
-  for (let at = 0; at < compressed.byteLength; at += ZSTD_CHUNK) {
-    const end = at + ZSTD_CHUNK;
-    decoder.push(compressed.subarray(at, end), end >= compressed.byteLength);
-  }
-  const nar = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    nar.set(part, offset);
-    offset += part.byteLength;
-  }
-  return nar;
-}
-
-async function decode(compression, bytes) {
+async function decode(compression, bytes, narSize) {
   if (compression === "zstd") {
-    return unzstd(bytes);
+    return unzstd(bytes, narSize);
   }
   const stream = new xzwasm.XzReadableStream(new Response(bytes).body);
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-self.onmessage = async ({ data: { id, compression, bytes } }) => {
+self.onmessage = async ({ data: { id, compression, bytes, narSize } }) => {
   try {
-    let nar = await decode(compression, bytes);
+    let nar = await decode(compression, bytes, narSize);
 
     // The archive is handed back by giving up its buffer, which only
     // works for an array that is the whole of its buffer; a decoder
