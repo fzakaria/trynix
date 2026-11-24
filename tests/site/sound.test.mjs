@@ -6,10 +6,12 @@
 // much is queued), and the clip the page holds until the reader's first
 // click lets it play, which leaves out the silence before the first
 // sound. Each is driven directly, with plain arrays for the worklet's
-// output channels.
+// output channels. Last, the page's side (site/js/sound.js): the delay
+// it tells the guest for each chunk, with Web Audio faked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { createSoundOut } from "../../site/js/sound.js";
 import {
   HeldClip,
   isSilent,
@@ -158,4 +160,71 @@ test("the held clip drops the silence before the first sound", () => {
     taken.map((piece) => piece.d[0]),
     [0.5, 0],
   );
+});
+
+// A page whose reader has clicked, with a Web Audio that runs at once
+// and a worklet whose port transfers what is posted to it, as a real
+// port does: the posted samples' buffer is emptied on the page's side.
+// Returns the messages the worklet was sent.
+function fakeWebAudio() {
+  const posted = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { userActivation: { hasBeenActive: true } },
+  });
+  globalThis.AudioContext = class {
+    state = "running";
+    sampleRate = RATE;
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    addEventListener() {}
+    createGain() {
+      return { gain: { value: 1 }, connect() {} };
+    }
+  };
+  globalThis.AudioWorkletNode = class {
+    port = {
+      postMessage(message, transfer = []) {
+        posted.push(structuredClone(message, { transfer }));
+      },
+    };
+    connect() {}
+  };
+  return posted;
+}
+
+// The console bar's sound control, as far as sound.js touches it.
+const fakeControl = () => ({
+  hidden: true,
+  dataset: {},
+  textContent: "",
+  title: "",
+  addEventListener() {},
+});
+
+// Checks the delay the page tells the guest for a chunk it plays: the
+// chunk's own frames count as queued until the worklet next says how
+// much it holds. The chunk's samples are transferred to the worklet,
+// which leaves the page's copy empty, so a count made after the post
+// counted nothing and the guest heard a stale delay. Drives the sink
+// as unkernel's SDK does: a stream about to start, then one chunk of
+// 480 stereo frames at RATE.
+test("a chunk played counts toward the delay the guest is told", async () => {
+  const posted = fakeWebAudio();
+  const sound = createSoundOut({ log: () => {}, control: fakeControl() });
+  sound.onState({ playing: true }, "prepare");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const frames = 480;
+  const channels = 2;
+  const bytesPerSample = 2;
+  const delay = sound.onChunk({
+    data: new Uint8Array(frames * channels * bytesPerSample),
+    format: { format: SoundFormat.S16_LE, channels, rate: RATE },
+  });
+
+  assert.equal(delay, frames);
+  const pcm = posted.filter((message) => message.kind === "pcm");
+  assert.equal(pcm.length, 1);
+  assert.equal(pcm[0].samples.length, frames * channels);
 });

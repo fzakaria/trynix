@@ -138,12 +138,16 @@ export function createSoundOut({
     control.title = TITLES[state];
   }
 
-  // Post one chunk to the worklet.
+  // Post one chunk to the worklet, and count it as queued until the
+  // worklet next says how much it holds. The chunk's length is read
+  // before the post: the post transfers the samples' buffer, which
+  // leaves `samples` empty on this side.
   function post(samples, channels, rate, overflow) {
+    const seconds = samples.length / channels / rate;
     node.port.postMessage({ kind: "pcm", samples, channels, rate, overflow }, [
       samples.buffer,
     ]);
-    queuedSeconds += samples.length / channels / rate;
+    queuedSeconds += seconds;
   }
 
   // Hand the worklet what was held, whole. A stream that is over by
