@@ -63,9 +63,11 @@ jobs:
       # as GitHub Pages serves it, so the shim's service worker reloads
       # the page. Every run below serves the real headers and never sees
       # that reload; a link that lost its packages to the reload went
-      # unnoticed. Firefox too, since its reload is the one that lands
-      # after the page has written the address. No network: the test
-      # holds the index and answers for the index itself.
+      # unnoticed. The cases put the reload before and after the index's
+      # answer, stop it for good, and fail the index. Firefox too, since
+      # its reload is the one that lands after the page has written the
+      # address. No network: the test holds the index and answers for
+      # the index itself.
       - name: Keeps a shared link through the first visit
         run: |
           site="$(nix build .#site --no-link --print-out-paths)"

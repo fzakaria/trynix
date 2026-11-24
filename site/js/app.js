@@ -59,6 +59,7 @@ import {
 import { registerTools } from "./webmcp.js";
 import { RangeComplete } from "./complete.js";
 import { readUrl, whileRestoring, writeUrl } from "./url.js";
+import { isolationOf, LinkBoot, linkBootOf } from "./isolation.js";
 import {
   holdsPath,
   NOT_FOUND,
@@ -210,6 +211,8 @@ function toggle(entry) {
 
 function select(entry) {
   selection.set(entry.digest, entry);
+  // A change to the selection ends a failed link's hold on the address.
+  unrestored = null;
   render();
   probe(entry);
   if (entry.attr === undefined) {
@@ -258,6 +261,8 @@ async function name(entry) {
 function deselect(digest) {
   selection.delete(digest);
   notes = [];
+  // A change to the selection ends a failed link's hold on the address.
+  unrestored = null;
   render();
 }
 
@@ -348,19 +353,43 @@ let linkedSound = readUrl().sound;
 
 // The link the page was opened with, while restore() is still looking
 // the link's packages up in the index, or null. Until the restore is
-// done every link the page writes keeps the opening link's packages,
-// paths and boot flag (url.js, whileRestoring).
+// done every link the page writes keeps the opening link's packages
+// and paths (url.js, whileRestoring).
 let opening = null;
+
+// The link the page was opened with, after a restore that failed, or
+// null. The address keeps the link's packages and paths, so a reload
+// tries the link again, until the selection changes.
+let unrestored = null;
+
+// Whether the boot a link asked for (boot=1) is still to start. The
+// address keeps boot=1 until a boot starts, so a reload before then
+// boots: the reader's reload, or on a first visit the COOP/COEP shim's.
+let linkedBoot = false;
+
+// What the status line says while a link's boot waits for the shim's
+// reload (restored, below).
+const WAITING_FOR_ISOLATION =
+  "the boot waits for the page to reload with cross-origin isolation";
+
+// This load's cross-origin isolation (isolation.js). Read once, before
+// the shim's worker can take control of the page, which would not
+// isolate this load.
+const ISOLATION = isolationOf({
+  crossOriginIsolated: globalThis.crossOriginIsolated,
+  isSecureContext: globalThis.isSecureContext,
+  serviceWorker: globalThis.navigator?.serviceWorker,
+});
 
 // The link for what is on screen, as a URL relative to this page.
 // `engine` names an engine for the link in place of the one
 // linkEngine picks, which is how the guest choice under Settings moves
 // the page to the other engine with every other setting kept.
 function link({ boot = false, engine = null } = {}) {
-  const shown = whileRestoring(urlState(), { boot, opening });
-  return writeUrl(shown.state, {
-    boot: shown.boot,
-    engine: engine ?? linkEngine(shown.state),
+  const state = whileRestoring(urlState(), opening ?? unrestored);
+  return writeUrl(state, {
+    boot: boot || linkedBoot,
+    engine: engine ?? linkEngine(state),
     memory: linkedMemory,
     cpus: linkedCpus,
     downloads: linkedDownloads,
@@ -1629,6 +1658,13 @@ async function boot() {
     return;
   }
 
+  // The boot a link asked for has started: boot=1 leaves the address,
+  // so a reload from here on offers the boot rather than starting a
+  // second one, and the status line stops saying the boot waits.
+  linkedBoot = false;
+  notes = notes.filter((note) => note !== WAITING_FOR_ISOLATION);
+  render();
+
   bootSection.hidden = false;
   bootButton.disabled = true;
   consoleVeil.hidden = false;
@@ -2115,6 +2151,50 @@ async function restore({ pkgs, paths }, selectionMethod = SelectionMethod.URL) {
   }
 }
 
+// The opening link is restored. The address goes back to describing
+// the selection, and the boot the link asked for starts, or waits for
+// the shim's reload (isolation.js, linkBootOf).
+function restored() {
+  opening = null;
+  const start = linkBootOf({
+    asked: linkedBoot,
+    selected: selection.size,
+    isolation: ISOLATION,
+  });
+
+  // No boot: nothing for boot=1 to start, so it leaves the address.
+  if (start === LinkBoot.NONE) {
+    linkedBoot = false;
+    render();
+    return;
+  }
+
+  // The shim is about to reload the page, which would cut a boot short;
+  // boot=1 stays in the address for the reloaded page.
+  if (start === LinkBoot.AFTER_RELOAD) {
+    setNotes([...notes, WAITING_FOR_ISOLATION]);
+    return;
+  }
+
+  // Boot now: the page is isolated, or never will be, in which case the
+  // boot says what it lacks or runs on one CPU.
+  render();
+  boot();
+}
+
+// The opening link could not be restored, because the index could not
+// be read. The page says so, and the address keeps the link, boot=1
+// included, so a reload tries again.
+function unrestorable(err) {
+  unrestored = opening;
+  opening = null;
+  log(`restoring the link failed: ${err.message}`);
+  setNotes([
+    ...notes,
+    `the package index could not be read (${err.message}); reload to try again`,
+  ]);
+}
+
 // Warm the cache while the reader is still choosing. The engine, the
 // guest image and the snapshot are the same bytes for every boot and
 // none of them depend on the selection, so they can be on their way
@@ -2149,10 +2229,12 @@ async function prefetch() {
 const initial = readUrl();
 
 // A link naming packages or paths holds the address until restore()
-// has selected the link's packages and paths. Set before the first
-// redraw, which applyCaches does.
+// has selected the link's packages and paths, and holds the link's
+// boot=1 until a boot starts. Set before the first redraw, which
+// applyCaches does.
 if (initial.pkgs.length > 0 || initial.paths.length > 0) {
   opening = initial;
+  linkedBoot = initial.boot;
 }
 applyCaches(initial.caches);
 
@@ -2172,18 +2254,7 @@ if (!initial.boot) {
 }
 render();
 if (opening !== null) {
-  restore(initial)
-    .finally(() => {
-      // The restore is over, whatever the index answered, so the
-      // address goes back to describing the selection.
-      opening = null;
-      render();
-    })
-    .then(() => {
-      if (initial.boot && selection.size > 0) {
-        boot();
-      }
-    });
+  restore(initial).then(restored, unrestorable);
 }
 
 // The site build substitutes the derivation's own $out into STORE_PATH, so

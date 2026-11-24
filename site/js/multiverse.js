@@ -35,23 +35,41 @@ export const shardOf = (attr) =>
 
 const shardCache = new Map();
 
+// The status a missing shard answers with, as opposed to one the index
+// failed to serve.
+const HTTP_NOT_FOUND = 404;
+
 function fetchShard(dir, attr) {
   const key = `${dir}/${shardOf(attr)}`;
-  if (!shardCache.has(key)) {
-    shardCache.set(
-      key,
-      fetch(`${MULTIVERSE_URL}/${key}.json`).then((res) => {
-        // A missing shard means no attribute starts with those
-        // characters, which is the same answer as a shard that loads
-        // and does not hold it.
-        if (!res.ok) {
-          return { attrs: {} };
-        }
-        return res.json();
-      }),
-    );
+  if (shardCache.has(key)) {
+    return shardCache.get(key);
   }
-  return shardCache.get(key);
+
+  const shard = fetch(`${MULTIVERSE_URL}/${key}.json`).then((res) => {
+    // A missing shard means no attribute starts with those characters,
+    // which is the same answer as a shard that loads and does not hold
+    // it.
+    if (res.status === HTTP_NOT_FOUND) {
+      return { attrs: {} };
+    }
+    // Any other failure says nothing about what the index holds, and
+    // answering "not in the index" for it would be a wrong answer.
+    if (!res.ok) {
+      throw new Error(`${key}.json answered ${res.status}`);
+    }
+    return res.json();
+  });
+  shardCache.set(key, shard);
+
+  // A shard that could not be read is dropped from the cache, so the
+  // next lookup fetches it again rather than failing on the cached
+  // failure for the life of the page.
+  shard.catch(() => {
+    if (shardCache.get(key) === shard) {
+      shardCache.delete(key);
+    }
+  });
+  return shard;
 }
 
 let namesPromise;

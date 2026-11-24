@@ -194,17 +194,17 @@ const TRY_LINK = "?pkg=firefox&mem=2048&run=firefox+%26&boot=1";
 
 // Checks that the address keeps the link the page opened with while
 // the selection is still empty: an empty selection, written through
-// whileRestoring and writeUrl with the link's settings, gives back the
-// link's packages, paths and boot flag.
+// whileRestoring and writeUrl with the link's settings and boot flag
+// (which the page carries on its own), gives back the link's packages
+// and paths.
 test("the address keeps the opening link during the restore", () => {
   at(TRY_LINK);
   const opening = readUrl();
   const empty = { pkgs: [], paths: [], caches: [] };
 
-  const shown = whileRestoring(empty, { boot: false, opening });
   assert.equal(
-    writeUrl(shown.state, {
-      boot: shown.boot,
+    writeUrl(whileRestoring(empty, opening), {
+      boot: opening.boot,
       memory: opening.memory,
       run: opening.run,
     }),
@@ -212,37 +212,30 @@ test("the address keeps the opening link during the restore", () => {
   );
 
   at(`?path=${encodeURIComponent(STORE_PATH)}`);
-  const paths = whileRestoring(empty, { boot: false, opening: readUrl() });
-  assert.deepEqual(paths.state.paths, [STORE_PATH]);
-  assert.equal(paths.boot, false);
+  assert.deepEqual(whileRestoring(empty, readUrl()).paths, [STORE_PATH]);
 });
 
-// Checks that the caches and a boot the caller asks for still come
-// from the page while the link is restored: a reboot's boot=1 stands
-// whatever the link said, and a cache added meanwhile stays in.
-test("the page's caches and boot stand while the link is restored", () => {
+// Checks that the caches still come from the page while the link is
+// restored: a cache added meanwhile stays in beside the link's
+// packages.
+test("the page's caches stand while the link is restored", () => {
   at("?pkg=hello");
   const opening = readUrl();
   const cache = { url: "https://x.cachix.org", key: "x-1:key=" };
   const state = { pkgs: [], paths: [], caches: [cache] };
 
-  const shown = whileRestoring(state, { boot: true, opening });
-  assert.deepEqual(shown.state.caches, [cache]);
-  assert.deepEqual(shown.state.pkgs, [{ attr: "hello", version: null }]);
-  assert.equal(shown.boot, true);
+  const shown = whileRestoring(state, opening);
+  assert.deepEqual(shown.caches, [cache]);
+  assert.deepEqual(shown.pkgs, [{ attr: "hello", version: null }]);
 });
 
-// Checks that once the restore is done (no opening link) the address
-// describes the selection alone, with the boot flag the caller asked
-// for and nothing from the link.
+// Checks that once the page lets go of the link (no opening link) the
+// address describes the selection alone.
 test("the address describes the selection once the link is restored", () => {
   const state = {
     pkgs: [{ attr: "firefox", version: "130.0" }],
     paths: [],
     caches: [],
   };
-  assert.deepEqual(whileRestoring(state, { boot: false, opening: null }), {
-    state,
-    boot: false,
-  });
+  assert.equal(whileRestoring(state, null), state);
 });

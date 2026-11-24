@@ -12,6 +12,7 @@ import {
   compareVersions,
   mergeVersions,
   multiverseUrl,
+  versionsOf,
 } from "../../site/js/multiverse.js";
 import { matches, parseSpecs } from "../../site/js/ranges.js";
 
@@ -131,4 +132,73 @@ test("a range accepts the lettered releases after a version", () => {
   assert.equal(matches(spec, "1.1.1a"), true);
   assert.equal(matches(spec, "1.1.1"), false);
   assert.equal(matches(spec, "1.1.0l"), false);
+});
+
+// Stand-in fetches for the index tests below: each answers its calls in
+// order from `answers`, an Error to throw or a Response to resolve
+// with, and counts them. The real fetch is put back after each test.
+function stubFetch(t, answers) {
+  const real = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = real;
+  });
+  const stub = { calls: 0 };
+  globalThis.fetch = async () => {
+    const answer = answers[stub.calls];
+    stub.calls += 1;
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer;
+  };
+  return stub;
+}
+
+// A meta shard holding one built version of `attr`, as a response.
+const metaShard = (attr) =>
+  new Response(JSON.stringify({ attrs: { [attr]: { "1.0": entry("d") } } }));
+
+// Each test below asks for an attribute in a shard of its own: the
+// page's shard cache lives as long as the module, so a shard another
+// test loaded would answer without a fetch.
+
+// Checks that a shard whose fetch failed is not kept: the first lookup
+// fails with the fetch's error, and the second fetches again and gets
+// the version. A cached failure would fail every later lookup in that
+// shard for the life of the page.
+test("a shard that failed to load is fetched again", async (t) => {
+  const stub = stubFetch(t, [
+    new TypeError("Failed to fetch"),
+    metaShard("qa"),
+  ]);
+
+  await assert.rejects(versionsOf("qa"), /Failed to fetch/);
+  const rows = await versionsOf("qa");
+  assert.equal(rows[0].version, "1.0");
+  assert.equal(stub.calls, 2);
+});
+
+// Checks that a server error is a failed lookup rather than an empty
+// shard, which would tell the reader the package is not in the index,
+// and that it is not kept either.
+test("a shard the server could not serve is an error", async (t) => {
+  const stub = stubFetch(t, [
+    new Response("", { status: 503 }),
+    metaShard("qb"),
+  ]);
+
+  await assert.rejects(versionsOf("qb"), /503/);
+  const rows = await versionsOf("qb");
+  assert.equal(rows[0].version, "1.0");
+  assert.equal(stub.calls, 2);
+});
+
+// Checks that a missing shard is an empty one: no attribute starts with
+// those characters, and asking again would get the same answer.
+test("a missing shard holds no attributes", async (t) => {
+  const stub = stubFetch(t, [new Response("", { status: 404 })]);
+
+  assert.deepEqual(await versionsOf("qc"), []);
+  assert.deepEqual(await versionsOf("qc"), []);
+  assert.equal(stub.calls, 1);
 });
