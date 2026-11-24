@@ -13,7 +13,7 @@
 // kept in the browser: a link is the way to share a cachix store path,
 // and the key that vouches for it has to travel with it.
 
-import { CACHE_URL, GL_CACHE } from "./config.js";
+import { CACHE_URL, GL_CACHE, GL_DRIVERS } from "./config.js";
 import { digestOf, parseNarinfo } from "./closure.js";
 import { cachedResponse, storeInCache } from "./cache.js";
 
@@ -45,7 +45,7 @@ export const SITE_CACHE_URL = globalThis.location
   : GL_CACHE;
 
 // The digests of the store paths the site's cache serves, as
-// drivers.json lists them (setSitePaths). The site is asked for these
+// drivers.json lists them (siteManifest). The site is asked for these
 // and for nothing else, and asked first: cache.nixos.org has never held
 // them, and asking it anyway puts a 404 per path in the reader's
 // console.
@@ -65,13 +65,45 @@ export const DEFAULT_SUBSTITUTERS = [
   { url: SITE_CACHE_URL, key: null, trust: Trust.SITE, holds: sitePaths },
 ];
 
-// Name the store paths the site's cache serves (gldriver.js, from
+// Name the store paths the site's cache serves (siteManifest, from
 // drivers.json).
 export function setSitePaths(storePaths) {
   sitePaths.clear();
   for (const storePath of storePaths) {
     sitePaths.add(digestOf(storePath.slice(STORE_PREFIX.length)));
   }
+}
+
+// What a page has from a site that publishes no manifest.
+const NO_MANIFEST = Object.freeze({ paths: [], drivers: [] });
+
+// The site's manifest, site/gl/drivers.json: the GL drivers it publishes
+// (gldriver.js) and every store path its cache serves. Read once, by
+// the first narinfo lookup or the first caller to want the drivers,
+// whichever comes first: the paths decide which cache a lookup asks,
+// and a store path the site serves, pasted into a page that has just
+// opened, used to be asked of cache.nixos.org alone and called missing.
+// A site with no manifest has none for the life of the page; a
+// manifest that could not be fetched is asked for again next time.
+let manifest = null;
+
+export function siteManifest() {
+  manifest ??= readManifest().catch(() => {
+    manifest = null;
+    return NO_MANIFEST;
+  });
+  return manifest;
+}
+
+async function readManifest() {
+  const res = await fetch(GL_DRIVERS);
+  if (!res.ok) {
+    return NO_MANIFEST;
+  }
+  const read = await res.json();
+  const paths = read.paths ?? [];
+  setSitePaths(paths);
+  return { paths, drivers: read.drivers ?? [] };
 }
 
 // The caches to ask for one digest, in order: those that list what they
@@ -180,6 +212,7 @@ export async function verify(info, substituters) {
 // hold the path, and the reasons are reported together only if none
 // does.
 export async function fetchNarinfo(digest, substituters) {
+  await siteManifest();
   const failures = [];
   for (const substituter of lookupOrder(digest, substituters)) {
     const url = `${substituter.url}/${digest}.narinfo`;
@@ -219,6 +252,7 @@ export async function fetchNarinfo(digest, substituters) {
 // that follows a boot finds it already there and the check costs one
 // round trip in total.
 export async function holdsPath(digest, substituters) {
+  await siteManifest();
   let asked = false;
 
   for (const substituter of lookupOrder(digest, substituters)) {

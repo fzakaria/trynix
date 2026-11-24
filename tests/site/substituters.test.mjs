@@ -18,7 +18,7 @@ import {
   Trust,
   verify,
 } from "../../site/js/substituters.js";
-import { CACHE_URL } from "../../site/js/config.js";
+import { CACHE_URL, GL_DRIVERS } from "../../site/js/config.js";
 
 // No Cache API under node: every narinfo lookup goes to fetch.
 globalThis.caches = { open: () => Promise.resolve(null) };
@@ -39,11 +39,15 @@ const narinfoText = (digest) =>
   ].join("\n");
 
 // Replaces fetch with one that answers the `held` URLs and 404s the
-// rest, and returns the URLs asked, in order.
-function fakeFetch(held) {
+// rest, and returns the URLs asked, in order. With a `manifest` it
+// serves that as the site's drivers.json.
+function fakeFetch(held, manifest = null) {
   const asked = [];
   globalThis.fetch = async (url) => {
     asked.push(String(url));
+    if (manifest !== null && String(url) === GL_DRIVERS) {
+      return Response.json(manifest);
+    }
     if (!held.has(String(url))) {
       return new Response("", { status: 404 });
     }
@@ -77,6 +81,39 @@ test("an unsigned narinfo passes only when the site served it", async () => {
   const substituters = readSubstituters();
   assert.equal(await verify(unsigned(SITE_CACHE_URL), substituters), true);
   assert.equal(await verify(unsigned(CACHE_URL), substituters), false);
+});
+
+// Checks that a page reads the site's manifest before its first lookup,
+// so the first lookup of a path only the site holds asks the site and
+// finds it: a store path pasted into a page that has just opened. Two
+// lookups at once share one read, and a manifest that could not be
+// fetched is fetched again by the next lookup rather than kept. Runs
+// before any test names the site's paths by hand, as a page that has
+// just opened has not.
+test("the first lookup reads the site's manifest, once, and again after a failure", async () => {
+  const siteUrl = `${SITE_CACHE_URL}/${SITE_DIGEST}.narinfo`;
+
+  // No manifest to be had: the lookup goes on without it, upstream.
+  globalThis.fetch = async (url) => {
+    if (String(url) === GL_DRIVERS) {
+      throw new TypeError("Failed to fetch");
+    }
+    return new Response("", { status: 404 });
+  };
+  assert.equal(await holdsPath(SITE_DIGEST, readSubstituters()), false);
+
+  // The next two lookups read it once between them, and ask the site.
+  const asked = fakeFetch(new Set([siteUrl]), {
+    paths: [`/nix/store/${SITE_DIGEST}-mesa-virgl-26.2.2`],
+    drivers: [],
+  });
+  const [held, found] = await Promise.all([
+    holdsPath(SITE_DIGEST, readSubstituters()),
+    fetchNarinfo(SITE_DIGEST, readSubstituters()),
+  ]);
+  assert.equal(held, true);
+  assert.equal(found.info.substituter, SITE_CACHE_URL);
+  assert.deepEqual(asked, [GL_DRIVERS, siteUrl, siteUrl]);
 });
 
 // Checks that a path the site lists is asked of the site alone: no
