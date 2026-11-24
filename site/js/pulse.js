@@ -44,6 +44,17 @@ const DAEMON_NAME = "pulseaudio";
 // The ALSA device the daemon plays on: kwsnd, the guest's one card.
 const CARD_DEVICE = "hw:0";
 
+// The sink module-alsa-sink makes of the card, as `pactl list short
+// sinks` lists it: the name the module gives a sink for hw:0 (the
+// device made a valid sink name) and the module as its driver. Both
+// are checked, so a null sink, or another module's sink by that name,
+// is not taken for the card.
+const CARD_SINK_NAME = "alsa_output.hw_0";
+const CARD_SINK_DRIVER = "module-alsa-sink.c";
+
+// The column separator in pactl's short listings.
+const SHORT_LIST_SEPARATOR = "\t";
+
 // How long the daemon keeps the card open after its last client stops,
 // in seconds. The card has one stream, so while the daemon holds it a
 // program that writes to ALSA itself cannot open it.
@@ -126,19 +137,30 @@ export function soundEnv(daemon) {
 // closure's pactl is asked. A daemon whose ALSA module failed, because
 // another program held the card as it started, logs an error and goes
 // on to open its socket, and every client of it fails with "No such
-// entity". A daemon already running is taken as it is only if it has
-// the sink; one without is stopped and a new one started.
+// entity". Any other sink is no sink of the card's: a daemon with only
+// a null sink answers every client and plays nothing on the card. A
+// daemon already running is taken as it is only if it has card 0's
+// sink; one without is stopped and a new one started.
 //
 // The command fails if the daemon logs an error (`E:`) before its
 // socket opens, if no socket appears in time, or if the daemon has no
-// sink once it does, printing the end of the daemon's output. A daemon
-// that failed is stopped, so the next start begins afresh.
+// sink on card 0 once it does, printing the end of the daemon's
+// output. A daemon that failed is stopped, so the next start begins
+// afresh.
 function daemonCommand(daemon) {
   const directory = `${GUEST_STORE_DIR}/${daemon}/bin`;
   const binary = `${directory}/${DAEMON_NAME}`;
+
+  // The check for card 0's sink: its row in the short listing, the
+  // name and driver columns between their separators, with the dots
+  // matched as dots.
+  const cardSink = [CARD_SINK_NAME, CARD_SINK_DRIVER]
+    .map((column) => column.replaceAll(".", "\\."))
+    .join(SHORT_LIST_SEPARATOR);
   const hasSink =
     `timeout ${SINKS_LIMIT_S} ${directory}/${CLIENT_NAME} -s unix:${PULSE_SOCKET}` +
-    ` list short sinks 2> /dev/null | grep -q .`;
+    ` list short sinks 2> /dev/null |` +
+    ` grep -q '${SHORT_LIST_SEPARATOR}${cardSink}${SHORT_LIST_SEPARATOR}'`;
   const modules = [
     `module-alsa-sink device=${CARD_DEVICE}`,
     `module-native-protocol-unix auth-anonymous=1 socket=${PULSE_SOCKET}`,

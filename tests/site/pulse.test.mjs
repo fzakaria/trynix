@@ -5,6 +5,7 @@
 // function that records what it was asked to run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 
 import {
   pulseDaemonIn,
@@ -183,4 +184,38 @@ test("a daemon that failed to start leaves the shells on ALSA", async () => {
   await server.start(daemon);
   assert.equal(server.running, daemon);
   assert.equal(soundEnv(server.running).PULSE_SERVER, `unix:${PULSE_SOCKET}`);
+});
+
+// Checks which listings of the daemon's sinks count as card 0's sink,
+// by running the filter the start command pipes `pactl list short
+// sinks` into through a real shell, over listings in pactl's format
+// (index, name, driver, sample spec, state, tab-separated). Only the
+// sink module-alsa-sink makes for hw:0 counts. A daemon with a null
+// sink alone answered pacat and played nothing on the guest's card.
+test("only module-alsa-sink's sink on hw:0 is the card's sink", async () => {
+  const shell = fakeShell();
+  await soundServer({ exec: shell.exec }).start(path("pulseaudio-17.0"));
+  const [command] = shell.commands;
+  const filter = /list short sinks 2> \/dev\/null \| (.+?) (?:&&|\|\|) /.exec(
+    command,
+  )?.[1];
+  assert.ok(filter !== undefined, "no filter on the sinks listing");
+
+  const row = (index, name, driver) =>
+    `${index}\t${name}\t${driver}\ts16le 2ch 44100Hz\tSUSPENDED\n`;
+  const counts = (listing) =>
+    spawnSync("sh", ["-c", filter], { input: listing }).status === 0;
+
+  assert.equal(counts(row(0, "alsa_output.hw_0", "module-alsa-sink.c")), true);
+  assert.equal(
+    counts(
+      row(0, "null", "module-null-sink.c") +
+        row(1, "alsa_output.hw_0", "module-alsa-sink.c"),
+    ),
+    true,
+  );
+  assert.equal(counts(row(0, "null", "module-null-sink.c")), false);
+  assert.equal(counts(row(0, "alsa_output.hw_0", "module-null-sink.c")), false);
+  assert.equal(counts(row(0, "alsa_output.hw_1", "module-alsa-sink.c")), false);
+  assert.equal(counts(""), false);
 });
