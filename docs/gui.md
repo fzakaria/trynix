@@ -439,10 +439,10 @@ five seconds after the first frame, the program's own closure
 included. Each row is one to six boots; the slow ends of the xeyes and
 xterm rows were each the first boot of a series. openjdk is the expensive
 one: a selected package's references are all fetched at the boot, and
-openjdk21's are 438 MB. Its `java` is not on `PATH` either, since its
-`bin` is a link to `lib/openjdk/bin` and the page looks for programs in
-a real `bin` directory, so the Swing program was started by its store
-path.
+openjdk21's are 438 MB. When this was measured, its `java` was not on
+`PATH`, since its `bin` is a link to `lib/openjdk/bin`, so the Swing
+program was started by its store path; the page now follows such a
+link.
 
 ### Routes not taken
 
@@ -707,8 +707,7 @@ compositor:
   unless `xwayland-satellite` is selected with them.
 - **Java** draws, with `_JAVA_AWT_WM_NONREPARENTING=1`, which shells
   with `DISPLAY` get: the satellite does not reparent windows, and
-  without it a Swing window stayed blank. openjdk's `java` is not on
-  `PATH` (see [What X11 costs](#what-x11-costs)).
+  without it a Swing window stayed blank.
 - **An X server or PulseAudio daemon an addition brings** reaches
   shells started after it; the shell already on the page needs
   `. $ENV`, or a new shell (`sh`).
@@ -726,6 +725,15 @@ compositor:
   the terminal the keyboard, even while a window has it.
 - **PipeWire-only programs**, such as `pw-play`, stay silent: the
   page starts no PipeWire daemon.
+- **Selecting pulseaudio brings the X server too.** pulseaudio's own
+  closure holds libX11, for its X11 modules, and no Wayland library, so
+  the X11 rule counts it as an X11 program. With downloads on first use
+  that costs about a hundred more lookups as the closure is walked;
+  with downloads set to all, the X server's 105 MB. Telling them apart
+  would mean reading which libraries each program's binaries load.
+- **A PulseAudio daemon that could not start**, because a program held
+  the sound card, is tried again only by an addition that brings new
+  paths, not when the card is let go.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
   60 FPS. Its xterm case, which takes keys through Xwayland, passed in
