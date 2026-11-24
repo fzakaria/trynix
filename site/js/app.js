@@ -320,9 +320,10 @@ let linkedMemory = readUrl().memory;
 // size, then this browser's choice in Settings, then the device's
 // default.
 const device = thisDevice();
+const memoryRemembered = rememberedMemory();
 let memory = pickMemory({
   linked: linkedMemory,
-  remembered: rememberedMemory(),
+  remembered: memoryRemembered,
   device,
 });
 
@@ -330,9 +331,10 @@ let memory = pickMemory({
 // the count for the next boot (cpus.js), chosen the way memory is.
 let linkedCpus = readUrl().cpus;
 const cpuHost = cpuDevice(device);
+const cpusRemembered = rememberedCpus();
 let cpus = pickCpus({
   linked: linkedCpus,
-  remembered: rememberedCpus(),
+  remembered: cpusRemembered,
   device: cpuHost,
 });
 
@@ -340,9 +342,10 @@ let cpus = pickCpus({
 // `fetch`): the link's choice, then this browser's, then on first use.
 // A choice made in Settings goes into the link, as the memory does.
 let linkedDownloads = readUrl().downloads;
+const downloadsRemembered = rememberedDownloads();
 let downloads = pickDownloads({
   linked: linkedDownloads,
-  remembered: rememberedDownloads(),
+  remembered: downloadsRemembered,
   engine: ENGINE,
 });
 
@@ -357,12 +360,34 @@ const linkedRun = readUrl().run;
 // then on through unkernel's relay. A choice made in Settings goes into
 // the link, as the memory does; a relay never does.
 let linkedNetwork = readUrl().network;
+const networkRemembered = rememberedNetwork();
 let network = pickNetwork({
   linked: linkedNetwork,
-  remembered: rememberedNetwork(),
+  remembered: networkRemembered,
   rememberedRelay: rememberedRelay(),
   engine: ENGINE,
 });
+
+// A choice this browser remembers goes into the link too when the next
+// boot uses it, so the address bar says what the boot will be rather
+// than looking like the defaults; a default stays out. `picked` is the
+// value the boot uses, and a remembered value it does not use (a CPU
+// count this host has no threads for) stays out. All four are the
+// aarch64 guest's, so the x86_64 guest's links carry none of them.
+const adopted = (linked, remembered, picked) =>
+  linked === null && remembered !== null && picked === remembered
+    ? picked
+    : linked;
+if (ENGINE === Engine.UNKERNEL) {
+  linkedMemory = adopted(linkedMemory, memoryRemembered, memory.mib);
+  linkedCpus = adopted(linkedCpus, cpusRemembered, cpus.count);
+  linkedDownloads = adopted(
+    linkedDownloads,
+    downloadsRemembered,
+    downloads.mode,
+  );
+  linkedNetwork = adopted(linkedNetwork, networkRemembered, network.mode);
+}
 
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
