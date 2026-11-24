@@ -126,6 +126,125 @@ test("versions compare as Nix compares them", () => {
   assert.equal(compareVersions("3.10.6", "3.10.6"), 0);
 });
 
+// Checks that Python's alpha and beta letters, glued between a release
+// and a number, read as prereleases, while the same letters ending a
+// version still read as a release after it. The python315 picker
+// listed 3.15.0rc2 through 3.15.0a1 above 3.15.0, because the "a" and
+// "b" there read as OpenSSL's letters. A letter after a separator
+// starts a commit hash, as in hex2nix's 0.0.6-a31eadd7, which shipped
+// after 0.0.6.
+test("an alpha or beta is older than its release, a lettered release newer", () => {
+  const newer = (a, b) => assert.ok(compareVersions(a, b) > 0, `${a} > ${b}`);
+  newer("3.15.0", "3.15.0a1");
+  newer("3.15.0", "3.15.0b2");
+  newer("3.15.0", "3.15.0rc1");
+  newer("3.15.0b2", "3.15.0a1");
+  newer("3.15.0rc1", "3.15.0b2");
+  newer("6.0.0", "6.0.0b3");
+  newer("2.0.0", "2.0.0b36-unstable-2024-03-04");
+  newer("1.1.1a", "1.1.1");
+  newer("3.15.0a", "3.15.0");
+  newer("0.0.6-a31eadd7", "0.0.6");
+});
+
+// Checks that a milestone, an "M" and a number after a separator as
+// Java and Scala projects write one, is older than its release and
+// than the release's candidates: coursier listed 2.1.0-M7 above
+// 2.1.0, which shipped after it.
+test("a milestone is older than its release candidates", () => {
+  const newer = (a, b) => assert.ok(compareVersions(a, b) > 0, `${a} > ${b}`);
+  newer("2.1.0", "2.1.0-M7");
+  newer("2.1.0-RC6", "2.1.0-M7");
+  newer("2.1.0-M7", "2.1.0-M5");
+  newer("1.0.0", "1.0.0-M15-5");
+  newer("9.0.0", "9.0.0.M10");
+  newer("1.25.0", "1.25.0-m1");
+});
+
+// Every version the order has a rule for, newest first: around one
+// release, Python's prereleases, a milestone, the words nixpkgs uses
+// for a prerelease, "pre", a shorter version, and the letters and words
+// that mark a release after it; then OpenSSL's lettered releases, Nix's
+// letter before a number, and openjdk's two styles.
+const ORDERED = [
+  "21.0.5+11",
+  "8u265-ga",
+  "3.15.1",
+  "3.15.0-unstable-2025-01-19",
+  "3.15.0p1",
+  "3.15.0a",
+  "3.15.0",
+  "3.15.0rc2",
+  "3.15.0rc1",
+  "3.15.0-preview.26",
+  "3.15.0-M2",
+  "3.15.0-DEV1903",
+  "3.15.0beta3",
+  "3.15.0b2",
+  "3.15.0-alpha.1",
+  "3.15.0a1",
+  "3.15.0pre1",
+  "3.15",
+  "2.3.1",
+  "2.3a",
+  "1.1.1w",
+  "1.1.1t",
+  "1.1.1a",
+  "1.1.1",
+  "1.1.1-pre9",
+  "1.1.0l",
+];
+
+// The python315 picker's cycle, a beta, and OpenSSL's letters: few
+// enough to sort in every order there is (5,040 of them).
+const MIXED = [
+  "3.15.0a1",
+  "3.15.0b2",
+  "3.15.0rc1",
+  "3.15.0",
+  "1.1.1",
+  "1.1.1a",
+  "1.1.1t",
+];
+
+// Every ordering of `items`.
+function* permutations(items) {
+  if (items.length <= 1) {
+    yield items;
+    return;
+  }
+  for (let i = 0; i < items.length; i += 1) {
+    const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+    for (const tail of permutations(rest)) {
+      yield [items[i], ...tail];
+    }
+  }
+}
+
+const newestFirst = (a, b) => compareVersions(b, a);
+
+// Checks that compareVersions is a total order, which is what makes a
+// sort's answer the same whatever order the versions arrive in. Every
+// pair in ORDERED compares as its positions say, from either side, so
+// the order on those versions is ORDERED itself and has no cycle: the
+// one 3.15.0rc1, 3.15.0 and 3.15.0a1 formed fails at the pair 3.15.0
+// and 3.15.0a1. Then MIXED is sorted from every one of its orderings,
+// and each sort has to give the one answer.
+test("versions sort the same from every input order", () => {
+  for (let i = 0; i < ORDERED.length; i += 1) {
+    for (let j = i + 1; j < ORDERED.length; j += 1) {
+      const [a, b] = [ORDERED[i], ORDERED[j]];
+      assert.ok(compareVersions(a, b) > 0, `${a} > ${b}`);
+      assert.ok(compareVersions(b, a) < 0, `${b} < ${a}`);
+    }
+  }
+
+  const want = ORDERED.filter((version) => MIXED.includes(version));
+  for (const order of permutations(MIXED)) {
+    assert.deepEqual([...order].sort(newestFirst), want, order.join(" "));
+  }
+});
+
 // Checks that a range compares with the same order, by matching
 // OpenSSL's lettered releases against ">1.1.1": every one of them is a
 // release after 1.1.1, and 1.1.1 itself is not after itself.

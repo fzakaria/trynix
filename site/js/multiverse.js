@@ -198,20 +198,23 @@ export async function versionRowsOf(attr) {
 }
 
 // Version ordering for the picker and for a link's newest version, as
-// Nix's compareVersions orders nixpkgs' version strings (partOlder),
-// with one change: a release sorts above its own prereleases (1.2 over
-// 1.2-rc1 and 1.2beta3), where Nix puts the prerelease first.
+// Nix's compareVersions orders nixpkgs' version strings, with one
+// change: a release sorts above its own prereleases (1.2 over 1.2-rc1,
+// 1.2beta3 and Python's 1.2a1), where Nix puts the prerelease first.
+//
+// Two versions compare part by part, each part by its kind first and
+// its spelling only within a kind (partKey), which keeps the order
+// total. Comparing a prerelease word with a release's letter by
+// spelling put 3.15.0a1 above 3.15.0, 3.15.0 above 3.15.0rc1 and
+// 3.15.0rc1 above 3.15.0a1, so a sort's answer hung on the order it
+// was handed the versions in.
 export function compareVersions(a, b) {
-  const pa = versionParts(a);
-  const pb = versionParts(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
-    const x = pa[i] ?? "";
-    const y = pb[i] ?? "";
-    if (partOlder(x, y)) {
-      return -1;
-    }
-    if (partOlder(y, x)) {
-      return 1;
+  const ka = versionKeys(a);
+  const kb = versionKeys(b);
+  for (let i = 0; i < Math.max(ka.length, kb.length); i += 1) {
+    const order = compareKeys(ka[i] ?? MISSING, kb[i] ?? MISSING);
+    if (order !== 0) {
+      return order;
     }
   }
   return 0;
@@ -220,9 +223,61 @@ export function compareVersions(a, b) {
 // The parts of a version as Nix splits them (libstore/names.cc,
 // nextComponent): runs of digits and runs of anything else, with "."
 // and "-" between parts. "8u265-ga" is 8, u, 265, ga.
-const versionParts = (version) => version.match(/\d+|[^.\-\d]+/g) ?? [];
+const VERSION_PART = /\d+|[^.\-\d]+/g;
+
+// Python's alpha and beta letters: an "a" or "b" glued between a
+// release and a number, with nothing glued after the number, as in
+// 3.15.0a1 and 6.0.0b3. Every such version in the multiverse whose
+// release also shipped came before that release (57 alphas, 66
+// betas). The same letter ending a version is a release after it
+// (OpenSSL's 1.1.1a), and after a separator it starts a commit hash
+// (0.0.6-a31eadd7), so neither of those matches.
+const ALPHA_BETA = /(?<=\d)[ab](?=\d+(?:[.\-]|$))/g;
+
+// A milestone, as Java and Scala projects write one: an "M" after a
+// separator and before a number, as in 2.1.0-M7 and 9.0.0.M10. Every
+// version of that shape in the multiverse is a milestone, and the five
+// whose release also shipped came before that release.
+const MILESTONE = /(?<=[.\-])[Mm](?=\d+(?:[.\-]|$))/g;
+
+// The single letters that are a prerelease where they stand.
+const PRERELEASE_LETTERS = [ALPHA_BETA, MILESTONE];
+
+// Each part of a version as the key it sorts by. A prerelease letter
+// sorts as its lowercase self among the prerelease words, where "m"
+// comes after "dev" and before "rc".
+function versionKeys(version) {
+  const letters = new Set(
+    PRERELEASE_LETTERS.flatMap((pattern) =>
+      [...version.matchAll(pattern)].map((match) => match.index),
+    ),
+  );
+  return [...version.matchAll(VERSION_PART)].map((match) =>
+    letters.has(match.index)
+      ? { kind: PartKind.PRERELEASE, value: match[0].toLowerCase() }
+      : partKey(match[0]),
+  );
+}
 
 const isNumber = (part) => /^\d+$/.test(part);
+
+// What a version part is, oldest kind first. Two parts of different
+// kinds compare by kind alone. These are Nix's rules (componentsLT):
+// "pre" is older than anything, a missing part is older than a number
+// and than letters, and letters are older than a number, so 2.3a is
+// older than 2.3.1. The one change from Nix is PRERELEASE, below a
+// missing part, so 1.2 is newer than 1.2-rc1 while 1.1.1t stays newer
+// than 1.1.1.
+const PartKind = Object.freeze({
+  PRE: 0,
+  PRERELEASE: 1,
+  MISSING: 2,
+  WORD: 3,
+  NUMBER: 4,
+});
+
+// The key past the end of the shorter of two versions.
+const MISSING = { kind: PartKind.MISSING, value: "" };
 
 // The part Nix counts older than any other.
 const PRE = "pre";
@@ -234,7 +289,8 @@ const PRE = "pre";
 // versions, follows a release that also shipped and nearly always
 // shipped before that release. Single letters stay off the list:
 // OpenSSL's 1.1.1t and OpenSSH's 9.6p1 come after 1.1.1 and 9.6, and
-// "a" and "b" mean a patch release as often as an alpha or beta.
+// "a", "b" and "M" are a prerelease only where Python writes an alpha
+// or beta and Java a milestone (PRERELEASE_LETTERS).
 const PRERELEASE_WORDS = new Set([
   PRE,
   "rc",
@@ -246,41 +302,37 @@ const PRERELEASE_WORDS = new Set([
   "nightly",
 ]);
 
-// Whether a part names a prerelease, read without case or punctuation
-// so "DEV" and "_rc" count as "dev" and "rc".
-const isPrerelease = (part) =>
-  PRERELEASE_WORDS.has(part.toLowerCase().replace(/[^a-z]/g, ""));
+// A part as { kind, value }. A number's value is the number. A
+// prerelease word's is the word without case or punctuation, so "DEV"
+// and "_rc" count as "dev" and "rc", and 1.0_rc4 sorts above 1.0beta3.
+// Any other letters keep their spelling.
+function partKey(part) {
+  if (isNumber(part)) {
+    return { kind: PartKind.NUMBER, value: Number(part) };
+  }
 
-// Whether part `a` is older than part `b`, by Nix's rules
-// (componentsLT); a missing part is "". Numbers compare as numbers, a
-// missing part is older than a number and older than letters, "pre" is
-// older than anything else, and a part that is not a number is older
-// than one that is, so 2.3a is older than 2.3.1. The one change from
-// Nix: a prerelease word is older than a missing part, so 1.2 is newer
-// than 1.2-rc1 while 1.1.1t stays newer than 1.1.1.
-function partOlder(a, b) {
-  if (isNumber(a) && isNumber(b)) {
-    return Number(a) < Number(b);
+  const word = part.toLowerCase().replace(/[^a-z]/g, "");
+  if (word === PRE) {
+    return { kind: PartKind.PRE, value: word };
   }
-  if (a === "") {
-    return !isPrerelease(b);
+  if (PRERELEASE_WORDS.has(word)) {
+    return { kind: PartKind.PRERELEASE, value: word };
   }
-  if (b === "") {
-    return isPrerelease(a);
+  return { kind: PartKind.WORD, value: part };
+}
+
+// Two part keys compared, kind first and then value, as -1, 0 or 1.
+function compareKeys(a, b) {
+  if (a.kind !== b.kind) {
+    return Math.sign(a.kind - b.kind);
   }
-  if (a === PRE && b !== PRE) {
-    return true;
+  if (a.value < b.value) {
+    return -1;
   }
-  if (b === PRE) {
-    return false;
+  if (a.value > b.value) {
+    return 1;
   }
-  if (isNumber(b)) {
-    return true;
-  }
-  if (isNumber(a)) {
-    return false;
-  }
-  return a < b;
+  return 0;
 }
 
 // Attributes whose name contains the query, best matches first: exact,
