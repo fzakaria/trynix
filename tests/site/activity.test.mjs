@@ -20,6 +20,7 @@ import {
   opensWindows,
   startLook,
   typedLine,
+  typedLines,
 } from "../../site/js/activity.js";
 
 const DIGEST = "0".repeat(32);
@@ -351,4 +352,20 @@ test("a typed line leaves out the terminal's replies", () => {
   assert.equal(typedLine("", "\x1bP>|ghostty 1.2\x1b\\"), "");
   assert.equal(typedLine("", "\x1b]11;rgb:0000/0000/0000\x07"), "");
   assert.equal(typedLine("vi", "\x1bOD\x1bOC"), "vi");
+});
+
+// Checks the line kept from what is sent to the terminal across a
+// full-screen program: the q that quits htop, sent while the terminal
+// shows the alternate screen, went to htop, and is not the start of the
+// next line typed at the shell on the normal screen. Under tmux, whose
+// shell is on the alternate screen throughout, the line is kept whole.
+test("a typed line starts over when the screen changes", () => {
+  const lines = typedLines();
+  assert.equal(lines.send("htop\r", Screen.NORMAL), "htop");
+  assert.equal(lines.send("q", Screen.ALTERNATE), null);
+  assert.equal(lines.send("firefox &\r", Screen.NORMAL), "firefox &");
+
+  const tmux = typedLines();
+  assert.equal(tmux.send("fire", Screen.ALTERNATE), null);
+  assert.equal(tmux.send("fox &\r", Screen.ALTERNATE), "firefox &");
 });

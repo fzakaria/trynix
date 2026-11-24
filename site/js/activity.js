@@ -159,6 +159,40 @@ export function typedLine(line, data) {
   return next;
 }
 
+// What has been sent to the terminal since the last Enter, for a line
+// pasted whole, whose text the shell has not echoed onto its row yet.
+// `send(data, screen)` takes `data` sent while the terminal shows
+// `screen` (Screen), and returns the line an Enter in it ended, or null.
+export function typedLines() {
+  // The line so far, and the screen it was typed on.
+  let typed = "";
+  let typedOn = null;
+  return {
+    send(data, screen) {
+      // Keys sent while the terminal showed its other screen went to a
+      // full-screen program, such as the q that quits htop, and not to
+      // the shell: the line starts over. A shell inside tmux stays on
+      // the alternate screen, and its line is kept.
+      if (screen !== typedOn) {
+        typed = "";
+        typedOn = screen;
+      }
+
+      // No Enter yet: the line goes on.
+      const enter = data.indexOf("\r");
+      if (enter === -1) {
+        typed = typedLine(typed, data);
+        return null;
+      }
+
+      // An Enter: the line it ends, and a new one after it.
+      const sent = typedLine(typed, data.slice(0, enter));
+      typed = "";
+      return sent;
+    },
+  };
+}
+
 // Whether a package opens windows, from the basenames of its own
 // closure: a Wayland client library, libX11 or libxcb among them.
 export const opensWindows = (basenames) =>

@@ -37,7 +37,7 @@ import {
   commandProgram,
   enteredLine,
   opensWindows,
-  typedLine,
+  typedLines,
 } from "./activity.js";
 import {
   DEFAULT_ENGINE,
@@ -1882,15 +1882,12 @@ async function boot() {
       }
       // What was sent since the last Enter, for a line pasted whole,
       // whose text the shell has not echoed onto the row yet.
-      let typed = "";
+      const typed = typedLines();
       vm.terminal.onData((data) => {
-        const enter = data.indexOf("\r");
-        if (enter === -1) {
-          typed = typedLine(typed, data);
+        const sent = typed.send(data, vm.terminal.buffer.active.type);
+        if (sent === null) {
           return;
         }
-        const sent = typedLine(typed, data.slice(0, enter));
-        typed = "";
         const shown = enteredLine(vm.terminal);
         const line = shown !== null && shown.trim() !== "" ? shown : sent;
         commandEntered(line);
