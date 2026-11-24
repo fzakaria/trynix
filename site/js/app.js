@@ -1884,11 +1884,12 @@ async function boot() {
       // whose text the shell has not echoed onto the row yet.
       const typed = typedLines();
       vm.terminal.onData((data) => {
-        const sent = typed.send(data, vm.terminal.buffer.active.type);
+        const shown = enteredLine(vm.terminal);
+        const screen = vm.terminal.buffer.active.type;
+        const sent = typed.send(data, screen, shown);
         if (sent === null) {
           return;
         }
-        const shown = enteredLine(vm.terminal);
         const line = shown !== null && shown.trim() !== "" ? shown : sent;
         commandEntered(line);
       });

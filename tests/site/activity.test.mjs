@@ -330,13 +330,16 @@ test("a typed line keeps text and backspaces, not escapes", () => {
 // after the shell's prompt on the row the cursor is on, counted past the
 // rows scrolled off. With rows scrolled off, the row read was one of
 // them, and an old prompt there ("~ # emacs -nw") had the strip wait for
-// emacs when the reader entered ls. A row with no prompt reads as none.
+// emacs when the reader entered ls. A row with no prompt reads as none,
+// and a prompt with nothing after it, whose space the terminal trims,
+// as an empty line.
 test("the entered line is on the cursor's row, past the scrollback", () => {
   const scrollback = ["~ # emacs -nw", "1", "2"];
-  const screen = ["3", "~ # ls", ""];
+  const screen = ["3", "~ # ls", "~ # "];
   assert.equal(enteredLine(terminalOf(scrollback, screen, 1)), "ls");
   assert.equal(enteredLine(terminalOf([], screen, 1)), "ls");
   assert.equal(enteredLine(terminalOf(scrollback, screen, 0)), null);
+  assert.equal(enteredLine(terminalOf(scrollback, screen, 2)), "");
 });
 
 // Checks that the terminal's replies to a program's queries, which
@@ -368,4 +371,21 @@ test("a typed line starts over when the screen changes", () => {
   const tmux = typedLines();
   assert.equal(tmux.send("fire", Screen.ALTERNATE), null);
   assert.equal(tmux.send("fox &\r", Screen.ALTERNATE), "firefox &");
+});
+
+// Checks the line kept across a program that keeps the normal screen,
+// as busybox's top and less do: the q that quits one is sent with the
+// cursor on the program's own row, away from the shell's prompt, and
+// once the cursor is at an empty prompt that q is not the start of the
+// line typed there. A line begun at an empty prompt is kept while the
+// guest has yet to echo it and the row still shows the prompt alone.
+test("a typed line begun away from the prompt starts over at it", () => {
+  const lines = typedLines();
+  assert.equal(lines.send("top\r", Screen.NORMAL, ""), "top");
+  assert.equal(lines.send("q", Screen.NORMAL, null), null);
+  assert.equal(lines.send("emacs -nw\r", Screen.NORMAL, ""), "emacs -nw");
+
+  const unechoed = typedLines();
+  assert.equal(unechoed.send("ema", Screen.NORMAL, ""), null);
+  assert.equal(unechoed.send("cs &\r", Screen.NORMAL, ""), "emacs &");
 });

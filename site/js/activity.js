@@ -118,7 +118,8 @@ export function commandJob(line) {
 }
 
 // The command line the reader just entered at the terminal: the row the
-// cursor is on, after the shell's prompt ("# " or "$ "), or null.
+// cursor is on, after the shell's prompt ("# " or "$ "), or null. A
+// prompt with nothing after it reads as "".
 //
 // The buffer counts rows from the oldest one scrolled off, and the
 // screen is its last `rows` rows. ghostty-web's baseY is always 0, so
@@ -127,9 +128,13 @@ export function enteredLine(terminal) {
   try {
     const buffer = terminal.buffer.active;
     const cursorRow = buffer.length - terminal.rows + buffer.cursorY;
-    const row = buffer.getLine(cursorRow)?.translateToString(true) ?? "";
+
+    // The row comes without its trailing blanks, the space after a
+    // prompt with nothing after it among them: one is put back.
+    const text = buffer.getLine(cursorRow)?.translateToString(true) ?? "";
+    const row = `${text} `;
     const at = Math.max(row.lastIndexOf("# "), row.lastIndexOf("$ "));
-    return at === -1 ? null : row.slice(at + 2);
+    return at === -1 ? null : row.slice(at + 2).trimEnd();
   } catch {
     return null;
   }
@@ -161,14 +166,17 @@ export function typedLine(line, data) {
 
 // What has been sent to the terminal since the last Enter, for a line
 // pasted whole, whose text the shell has not echoed onto its row yet.
-// `send(data, screen)` takes `data` sent while the terminal shows
-// `screen` (Screen), and returns the line an Enter in it ended, or null.
+// `send(data, screen, shown)` takes `data` sent while the terminal shows
+// `screen` (Screen) and its cursor's row reads as `shown` (enteredLine),
+// and returns the line an Enter in it ended, or null.
 export function typedLines() {
-  // The line so far, and the screen it was typed on.
+  // The line so far, the screen it was typed on, and whether its first
+  // key was sent with the cursor at an empty prompt.
   let typed = "";
   let typedOn = null;
+  let begunAtPrompt = false;
   return {
-    send(data, screen) {
+    send(data, screen, shown) {
       // Keys sent while the terminal showed its other screen went to a
       // full-screen program, such as the q that quits htop, and not to
       // the shell: the line starts over. A shell inside tmux stays on
@@ -176,6 +184,20 @@ export function typedLines() {
       if (screen !== typedOn) {
         typed = "";
         typedOn = screen;
+      }
+
+      // Keys sent with the cursor away from the shell's prompt went to
+      // the program running then, such as the q that quits busybox's
+      // top or less, which keep the normal screen. Once the cursor is at
+      // an empty prompt they are not the start of the line typed there,
+      // and the line starts over. A line begun at the prompt is kept
+      // while the guest has yet to echo it.
+      const atPrompt = shown === "";
+      if (atPrompt && !begunAtPrompt) {
+        typed = "";
+      }
+      if (typed === "") {
+        begunAtPrompt = atPrompt;
       }
 
       // No Enter yet: the line goes on.
