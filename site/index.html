@@ -456,9 +456,13 @@
         </div>
         <div id="console-body">
           <div id="console-veil"><span class="spinner" id="console-spinner"></span><span id="console-note"></span></div>
-          <!-- ghostty input mostly goes through a hidden input, but it
-               also makes this element contenteditable as a backup so the
-               editing attributes need to manually be set here as well -->
+          <!-- The terminal. ghostty-web reads most typing from a hidden
+               textarea of its own, with autocapitalize, autocorrect and
+               spellcheck off, but it also makes #terminal contenteditable,
+               and a phone keyboard can open on #terminal instead (Firefox
+               on Android). #terminal turns the three off too, or that
+               keyboard capitalizes the first letter of every line;
+               ghostty-web leaves attributes it does not set alone. -->
           <div id="terminal" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
           <!-- GUI programs' windows, composited in the page by wland
                (site/js/gui.js) over the terminal; shown when the first
