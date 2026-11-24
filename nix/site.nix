@@ -17,6 +17,7 @@
 { pkgs }:
 let
   vendor = import ./vendor.nix { inherit pkgs; };
+  unzstd = import ./unzstd-wasm.nix { inherit pkgs; };
   engine = import ./engine.nix { inherit pkgs; };
   guest = (import ./guest.nix { inherit pkgs; }).guest;
   wlandr = import ./wlandr.nix { inherit pkgs; };
@@ -47,6 +48,11 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   chmod -R u+w $out
   cp -r ${vendor} $out/vendor
   chmod -R u+w $out/vendor
+
+  # The zstd decoder's wasm, as the script unzstd.js reads it from
+  # (nix/unzstd-wasm.nix). Under js/, before js/ is hashed below, so
+  # the hash covers it and a deploy with a new decoder is a new js.<hash>.
+  cp ${unzstd}/unzstd-wasm.js $out/js/unzstd-wasm.js
 
   # The COOP/COEP service worker must sit at the site root: a worker's
   # scope is its directory, and a worker under vendor/ can never control

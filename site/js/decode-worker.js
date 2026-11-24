@@ -2,15 +2,17 @@
 // says why this is not done on the page's own thread; pool.js hands out
 // the work).
 //
-// A classic worker rather than a module, because the two decoders are
-// the same vendored UMD scripts the page loads, and importScripts is
-// how a worker loads those. unzstd.js, which feeds fzstd and which
-// store.js uses too, is a classic script for the same reason. The bzip2
-// decoder is not here: the page keeps that one path, which the cache
-// serves only for the oldest packages, on its own thread.
+// A classic worker rather than a module, because the xz decoder is the
+// same vendored UMD script the page loads, and importScripts is how a
+// worker loads that. unzstd.js, which feeds zstd's own decoder compiled
+// to wasm and which store.js uses too, is a classic script for the same
+// reason, and so is unzstd-wasm.js, which the build generates to carry
+// that wasm. The bzip2 decoder is not here: the page keeps that one
+// path, which the cache serves only for the oldest packages, on its own
+// thread.
 /* global importScripts, xzwasm, unzstd */
 
-importScripts("../vendor/xzwasm.js", "../vendor/fzstd.js", "unzstd.js");
+importScripts("../vendor/xzwasm.js", "unzstd-wasm.js", "unzstd.js");
 
 async function decode(compression, bytes, narSize) {
   if (compression === "zstd") {

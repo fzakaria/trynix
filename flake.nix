@@ -365,12 +365,13 @@
           };
 
           # the site assembles: the entry page and the hashed module tree
-          # are where the build put them, and the GL renderer's module
-          # names its wasm by the wasm's content hash. The page fetches
-          # virgl.mjs by a versioned URL, and the module resolves
-          # virgl.wasm against its own URL, under a path _headers caches
-          # for a year, so a bare name would pair a new module with a
-          # browser's copy of the old wasm
+          # are where the build put them, the tree carries the zstd
+          # decoder's script (nix/unzstd-wasm.nix), and the GL
+          # renderer's module names its wasm by the wasm's content hash.
+          # The page fetches virgl.mjs by a versioned URL, and the module
+          # resolves virgl.wasm against its own URL, under a path
+          # _headers caches for a year, so a bare name would pair a new
+          # module with a browser's copy of the old wasm
           site =
             let
               site = self.packages.${system}.site;
@@ -378,6 +379,7 @@
             pkgs.runCommand "trynix-site-check" { } ''
               test -f ${site}/index.html
               test -f ${site}/js.*/app.js
+              test -f ${site}/js.*/unzstd-wasm.js
               wasm=$(sha256sum ${site}/vendor/unkernel/virgl.wasm | cut -c1-12)
               if ! grep -q "\"virgl.wasm?v=$wasm\"" ${site}/vendor/unkernel/virgl.mjs; then
                 echo "virgl.mjs does not name virgl.wasm by its hash, $wasm"
@@ -420,9 +422,10 @@
           # against a fixture, python for the benchmark tools' parsers
           #
           # A writable copy of the tree rather than the source itself,
-          # so the vendored dependencies can be put where the site's
-          # modules import them from — which is what lets the bzip2 test
-          # drive the real decoder instead of a stand-in.
+          # so the vendored dependencies and the zstd decoder's script
+          # can be put where the site's modules import them from. That
+          # is what lets the bzip2 and zstd tests drive the real decoders
+          # instead of stand-ins.
           tests =
             pkgs.runCommand "trynix-tests"
               {
@@ -436,6 +439,7 @@
                 chmod -R u+w tree
                 cd tree
                 ln -s ${vendor} site/vendor
+                ln -s ${self.packages.${system}.unzstd-wasm}/unzstd-wasm.js site/js/unzstd-wasm.js
                 node --test tests/site/*.test.mjs
                 python3 -m unittest discover -s tests/tools -t .
                 touch $out

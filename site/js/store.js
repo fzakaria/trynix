@@ -4,14 +4,16 @@
 // compressed bytes, the number the narinfo priced) into the xzwasm
 // decompressor, then through the NAR parser into entry lists.
 //
-// The cache compresses NARs per path — bzip2 for what it served in
+// The cache compresses NARs per path (bzip2 for what it served in
 // nixpkgs's first years, xz for most of what came after, zstd for the
-// newest — so three decoders are on hand. xzwasm and fzstd arrive as
-// vendored UMD scripts the page loads, so globals are used for those
-// rather than imports; the bzip2 decoder is wasm and is imported the
+// newest), so three decoders are on hand. xzwasm arrives as a
+// vendored UMD script the page loads, so a global is used for it
+// rather than an import; the bzip2 decoder is wasm and is imported the
 // first time a boot meets a bzip2 path, which for most boots is never.
-// unzstd.js, which feeds fzstd, is a classic script the decode workers
-// share, so it is imported for the global it sets.
+// unzstd.js, which feeds zstd's own decoder compiled to wasm, is a
+// classic script the decode workers share, so it is imported for the
+// global it sets; the wasm itself is imported the first time this
+// thread decodes a zstd path (zstdWasm, below).
 /* global xzwasm, unzstd */
 
 import { CACHE_URL, NAR_CONCURRENCY } from "./config.js";
@@ -35,8 +37,9 @@ import "./unzstd.js";
 // archives took about two seconds of the page's thread, one after the
 // other, and while they did the progress bars froze and the engine,
 // whose start-up also needs this thread, was held up behind them. The
-// newest archives are zstd, which is decoded by a pure JavaScript
-// library, so the work is real and worth spreading over cores.
+// work is real for every decoder here, zstd's included: compiled to
+// wasm, it still spends about a second on firefox's 402 MB archive. So
+// it is worth spreading over cores.
 //
 // On this thread, downloads run several at a time but decompression
 // does not.
@@ -275,7 +278,7 @@ async function decompress(info, compressed) {
   return serialize(async () => {
     try {
       if (info.compression === "zstd") {
-        return unzstd(compressed, info.narSize);
+        return await unzstdHere(compressed, info.narSize);
       }
       if (info.compression === "bzip2") {
         return await unbzip2(compressed, info.narSize);
@@ -293,6 +296,30 @@ async function decompress(info, compressed) {
       throw new Error(`${info.compression} decode failed: ${err.message}`);
     }
   });
+}
+
+// The zstd decoder's wasm, as unzstd-wasm.js, a script the build
+// generates that sets the global unzstd.js reads it from. Imported the
+// first time this thread decodes a zstd path, which happens only where
+// there are no decode workers or after one has crashed: each worker
+// loads its own copy (decode-worker.js).
+let zstdWasmPromise;
+
+function zstdWasm() {
+  zstdWasmPromise ??= import("./unzstd-wasm.js");
+  return zstdWasmPromise;
+}
+
+// A zstd archive decoded on this thread, once its decoder has loaded.
+async function unzstdHere(compressed, narSize) {
+  try {
+    await zstdWasm();
+  } catch (err) {
+    throw new DecoderUnavailable(
+      `the zstd decoder could not be loaded: ${err.message}`,
+    );
+  }
+  return unzstd(compressed, narSize);
 }
 
 // The bzip2 decoder — crabz2, a Rust one compiled to wasm — fetched
