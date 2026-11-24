@@ -527,10 +527,13 @@ export async function startUnkernel({
     // arrived waits for it.
     async run(roots, { store = null } = {}) {
       share.linkAll(share.known(), roots, Precedence.KEEP);
-      x11Server = x11ServerIn([
-        ...share.written(),
-        ...(store === null ? [] : store.pending()),
-      ]);
+
+      // The closure from here on counts the paths still to come, before
+      // the manifest is written: an X server or a PulseAudio daemon the
+      // closure holds is in the shells' environment even while its path
+      // has not arrived.
+      lazyStore = store;
+      x11Server = x11ServerIn(closure());
       await writeManifest();
 
       // The share is read-only to the guest: a store is immutable, and
@@ -538,7 +541,6 @@ export async function startUnkernel({
       if (store === null) {
         await kernel.mount(SHARE_DIR, files, { readOnly: true });
       } else {
-        lazyStore = store;
         linkArrivals = true;
         FS.mkdir(STORE_DIR);
         await kernel.mount(
