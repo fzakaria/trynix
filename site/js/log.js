@@ -8,34 +8,36 @@
 
 const LIMIT = 500;
 
-// The most messages that repeat in turn and are counted as one run: a
-// pair. A guest GL context the renderer has given up on logs the
+// How many of the last lines a message may repeat to be counted
+// instead of taking a line, and so the most different messages one run
+// counts. A guest GL context the renderer has given up on logs the
 // renderer's refusal and the kernel's failed submit in turn, several
-// times a second, and counting only a message the same as the one
-// before it never merged them: the pair filled all LIMIT lines in
-// seconds and pushed out the first lines of the burst, which say why.
-const PERIOD_LIMIT = 2;
+// times a second, and a third message once a second among them.
+// Counting only a message the same as the one before it never merged
+// them: they filled all LIMIT lines in seconds and pushed out the first
+// lines of the burst, which say why. Counting only a pair that
+// alternates still gave the three of them three new lines a second.
+const RUN_LIMIT = 4;
 
 const lines = [];
 const listeners = new Set();
 
-// The last messages that took a line of their own since the last run
-// ended, newest last and at most PERIOD_LIMIT of them, each with the
-// time it came. A message the same as one of them starts a run of
-// that message and those after it.
+// The messages of the last RUN_LIMIT lines, newest last, each with the
+// time its line was given. A message the same as one of them starts a
+// run of that message and those after it.
 let recent = [];
 
-// The run being counted, or null: its messages in the order they
-// repeat, the index of the one the next message has to be to go on
-// with it, the times of the messages of the round under way (not yet
-// on any line), how many times the whole run has come, and when its
-// first message first came.
+// The run being counted, or null: its messages, how many times any of
+// them has come since the run began, when it began, and the log's last
+// line as it was then, which the count is put after.
 //
 // A run is counted rather than given lines: a guest retrying a host
 // its relay refuses logs the same line several times a second, and in
 // a page nested inside another trynix guest that once filled all
 // LIMIT lines and pushed out everything that said what had gone
-// before.
+// before. Its messages are counted in whatever order they come, so a
+// message that joins a flood now and then is counted with it once it
+// has had one line.
 let run = null;
 
 // A line, with the seconds since the page loaded so the shape of a
@@ -43,35 +45,30 @@ let run = null;
 export function log(message) {
   const at = (performance.now() / 1000).toFixed(1).padStart(6);
 
-  // The next message of the run: counted, and said on the run's last
-  // line each time the whole run has come round again.
-  if (run !== null && run.messages[run.next] === message) {
-    advance(at);
+  // A message of the run: counted on the run's last line.
+  if (run !== null && run.messages.has(message)) {
+    count();
     return;
   }
 
-  // Any other message ends the run. The messages of the round under
-  // way take the lines of their own they would have had.
-  if (run !== null) {
-    const { messages, pending } = run;
-    run = null;
-    recent = [];
-    pending.forEach((time, index) => add(messages[index], time));
-  }
+  // Any other message ends the run. The run's messages stay in
+  // `recent`, so when the run's messages come back after this one, it
+  // and they start one run together.
+  run = null;
 
-  // The same as a message of the last PERIOD_LIMIT lines: those lines
-  // start a run, and this message is its first repeat.
-  const index = recent.findLastIndex((entry) => entry.message === message);
+  // The same as the message of one of the last RUN_LIMIT lines: that
+  // line and those after it start a run, and this message is the
+  // run's first.
+  const index = recent.findIndex((entry) => entry.message === message);
   if (index >= 0) {
     const start = recent.slice(index);
     run = {
-      messages: start.map((entry) => entry.message),
-      next: 0,
-      pending: [],
-      count: 1,
-      at: start[0].at,
+      messages: new Set(start.map((entry) => entry.message)),
+      count: 0,
+      at: index === recent.length - 1 ? start[0].at : at.trim(),
+      line: lines[lines.length - 1],
     };
-    advance(at);
+    count();
     return;
   }
 
@@ -79,31 +76,25 @@ export function log(message) {
   add(message, at);
 }
 
-// Count one more message of the run, which came at `at`.
-function advance(at) {
-  run.pending.push(at);
-  run.next = (run.next + 1) % run.messages.length;
-
-  // A round is not over: nothing to say yet.
-  if (run.next !== 0) {
-    return;
-  }
-
-  // The round is over: the run's last line says how many times.
+// Count one more message of the run, and say on the log's last line,
+// which is the run's last, how many have come and since when. One
+// message repeated says how many times it came in all, its first line
+// included.
+function count() {
   run.count += 1;
-  run.pending = [];
-  const what =
-    run.messages.length === 1 ? "" : `these ${run.messages.length} lines `;
-  const last = run.messages[run.messages.length - 1];
-  lines[lines.length - 1] =
-    `${at}s  ${last} (${what}${run.count} times since ${run.at}s)`;
+
+  const said =
+    run.messages.size === 1
+      ? `${run.count + 1} times since ${run.at}s`
+      : `${run.count} more of these ${run.messages.size} lines since ${run.at}s`;
+  lines[lines.length - 1] = `${run.line} (${said})`;
   tell();
 }
 
 // Give `message`, which came at `at`, a line of its own.
 function add(message, at) {
   recent.push({ message, at: at.trim() });
-  if (recent.length > PERIOD_LIMIT) {
+  if (recent.length > RUN_LIMIT) {
     recent.shift();
   }
 
