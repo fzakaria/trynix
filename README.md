@@ -107,7 +107,8 @@ preview.
 ## Driving it from an agent
 
 The selection lives in the query string, so `?pkg=ripgrep@14.1.0&boot=1`
-already boots a package with no API involved. What a link cannot do is
+already boots a package with no API involved, and `&run=rg+--version`
+types a command at its shell once it is up. What a link cannot do is
 read the console: ghostty draws the terminal on a canvas, so nothing the
 guest prints is in the DOM.
 

@@ -406,6 +406,11 @@ export async function startUnkernel({
     terminal: ui.terminal,
     share,
 
+    // Type at the guest's shell as the keyboard does: a link's run=
+    // (app.js) arrives this way, echoed at the prompt like anything the
+    // reader types.
+    type: (text) => port.send(text),
+
     // Finish the share, mount it, and start the shell. `roots` are the
     // basenames the reader selected, in selection order. Resolves when
     // the guest is at its prompt.

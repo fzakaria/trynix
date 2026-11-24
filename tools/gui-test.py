@@ -376,7 +376,9 @@ DRIVERS = {CHROMIUM: Chromium, FIREFOX: Firefox}
 # since the first includes the renderer's load.
 GL_PACKAGES = ["mesa-demos"]
 DRIVER_ADDED = re.compile(r"gl: added (/nix/store/\S+-mesa-virgl-\S+)")
-GL_COMMAND = "es2gears_wayland &\n"
+# The gl case's link types the command itself (run=, site/js/url.js),
+# as the page's Try link does; the foot case types its own.
+GL_COMMAND = "es2gears_wayland &"
 FPS_LINE = re.compile(r"frames in [\d.]+ seconds = ([\d.]+) FPS")
 FPS_LINES = 2
 FPS_LIMIT_SECONDS = 60
@@ -395,13 +397,16 @@ GPUS = {GPU_SOFTWARE: cpu.Gpu.SOFTWARE, GPU_HARDWARE: cpu.Gpu.HARDWARE}
 FETCH_MODES = ["lazy", "all"]
 
 
-def page_url(base, packages, fetch):
+def page_url(base, packages, fetch, run=None):
     """The link that boots `packages` on unkernel without a click,
-    naming when the closure downloads if `fetch` is not None."""
+    naming when the closure downloads if `fetch` is not None, and the
+    command the page types at the shell if `run` is not None."""
     query = [("pkg", name) for name in packages]
     query += [("engine", ENGINE)]
     if fetch is not None:
         query += [("fetch", fetch)]
+    if run is not None:
+        query += [("run", run)]
     query += [("boot", "1")]
     return f"{base}/?{urllib.parse.urlencode(query)}"
 
@@ -421,10 +426,10 @@ def wait_for(browser, expression, limit, label):
     raise SystemExit(f"FAIL {label}: nothing after {limit} s\n{tail}")
 
 
-def boot(browser, base, packages, fetch):
+def boot(browser, base, packages, fetch, run=None):
     """Boot `packages` and wait for the shell; returns the seconds taken."""
     browser.set_viewport(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-    browser.navigate(page_url(base, packages, fetch))
+    browser.navigate(page_url(base, packages, fetch, run))
     _, seconds = wait_for(
         browser,
         f"(window.trynix?.transcript?.() ?? '').includes({json.dumps(cpu.SHELL_MARKER)})",
@@ -519,8 +524,8 @@ def run_gl(browser, base, screenshots, fetch):
     """gl: boot es2gears with Mesa, wait for its window and its frame
     rate, and check that the frames came through the GL renderer."""
     print("gl")
-    seconds = boot(browser, base, GL_PACKAGES, fetch)
-    print(f"  shell after {seconds:.1f} s")
+    seconds = boot(browser, base, GL_PACKAGES, fetch, run=GL_COMMAND)
+    print(f"  shell after {seconds:.1f} s; the link types {GL_COMMAND!r}")
     added = DRIVER_ADDED.search(
         browser.evaluate("document.getElementById('debug-log').textContent")
     )
@@ -528,16 +533,14 @@ def run_gl(browser, base, screenshots, fetch):
         raise SystemExit("FAIL the page added no GL driver for es2gears")
     print(f"  driver added: {added.group(1)}")
 
-    mark = len(browser.transcript())
-    browser.type(GL_COMMAND)
     seconds = first_frame(browser)
-    print(f"  first frame {seconds:.2f} s after the command")
+    print(f"  first frame {seconds:.2f} s after the shell")
 
     started = time.monotonic()
     rates = []
     while time.monotonic() - started < FPS_LIMIT_SECONDS:
         rates = [
-            float(rate) for rate in FPS_LINE.findall(browser.transcript()[mark:])
+            float(rate) for rate in FPS_LINE.findall(browser.transcript())
         ]
         if len(rates) >= FPS_LINES:
             break

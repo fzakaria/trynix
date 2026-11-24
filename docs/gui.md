@@ -13,11 +13,12 @@ device a compositor could read a program's pixels through.
 
 ## Using it
 
-Select the program and boot, then type its name at the shell:
+Select the program and boot, then type its name at the shell, or let
+the link type it with `run=`:
 
 ```
-https://trynix.dev/?pkg=foot&boot=1        then: foot &
-https://trynix.dev/?pkg=galculator&boot=1  then: galculator &
+https://trynix.dev/?pkg=foot&boot=1&run=foot+%26
+https://trynix.dev/?pkg=galculator&boot=1&run=galculator+%26
 ```
 
 The first window opens a desktop under the terminal, and every window
@@ -30,7 +31,7 @@ walks in the site's own Mesa, built with the virgl driver alone (see
 [The GL driver](#the-gl-driver)).
 
 ```
-https://trynix.dev/?pkg=mesa-demos&boot=1  then: es2gears_wayland &
+https://trynix.dev/?pkg=mesa-demos&boot=1&run=es2gears_wayland+%26
 ```
 
 Selecting a Mesa is how to opt out: with `pkg=mesa` in the link the

@@ -314,6 +314,12 @@ let downloads = pickDownloads({
   engine: ENGINE,
 });
 
+// The command the page's link types at the shell once the guest is up
+// (url.js, `run`), or null. The link keeps it, so a copied link shows
+// the next reader the same thing; without boot=1 that link still waits
+// for the Boot button.
+const linkedRun = readUrl().run;
+
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
   const state = urlState();
@@ -323,6 +329,7 @@ function link({ boot = false } = {}) {
     memory: linkedMemory,
     cpus: linkedCpus,
     downloads: linkedDownloads,
+    run: linkedRun,
   });
 }
 
@@ -1452,6 +1459,14 @@ async function boot() {
     log("guest at its prompt");
     vmRow.done("running");
     consoleVeil.hidden = true;
+
+    // The link's command, typed as the reader would type it: it shows at
+    // the prompt, lands in the shell's history, and Ctrl-C stops it. It
+    // runs inside the guest, like anything the reader types there.
+    if (linkedRun !== null) {
+      log(`typing the link's command: ${linkedRun}`);
+      vm.type(`${linkedRun}\n`);
+    }
   } catch (err) {
     telemetry.finish(stage, mode);
     log(`boot failed: ${err.message}`);

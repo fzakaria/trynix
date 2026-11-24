@@ -274,6 +274,11 @@ export async function startVM({
     terminal: ui.terminal,
     share,
 
+    // Type at the guest's shell as the keyboard does: a link's run=
+    // (app.js) arrives this way, echoed at the prompt like anything the
+    // reader types.
+    type: (text) => send(master, text),
+
     // Finish the share and let QEMU run. `roots` are the basenames the
     // reader selected, in selection order. Resolves when the guest is
     // at its prompt — or when the page has given up waiting for it.

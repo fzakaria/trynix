@@ -10,6 +10,8 @@
 //   &cpus=4                                the unkernel guest's CPUs
 //   &fetch=all                             download the closure before the
 //                                          shell starts (or fetch=lazy)
+//   &run=sol+%26                           type a command at the shell once
+//                                          the guest is up
 //   &boot=1                                start without a click
 //
 // Everything is written back with replaceState as it changes, so the
@@ -26,12 +28,14 @@ const PARAM_ENGINE = "engine";
 const PARAM_MEMORY = "mem";
 const PARAM_CPUS = "cpus";
 const PARAM_DOWNLOADS = "fetch";
+const PARAM_RUN = "run";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
 //   caches: [{url, key}], engine: string|null, memory: number|null,
-//   cpus: number|null, downloads: string|null, boot: boolean }
+//   cpus: number|null, downloads: string|null, run: string|null,
+//   boot: boolean }
 //
 // The engine is handed back as written, or null when the link names
 // none: engine.js decides what a missing or unknown name means. The
@@ -73,6 +77,8 @@ export function readUrl() {
     memory: countOf(params.get(PARAM_MEMORY)),
     cpus: countOf(params.get(PARAM_CPUS)),
     downloads: downloadsOf(params.get(PARAM_DOWNLOADS)),
+    // An empty command is no command: there is nothing to type.
+    run: params.get(PARAM_RUN) || null,
     boot: params.get(PARAM_BOOT) === "1",
   };
 }
@@ -91,8 +97,8 @@ function countOf(value) {
 // stays out unless asked for: a shared link should offer the boot, and
 // only the reload path wants it automatic. `engine` stays out unless
 // the caller names one, which keeps a link for the default engine as
-// short as a link was before there were two; `memory`, `cpus` and
-// `downloads` likewise.
+// short as a link was before there were two; `memory`, `cpus`,
+// `downloads` and `run` likewise.
 export function writeUrl(
   { pkgs, paths, caches = [] },
   {
@@ -101,6 +107,7 @@ export function writeUrl(
     memory = null,
     cpus = null,
     downloads = null,
+    run = null,
   } = {},
 ) {
   const params = new URLSearchParams();
@@ -127,6 +134,9 @@ export function writeUrl(
   }
   if (downloads !== null) {
     params.set(PARAM_DOWNLOADS, downloads);
+  }
+  if (run !== null) {
+    params.set(PARAM_RUN, run);
   }
   if (boot) {
     params.set(PARAM_BOOT, "1");

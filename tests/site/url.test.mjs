@@ -111,3 +111,32 @@ test("when the closure downloads is written only when given", () => {
     "/?pkg=aisleriot&mem=2048&cpus=4&fetch=all&boot=1",
   );
 });
+
+// Checks that a link's command to type at the shell is read decoded, as
+// the reader would type it, and that a link naming none, or an empty
+// one, says so.
+test("the command to run is read from the link", () => {
+  at("?pkg=aisleriot&engine=unkernel&run=sol+%26&boot=1");
+  assert.equal(readUrl().run, "sol &");
+
+  at("?pkg=hello&run=hello%0Ahello+--version");
+  assert.equal(readUrl().run, "hello\nhello --version");
+
+  at("?pkg=hello");
+  assert.equal(readUrl().run, null);
+
+  at("?pkg=hello&run=");
+  assert.equal(readUrl().run, null);
+});
+
+// Checks that the command is written only when the caller passes one,
+// encoded, after the other choices and ahead of boot=1.
+test("the command to run is written only when given", () => {
+  at("");
+  const state = { pkgs: [{ attr: "aisleriot", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=aisleriot");
+  assert.equal(
+    writeUrl(state, { engine: "unkernel", run: "sol &", boot: true }),
+    "/?pkg=aisleriot&engine=unkernel&run=sol+%26&boot=1",
+  );
+});

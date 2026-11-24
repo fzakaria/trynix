@@ -100,83 +100,98 @@
          holds. -->
     <p>GUI programs open as windows on the page too.</p>
 
+    <!-- Each example boots on click and types its command at the shell
+         once the guest is up (boot=1, run=; site/js/url.js), so the
+         command shows at the prompt and the up arrow brings it back. -->
     <p class="examples muted">
       Try:
-      <a href="?pkg=hello">hello</a> ·
-      <a href="?pkg=ripgrep&pkg=jq">ripgrep and jq</a> ·
-      <a href="?pkg=python3@3.6.2">python 3.6.2 from 2017</a> ·
-      <a href="?pkg=jujutsu@0.43.0">jujutsu</a> ·
-      <a href="?pkg=hello@2.10&pkg=hello@2.12.2">two eras of hello at once</a> ·
-      <a href="?pkg=python3@3.10.6&pkg=openssl@1.1.1q">python 3.10 with openssl 1.1</a> ·
+      <a
+        href="?pkg=hello&run=hello&boot=1"
+        >hello</a
+      > ·
+      <a
+        href="?pkg=ripgrep&pkg=jq&run=rg%20--version%20%26%26%20jq%20--version&boot=1"
+        >ripgrep and jq</a
+      > ·
+      <a
+        href="?pkg=python3@3.6.2&run=python3%20-c%20%27import%20sys%3B%20print%28sys.version%29%27&boot=1"
+        >python 3.6.2 from 2017</a
+      > ·
+      <a
+        href="?pkg=jujutsu@0.43.0&run=jj%20--version&boot=1"
+        >jujutsu</a
+      > ·
+      <a
+        href="?pkg=hello@2.10&pkg=hello@2.12.2&run=for%20h%20in%20/nix/store/%2A-hello-2.1%2A/bin/hello%3B%20do%20%24h%20--version%20%7C%20head%20-1%3B%20done&boot=1"
+        >two eras of hello at once</a
+      > ·
+      <a
+        href="?pkg=python3@3.10.6&pkg=openssl@1.1.1q&run=openssl%20version%20%26%26%20python3%20-c%20%27import%20ssl%3B%20print%28ssl.OPENSSL_VERSION%29%27&boot=1"
+        >python 3.10 with openssl 1.1</a
+      > ·
       <!-- A package no public cache holds, served as a static directory
            next to this page (site/examples/cache). The cache and the key
            that vouches for it ride in the link, which is the whole point:
            a store path from someone else's cache is shareable. -->
       <a
-        href="?path=/nix/store/awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY="
+        href="?path=/nix/store/awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY=&run=hello&boot=1"
         title="a patched hello that exists in no public cache, fetched from a cache served next to this page"
-      >
-        a patched hello from another cache
-      </a> ·
+        >a patched hello from another cache</a
+      > ·
       <!-- The emulator's own throughput probe (nix/emubench.nix), from the
-           same cache. Type `emubench all` at the shell; docs/engine-execution.md
-           says what each row measures. -->
+           same cache; docs/engine-execution.md says what each row
+           measures. -->
       <a
-        href="?path=/nix/store/vk1ih0la8pfs92v8cy5vkv48kgmi14db-trynix-emubench-static-x86_64-unknown-linux-musl-1&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY="
-        title="the emulator's throughput probe: type `emubench all` at the shell and read each instruction class's speed"
-      >
-        benchmark the emulator
-      </a>
-      ·
-      <!-- GUI programs, each run from a link and seen to draw. Like the
-           emubench entry, the link selects the program and the title says
-           what to type once the shell is up. -->
-      <a href="?pkg=foot&engine=unkernel" title="a terminal in a window: type `foot &` at the shell"
+        href="?path=/nix/store/vk1ih0la8pfs92v8cy5vkv48kgmi14db-trynix-emubench-static-x86_64-unknown-linux-musl-1&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY=&run=emubench%20all&boot=1"
+        title="the emulator's throughput probe: each instruction class's speed"
+        >benchmark the emulator</a
+      > ·
+      <!-- GUI programs, each started by its link and seen to draw. -->
+      <a
+        href="?pkg=foot&engine=unkernel&run=foot%20%26&boot=1"
+        title="a terminal in a window"
         >foot in a window</a
-      >
-      ·
+      > ·
       <a
-        href="?pkg=galculator&engine=unkernel"
-        title="a GTK calculator: type `galculator &` at the shell"
+        href="?pkg=galculator&engine=unkernel&run=galculator%20%26&boot=1"
+        title="a GTK calculator"
         >galculator</a
-      >
-      ·
+      > ·
       <a
-        href="?pkg=mesa-demos&engine=unkernel"
-        title="GL gears drawn by your GPU: type `es2gears_wayland &` at the shell; the page adds a GL driver"
+        href="?pkg=mesa-demos&engine=unkernel&run=es2gears_wayland%20%26&boot=1"
+        title="GL gears drawn by your GPU; the page adds a GL driver"
         >GL gears</a
-      >
-      ·
-      <a href="?pkg=aisleriot&engine=unkernel" title="solitaire: type `sol &` at the shell">solitaire</a>
-      ·
-      <a href="?pkg=mousepad&engine=unkernel" title="a text editor: type `mousepad &` at the shell"
+      > ·
+      <a
+        href="?pkg=aisleriot&engine=unkernel&run=sol%20%26&boot=1"
+        >solitaire</a
+      > ·
+      <a
+        href="?pkg=mousepad&engine=unkernel&run=mousepad%20%26&boot=1"
+        title="a text editor"
         >mousepad</a
-      >
-      ·
+      > ·
       <a
-        href="?pkg=mpv&engine=unkernel"
-        title="a video player drawing a fractal: type `mpv --vo=wlshm av://lavfi:mandelbrot &` at the shell"
+        href="?pkg=mpv&engine=unkernel&run=mpv%20--vo=wlshm%20av://lavfi:mandelbrot%20%26&boot=1"
+        title="a video player drawing a fractal"
         >mpv</a
-      >
-      ·
+      > ·
       <a
-        href="?pkg=wev&engine=unkernel"
-        title="prints the window's input events to the terminal: type `wev &` at the shell"
+        href="?pkg=wev&engine=unkernel&run=wev%20%26&boot=1"
+        title="prints the window's input events to the terminal"
         >wev</a
-      >
-      ·
+      > ·
       <!-- A browser in the guest. 2 GiB because firefox runs the guest
            out of memory at 512 MiB, which is a phone's default
            (docs/gui.md). -->
       <a
-        href="?pkg=firefox&engine=unkernel&mem=2048"
-        title="a web browser: type `firefox &` at the shell; its window takes about half a minute"
+        href="?pkg=firefox&engine=unkernel&mem=2048&run=firefox%20%26&boot=1"
+        title="a web browser; its window takes about half a minute"
         >firefox</a
-      >
-      ·
+      > ·
       <a
-        href="?pkg=weston&engine=unkernel"
-        title="a whole compositor in one window: type `weston &` at the shell, then `WAYLAND_DISPLAY=wayland-1 weston-terminal &` for a terminal inside it"
+        href="?pkg=weston&engine=unkernel&run=weston%20%26%20until%20%5B%20-S%20%24XDG_RUNTIME_DIR/wayland-1%20%5D%3B%20do%20sleep%201%3B%20done%3B%20WAYLAND_DISPLAY=wayland-1%20weston-terminal%20%26&boot=1"
+        title="a whole compositor in one window, with a terminal inside it"
         >weston</a
       >
     </p>

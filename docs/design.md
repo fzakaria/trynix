@@ -99,7 +99,9 @@ for what is on screen:
 | `cache=https://x.cachix.org x-1:…` | an extra binary cache and its public key  |
 | `engine=qemu`                      | the engine, when not the default          |
 | `mem=2048`                         | the unkernel guest's memory, in MiB       |
+| `cpus=8`                           | the unkernel guest's CPUs, 1 to 16        |
 | `fetch=all`                        | download the closure before the shell     |
+| `run=sol+%26`                      | type a command at the shell once it is up |
 | `boot=1`                           | start without a click                     |
 
 Each parameter may repeat. `cache` is what makes a store path from
@@ -115,6 +117,14 @@ itself, though: a link copied from there lands on the selection with
 the Boot button ready, rather than starting a download on open. The
 one link the page writes with it is its own "start over in a fresh
 VM" reload, where starting at once is the point.
+
+`run=` is typed at the guest's shell once the guest is at its prompt,
+followed by Enter, as if the reader had typed it: it is echoed at the
+prompt, goes into the shell's history and stops on Ctrl-C. A newline
+in it (`%0A`) separates commands. The page keeps it in the address
+bar, so a copied link shows the next reader the same command, after
+they press Boot. The Try links on the page all carry `boot=1` and a
+`run=`, so each example starts and shows itself in one click.
 
 ## The store share
 
