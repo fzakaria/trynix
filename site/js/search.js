@@ -84,7 +84,13 @@ export class PackagePicker {
       return;
     }
 
-    const matches = await searchAttrs(query, SEARCH_LIMIT);
+    let matches;
+    try {
+      matches = await searchAttrs(query, SEARCH_LIMIT);
+    } catch (err) {
+      this.unread(err);
+      return;
+    }
     if (matches.length === 0) {
       this.results.replaceChildren(
         el("p", { className: "muted" }, "no such attribute"),
@@ -111,6 +117,18 @@ export class PackagePicker {
     );
   }
 
+  // Say in the results that the index could not be read, and why. The
+  // next search or expansion asks the index again.
+  unread(err) {
+    this.results.replaceChildren(
+      el(
+        "p",
+        { className: "muted" },
+        `the package index could not be read (${err.message})`,
+      ),
+    );
+  }
+
   // One attribute's versions, newest first, each a pill that adds the
   // version to the selection or takes it back out. The ones no boot can
   // reach are there to be read.
@@ -119,7 +137,13 @@ export class PackagePicker {
       el("p", { className: "muted" }, `loading ${attr}…`),
     );
     this.rows = [];
-    const versions = await versionRowsOf(attr);
+    let versions;
+    try {
+      versions = await versionRowsOf(attr);
+    } catch (err) {
+      this.unread(err);
+      return;
+    }
 
     if (versions.length === 0) {
       this.results.replaceChildren(

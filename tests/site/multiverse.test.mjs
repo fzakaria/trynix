@@ -8,13 +8,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  attrNames,
   bootable,
   compareVersions,
+  identify,
   mergeVersions,
   multiverseUrl,
   versionsOf,
 } from "../../site/js/multiverse.js";
 import { matches, parseSpecs } from "../../site/js/ranges.js";
+import { jsonResponse, statusResponse, stubFetch } from "./stub-fetch.mjs";
 
 // A meta-shard entry: `d` digest, `cs` closure size. The entry also
 // carries the census verdict `ok`, which nothing here reads, so it is
@@ -134,29 +137,9 @@ test("a range accepts the lettered releases after a version", () => {
   assert.equal(matches(spec, "1.1.0l"), false);
 });
 
-// Stand-in fetches for the index tests below: each answers its calls in
-// order from `answers`, an Error to throw or a Response to resolve
-// with, and counts them. The real fetch is put back after each test.
-function stubFetch(t, answers) {
-  const real = globalThis.fetch;
-  t.after(() => {
-    globalThis.fetch = real;
-  });
-  const stub = { calls: 0 };
-  globalThis.fetch = async () => {
-    const answer = answers[stub.calls];
-    stub.calls += 1;
-    if (answer instanceof Error) {
-      throw answer;
-    }
-    return answer;
-  };
-  return stub;
-}
-
 // A meta shard holding one built version of `attr`, as a response.
 const metaShard = (attr) =>
-  new Response(JSON.stringify({ attrs: { [attr]: { "1.0": entry("d") } } }));
+  jsonResponse({ attrs: { [attr]: { "1.0": entry("d") } } });
 
 // Each test below asks for an attribute in a shard of its own: the
 // page's shard cache lives as long as the module, so a shard another
@@ -182,10 +165,7 @@ test("a shard that failed to load is fetched again", async (t) => {
 // shard, which would tell the reader the package is not in the index,
 // and that it is not kept either.
 test("a shard the server could not serve is an error", async (t) => {
-  const stub = stubFetch(t, [
-    new Response("", { status: 503 }),
-    metaShard("qb"),
-  ]);
+  const stub = stubFetch(t, [statusResponse(503), metaShard("qb")]);
 
   await assert.rejects(versionsOf("qb"), /503/);
   const rows = await versionsOf("qb");
@@ -196,9 +176,74 @@ test("a shard the server could not serve is an error", async (t) => {
 // Checks that a missing shard is an empty one: no attribute starts with
 // those characters, and asking again would get the same answer.
 test("a missing shard holds no attributes", async (t) => {
-  const stub = stubFetch(t, [new Response("", { status: 404 })]);
+  const stub = stubFetch(t, [statusResponse(404)]);
 
   assert.deepEqual(await versionsOf("qc"), []);
   assert.deepEqual(await versionsOf("qc"), []);
+  assert.equal(stub.calls, 1);
+});
+
+// Checks that the attribute names behind search and the range box's
+// completions are not kept after a failure: a failed fetch and a server
+// error each fail the one lookup, naming names.json, and the next
+// lookup fetches again and gets the names. A kept failure left search
+// dead for the life of the page. Both failures are in one test because
+// the names, once loaded, are kept for the module's life.
+test("the attribute names are fetched again after a failure", async (t) => {
+  const stub = stubFetch(t, [
+    new TypeError("Failed to fetch"),
+    statusResponse(503),
+    jsonResponse({ attrs: { hello: 12 } }),
+  ]);
+
+  await assert.rejects(attrNames(), /Failed to fetch/);
+  await assert.rejects(attrNames(), /names\.json: HTTP 503/);
+  assert.deepEqual(await attrNames(), { hello: 12 });
+  assert.equal(stub.calls, 3);
+});
+
+// A digest in an identify shard of its own (see the shard tests above),
+// and the attribute and version the shard names it as.
+const IDENTIFIED = "ia000000000000000000000000000000";
+
+// Checks that a pasted path's name is not lost to a failed lookup: the
+// first lookup fails, naming the shard, and the second fetches again
+// and names the path. A failure kept as an empty shard left every path
+// in that shard unnamed for the life of the page.
+test("a path's name is looked up again after a failure", async (t) => {
+  const stub = stubFetch(t, [
+    new TypeError("Failed to fetch"),
+    jsonResponse({ [IDENTIFIED]: ["hello", "2.12"] }),
+  ]);
+
+  await assert.rejects(identify(IDENTIFIED), /identify\/ia\.json: Failed/);
+  assert.deepEqual(await identify(IDENTIFIED), {
+    attr: "hello",
+    version: "2.12",
+  });
+  assert.equal(stub.calls, 2);
+});
+
+// Checks that a server error names no path either, and is not kept.
+test("a path's name is looked up again after a server error", async (t) => {
+  const digest = "ib000000000000000000000000000000";
+  const stub = stubFetch(t, [
+    statusResponse(503),
+    jsonResponse({ [digest]: ["jq", "1.7"] }),
+  ]);
+
+  await assert.rejects(identify(digest), /identify\/ib\.json: HTTP 503/);
+  assert.deepEqual(await identify(digest), { attr: "jq", version: "1.7" });
+  assert.equal(stub.calls, 2);
+});
+
+// Checks that a missing identify shard is an answer, kept: no indexed
+// path starts with those characters, so the path has no name.
+test("a path in a missing identify shard has no name", async (t) => {
+  const digest = "ic000000000000000000000000000000";
+  const stub = stubFetch(t, [statusResponse(404)]);
+
+  assert.equal(await identify(digest), null);
+  assert.equal(await identify(digest), null);
   assert.equal(stub.calls, 1);
 });

@@ -66,6 +66,20 @@ export class RangeComplete {
     };
   }
 
+  // The names or versions the index has that `fragment` could complete
+  // to.
+  async candidates(fragment) {
+    if (fragment.mode === "attr") {
+      const names = await attrNames();
+      return Object.keys(names).filter((name) =>
+        name.startsWith(fragment.prefix),
+      );
+    }
+    return (await versionsOf(fragment.attr))
+      .map((version) => version.version)
+      .filter((version) => version.startsWith(fragment.prefix));
+  }
+
   async refresh() {
     const fragment = this.fragment();
     if (
@@ -76,16 +90,15 @@ export class RangeComplete {
       return;
     }
 
+    // Completions only help, so an index that could not be read offers
+    // none, and the next keystroke asks again. Resolving the line says
+    // what failed (app.js, the range lane).
     let pool;
-    if (fragment.mode === "attr") {
-      const names = await attrNames();
-      pool = Object.keys(names).filter((name) =>
-        name.startsWith(fragment.prefix),
-      );
-    } else {
-      pool = (await versionsOf(fragment.attr))
-        .map((version) => version.version)
-        .filter((version) => version.startsWith(fragment.prefix));
+    try {
+      pool = await this.candidates(fragment);
+    } catch {
+      this.hide();
+      return;
     }
 
     this.suggestions = pool

@@ -33,53 +33,71 @@ export const shardOf = (attr) =>
     .map((c) => (/[a-z0-9]/.test(c) ? c : "_"))
     .join("") || "_";
 
-const shardCache = new Map();
-
-// The status a missing shard answers with, as opposed to one the index
-// failed to serve.
+// The status a file the index does not have answers with, as opposed
+// to one the index failed to serve.
 const HTTP_NOT_FOUND = 404;
 
-function fetchShard(dir, attr) {
-  const key = `${dir}/${shardOf(attr)}`;
-  if (shardCache.has(key)) {
-    return shardCache.get(key);
+// One JSON file from the index, fetched once per `key` and kept in
+// `cache` for the life of the page. A 404 answers `missing` when the
+// caller says what a missing file means; with no `missing`, a 404 fails
+// like any other error. A file that could not be read rejects with an
+// Error naming the file's URL, and is dropped from the cache, so the
+// next lookup fetches the file again. Kept, the failure would fail
+// every later lookup for the life of the page, or answer every one of
+// them wrongly.
+//
+// Shared by the index's readers here and in outputs.js, which reads
+// the same site.
+export function indexFile(cache, key, url, { missing } = {}) {
+  if (cache.has(key)) {
+    return cache.get(key);
   }
 
-  const shard = fetch(`${MULTIVERSE_URL}/${key}.json`).then((res) => {
-    // A missing shard means no attribute starts with those characters,
-    // which is the same answer as a shard that loads and does not hold
-    // it.
-    if (res.status === HTTP_NOT_FOUND) {
-      return { attrs: {} };
-    }
-    // Any other failure says nothing about what the index holds, and
-    // answering "not in the index" for it would be a wrong answer.
-    if (!res.ok) {
-      throw new Error(`${key}.json answered ${res.status}`);
-    }
-    return res.json();
-  });
-  shardCache.set(key, shard);
+  const file = fetch(url)
+    .then((res) => {
+      if (res.status === HTTP_NOT_FOUND && missing !== undefined) {
+        return missing;
+      }
+      // Any other failure says nothing about what the index holds.
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return res.json();
+    })
+    .catch((err) => {
+      throw new Error(`${url}: ${err.message}`);
+    });
+  cache.set(key, file);
 
-  // A shard that could not be read is dropped from the cache, so the
-  // next lookup fetches it again rather than failing on the cached
-  // failure for the life of the page.
-  shard.catch(() => {
-    if (shardCache.get(key) === shard) {
-      shardCache.delete(key);
+  // Dropped once it fails, unless a newer fetch already took its place.
+  file.catch(() => {
+    if (cache.get(key) === file) {
+      cache.delete(key);
     }
   });
-  return shard;
+  return file;
 }
 
-let namesPromise;
+const shardCache = new Map();
+
+// A missing shard means no attribute starts with those characters,
+// which is the same answer as a shard that loads and does not hold it.
+function fetchShard(dir, attr) {
+  const key = `${dir}/${shardOf(attr)}`;
+  return indexFile(shardCache, key, `${MULTIVERSE_URL}/${key}.json`, {
+    missing: { attrs: {} },
+  });
+}
 
 // The autocomplete corpus: attribute -> how many versions it ever had.
+// The index always has the file, so a missing one is a failure too.
+const NAMES = "names.json";
+const namesCache = new Map();
+
 export function attrNames() {
-  namesPromise ??= fetch(`${MULTIVERSE_URL}/names.json`)
-    .then((res) => res.json())
-    .then((json) => json.attrs);
-  return namesPromise;
+  return indexFile(namesCache, NAMES, `${MULTIVERSE_URL}/${NAMES}`).then(
+    (json) => json.attrs,
+  );
 }
 
 // Whether trynix can attempt this version at all, which is the one
@@ -293,25 +311,20 @@ export async function searchAttrs(query, limit) {
 // for, since a digest belongs to exactly one of them.
 //
 // A shard is a few tens of KB, so a paste costs one small fetch and
-// nothing at all the second time.
+// nothing at all the second time. A missing shard means no indexed path
+// starts with those characters, so the path has no name. A shard that
+// could not be read rejects, and the next paste in it asks again.
 const identifyCache = new Map();
 
 export function identify(digest) {
   const shard = digest.slice(0, 2);
-  if (!identifyCache.has(shard)) {
-    identifyCache.set(
-      shard,
-      fetch(`${MULTIVERSE_URL}/identify/${shard}.json`)
-        .then((res) => (res.ok ? res.json() : {}))
-        // A path nobody can name is still a path this page can boot,
-        // so a failed lookup answers "unknown" rather than throwing.
-        .catch(() => ({})),
-    );
-  }
-  return identifyCache.get(shard).then((entries) => {
-    const hit = entries[digest];
-    return hit === undefined ? null : { attr: hit[0], version: hit[1] };
-  });
+  const url = `${MULTIVERSE_URL}/identify/${shard}.json`;
+  return indexFile(identifyCache, shard, url, { missing: {} }).then(
+    (entries) => {
+      const hit = entries[digest];
+      return hit === undefined ? null : { attr: hit[0], version: hit[1] };
+    },
+  );
 }
 
 // The page on nixmultiverse.com for an attribute, or for one version of

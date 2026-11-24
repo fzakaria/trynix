@@ -248,7 +248,15 @@ function reprobe() {
 // publishes a digest-keyed lookup, so 32 opaque characters become an
 // attribute, a version, and a link to the page describing them.
 async function name(entry) {
-  const named = await identify(entry.digest);
+  // A path nobody can name is still a path this page can boot, so a
+  // lookup that failed goes to the log and leaves the chip as pasted.
+  let named;
+  try {
+    named = await identify(entry.digest);
+  } catch (err) {
+    log(`naming ${entry.label}: ${err.message}`);
+    return;
+  }
   if (named === null) {
     return;
   }
@@ -940,12 +948,31 @@ bootProgress.addEventListener("click", (event) => {
 // that keeps its programs in one. Booting jq means booting jq.out *and*
 // jq.bin: the two are separate store paths and neither references the
 // other. Returns [{ digest, bin }], bin null when there is no such
-// sibling.
+// sibling, or when the index could not say.
 async function rootsOf(digests) {
   const roots = [];
+  const unknown = [];
   for (const digest of digests) {
-    const bin = await binOutputOf(digest);
-    roots.push({ digest, bin: bin === digest ? null : bin });
+    try {
+      const bin = await binOutputOf(digest);
+      roots.push({ digest, bin: bin === digest ? null : bin });
+    } catch (err) {
+      // The boot goes on without a sibling: a path from another cache
+      // has none, and an index that is down is no reason to refuse it.
+      log(`bin output of ${digest}: ${err.message}`);
+      unknown.push(
+        `${selection.get(digest)?.label ?? digest} (${err.message})`,
+      );
+      roots.push({ digest, bin: null });
+    }
+  }
+
+  // The status line names each package whose programs may be missing.
+  if (unknown.length > 0) {
+    setNotes([
+      ...notes,
+      `the index could not say where the programs of ${unknown.join(", ")} are, so they may be missing`,
+    ]);
   }
   return roots;
 }
