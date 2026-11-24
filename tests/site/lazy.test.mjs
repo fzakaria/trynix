@@ -306,6 +306,38 @@ test("the store counts what it has written against the closure", async () => {
   assert.deepEqual(store.pending(), ["l-two"]);
 });
 
+// Checks that the store says when a path has been written, and that the
+// path already counts as written when it does: the page marks the
+// closure's progress row done from that call, once every path counts,
+// and a count taken inside write() missed the last path. A store with
+// one path is enough to see it.
+test("a written path counts as written when the store says so", async () => {
+  const counted = [];
+  const download = deferred();
+  const store = lazyStore({
+    concurrency: 4,
+    fetch: () => download.promise,
+    write: () => {},
+    onWritten(basename) {
+      counted.push({ basename, ...store.stats() });
+    },
+  });
+  store.add([info("u-last", [], 300)]);
+
+  const last = store.ensure("u-last", Priority.DEMAND);
+  download.resolve([]);
+  await last;
+  assert.deepEqual(counted, [
+    {
+      basename: "u-last",
+      paths: 1,
+      bytes: 300,
+      writtenPaths: 1,
+      writtenBytes: 300,
+    },
+  ]);
+});
+
 // The modification time nix gives every file in a store, which the
 // guest is told for every file of the closure (share.js).
 const STORE_TIME_MS = 1000;

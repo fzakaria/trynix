@@ -108,7 +108,10 @@ const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
 // running.
 // listing(info), when given, resolves to a path's NAR listing's root,
 // or to null when there is none to be had (listing.js).
-export function lazyStore({ fetch, write, concurrency, listing }) {
+// onWritten(basename), when given, hears of each path once the path
+// counts as written in stats() and ready(); inside write() the path
+// does not count yet.
+export function lazyStore({ fetch, write, concurrency, listing, onWritten }) {
   // basename -> { info, written, promise, settle, queued, listing }.
   // `promise` is the download every lookup of the path waits on, from
   // the moment the path is asked for until the download ends; null
@@ -160,6 +163,7 @@ export function lazyStore({ fetch, write, concurrency, listing }) {
           path.written = true;
           over();
           settle.resolve();
+          onWritten?.(basename);
         },
         (err) => {
           log(

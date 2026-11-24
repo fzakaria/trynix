@@ -1135,7 +1135,8 @@ function serveLazily(vmPromise, listings) {
     }
   }
 
-  // The closure's row is done once every path is in.
+  // The closure's row is done once every path is in: called as each
+  // path is written, and when the rows are shown.
   function finished() {
     const { paths, writtenPaths } = store.stats();
     if (writtenPaths === paths) {
@@ -1157,8 +1158,8 @@ function serveLazily(vmPromise, listings) {
     },
     async write(basename, entries) {
       (await vmPromise).share.write(basename, entries);
-      finished();
     },
+    onWritten: finished,
   });
 
   return {
