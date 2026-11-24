@@ -15,6 +15,7 @@
 // is what run-command and read-console are for, and they are the
 // reason this file exists.
 
+import { Engine, systemOf } from "./engine.js";
 import { log } from "./log.js";
 
 const NOT_BOOTED =
@@ -27,9 +28,18 @@ const text = (body) => ({ content: [{ type: "text", text: body }] });
 
 const json = (value) => text(JSON.stringify(value, null, 2));
 
+// The machine each engine boots, as the boot tool names it (engine.js).
+const MACHINES = Object.freeze({
+  [Engine.UNKERNEL]: `an ${systemOf(Engine.UNKERNEL)} guest (a Linux kernel compiled to WebAssembly that runs aarch64 programs)`,
+  [Engine.QEMU]: `an ${systemOf(Engine.QEMU)} VM (a whole PC emulated by QEMU)`,
+});
+
 // The tools, in terms of `page`: the handful of operations app.js
-// already performs for the reader, named here for an agent.
-function toolsFor(page) {
+// already performs for the reader, named here for an agent. `engine`
+// is the engine this page boots, which fixes the guest's system for
+// the life of the page.
+export function toolsFor(page, engine) {
+  const system = systemOf(engine);
   return [
     {
       name: "page-state",
@@ -60,8 +70,7 @@ function toolsFor(page) {
 
     {
       name: "list-versions",
-      description:
-        "Every version of one attribute that nixpkgs ever shipped, newest first, each marked with whether Hydra built it for x86_64-linux. A version with no build cannot be booted: there is nothing in the cache to fetch.",
+      description: `Every version of one attribute that nixpkgs ever shipped, newest first, each marked with whether Hydra built it for ${system}, the guest's system. A version with no build cannot be booted: there is nothing in the cache to fetch.`,
       inputSchema: {
         type: "object",
         properties: {
@@ -141,8 +150,7 @@ function toolsFor(page) {
 
     {
       name: "boot",
-      description:
-        "Boot the selection in the tab: fetch its closure from cache.nixos.org into an x86_64 Linux VM and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. A boot or an addition that fails says so and why, and calling boot again retries a failed addition.",
+      description: `Boot the selection in the tab: fetch its closure from cache.nixos.org into ${MACHINES[engine]} and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. A boot or an addition that fails says so and why, and calling boot again retries a failed addition.`,
       inputSchema: { type: "object", properties: {} },
       execute: async () => text(await page.boot()),
     },
@@ -195,13 +203,13 @@ function toolsFor(page) {
 // has moved on from one of these arguments costs that tool rather than
 // the page. Nothing here is awaited by the caller: a browser without
 // the API must not delay the boot of a browser that has it.
-export function registerTools(page) {
+export function registerTools(page, engine) {
   const context = document.modelContext;
   if (context === undefined || typeof context.registerTool !== "function") {
     return;
   }
 
-  const tools = toolsFor(page);
+  const tools = toolsFor(page, engine);
   for (const tool of tools) {
     Promise.resolve(context.registerTool(tool)).catch((err) => {
       log(`webmcp: ${tool.name} was refused: ${err.message}`);

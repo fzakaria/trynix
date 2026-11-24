@@ -20,7 +20,7 @@ them instead of synthesising clicks.
 | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `page-state`      | whether a guest is running, its engine and system, what is selected, the caches, the link that reproduces the page |
 | `search-packages` | attribute names in the nixpkgs-multiverse index                                                                    |
-| `list-versions`   | every version of an attribute, marked with whether Hydra built it for x86\_64-linux                                |
+| `list-versions`   | every version of an attribute, marked with whether Hydra built it for the guest's system                           |
 | `select-packages` | add attributes or store paths to the selection                                                                     |
 | `set-caches`      | the extra binary caches to fetch from, each with its public key                                                    |
 | `boot`            | fetch the closure and start the VM, resolving at the guest's prompt                                                |

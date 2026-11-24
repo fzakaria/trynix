@@ -2433,4 +2433,4 @@ const page = {
   guest: () => window.trynix ?? null,
 };
 
-registerTools(page);
+registerTools(page, ENGINE);
