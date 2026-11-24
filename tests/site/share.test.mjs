@@ -137,6 +137,104 @@ test("a listed path's programs are linked before it is written", () => {
   assert.deepEqual(share.programsOf(HELLO), ["hello", "hi"]);
 });
 
+// A package whose NAR holds one program, `first`, though its listing
+// may have offered more.
+const FIRST = "aaa-first-1.0";
+const FIRST_ENTRIES = [
+  { path: "", type: "directory" },
+  { path: "bin", type: "directory" },
+  {
+    path: "bin/first",
+    type: "regular",
+    executable: true,
+    data: new Uint8Array([3]),
+  },
+];
+
+// Checks that a path's NAR, once in, takes back the farm links its
+// listing made for programs the NAR does not have, and that another
+// package's program of the same name takes the link. Two packages are
+// offered from listings, the first wrongly listing `hello`, and linked
+// as a boot links them, the first winning the name; then both NARs
+// arrive in turn, and the farm's `hello` is read after each. A link
+// left to the first named a file that was never there, so `hello` on
+// PATH failed after both NARs were in.
+test("a NAR takes back the programs its listing offered wrongly", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  share.offer(FIRST, ["first", "hello"]);
+  share.offer(HELLO, ["hello", "hi"]);
+  share.linkAll([FIRST, HELLO], [FIRST, HELLO], Precedence.KEEP);
+  assert.equal(
+    fs.nodes.get("/bin/hello").target,
+    `/nix/store/${FIRST}/bin/hello`,
+  );
+
+  // The first NAR has no hello: the second package's takes the link.
+  share.write(FIRST, FIRST_ENTRIES);
+  assert.deepEqual(share.programsOf(FIRST), ["first"]);
+  assert.equal(
+    fs.nodes.get("/bin/hello").target,
+    `/nix/store/${HELLO}/bin/hello`,
+  );
+  assert.equal(
+    fs.nodes.get("/bin/first").target,
+    `/nix/store/${FIRST}/bin/first`,
+  );
+
+  // The second NAR backs the link it now has.
+  share.write(HELLO, ENTRIES);
+  share.link(HELLO, Precedence.KEEP);
+  assert.equal(
+    fs.nodes.get("/bin/hello").target,
+    `/nix/store/${HELLO}/bin/hello`,
+  );
+});
+
+// Checks that a wrongly listed program no other package has leaves the
+// farm when the NAR arrives, so the name is not found rather than found
+// and broken.
+test("a program no NAR has leaves the farm", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  share.offer(FIRST, ["first", "ghost"]);
+  share.link(FIRST, Precedence.KEEP);
+  assert.equal(
+    fs.nodes.get("/bin/ghost").target,
+    `/nix/store/${FIRST}/bin/ghost`,
+  );
+
+  share.write(FIRST, FIRST_ENTRIES);
+  assert.equal(fs.nodes.get("/bin/ghost"), undefined);
+  assert.equal(
+    fs.nodes.get("/bin/first").target,
+    `/nix/store/${FIRST}/bin/first`,
+  );
+});
+
+// Checks which package takes a link a NAR gave back when several have
+// the program: a selected package before a dependency, as a boot's
+// batch links the roots first. A dependency offering `hello` comes
+// ahead of a second selected package in the share's order, and the
+// selected one takes the name. A link the NAR still backs, or that
+// names another package, stays as it is.
+test("a selected package takes a given-back link before a dependency", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  const dependency = "ddd-hello-2.10";
+  share.offer(FIRST, ["first", "hello"]);
+  share.offer(dependency, ["hello"]);
+  share.offer(HELLO, ["hello", "hi"]);
+  share.linkAll([FIRST, dependency, HELLO], [FIRST, HELLO], Precedence.KEEP);
+
+  share.write(FIRST, FIRST_ENTRIES);
+  assert.equal(
+    fs.nodes.get("/bin/hello").target,
+    `/nix/store/${HELLO}/bin/hello`,
+  );
+  assert.equal(fs.nodes.get("/bin/hi").target, `/nix/store/${HELLO}/bin/hi`);
+});
+
 // Checks the programs a set of paths offers, as files the guest can
 // read: by each path's own bin directory rather than through the farm,
 // whose links may name another package.

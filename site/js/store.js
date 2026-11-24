@@ -488,9 +488,11 @@ export const Precedence = Object.freeze({
 // Link a store path's programs into the farm directory the guest keeps
 // on PATH. `storePath` is the guest's view of the package
 // (/nix/store/...), which is what the link has to name: the guest
-// reaches it through its own /nix symlink.
+// reaches it through its own /nix symlink. Returns the names linked,
+// which leaves out the ones KEEP left to another package.
 export function linkPrograms(FS, binDir, storePath, programs, precedence) {
   ensureDir(FS, binDir);
+  const linked = [];
   for (const name of programs) {
     const link = `${binDir}/${name}`;
     if (exists(FS, link)) {
@@ -500,7 +502,9 @@ export function linkPrograms(FS, binDir, storePath, programs, precedence) {
       FS.unlink(link);
     }
     FS.symlink(`${storePath}/${BIN_PREFIX}${name}`, link);
+    linked.push(name);
   }
+  return linked;
 }
 
 // Whether a path exists in the emscripten FS, the link itself rather

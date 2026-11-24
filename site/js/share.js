@@ -32,16 +32,71 @@ export function storeShare(FS) {
   const programs = new Map();
   const written = new Set();
 
+  // The farm's links by program name, each to the basename whose
+  // program the link names.
+  const farm = new Map();
+
+  // The basenames the reader selected, from every batch linked: the
+  // first to take a name a NAR gave back (reconcile).
+  const selected = new Set();
+
+  // Link the programs `names` of one path into the farm, and note which
+  // links now name it.
+  function linkNames(basename, names, precedence) {
+    const linked = linkPrograms(
+      FS,
+      BIN_DIR,
+      `${GUEST_STORE_DIR}/${basename}`,
+      names,
+      precedence,
+    );
+    for (const name of linked) {
+      farm.set(name, basename);
+    }
+  }
+
+  // Bring the farm's links to a path in line with its NAR, once the NAR
+  // is in. A listing offered `offered` before the NAR came, and the farm
+  // linked them; a link the NAR does not back goes, and another path
+  // that has the program takes the name, a selected one first, as a
+  // batch links the roots first.
+  function reconcile(basename, offered) {
+    const backed = new Set(programs.get(basename));
+    for (const name of offered) {
+      if (backed.has(name) || farm.get(name) !== basename) {
+        continue;
+      }
+      FS.unlink(`${BIN_DIR}/${name}`);
+      farm.delete(name);
+
+      // The next path with the program, selected paths before the rest.
+      const others = [...programs.keys()].filter(
+        (other) => other !== basename && programs.get(other).includes(name),
+      );
+      const next = others.find((other) => selected.has(other)) ?? others.at(0);
+      if (next !== undefined) {
+        linkNames(next, [name], Precedence.KEEP);
+      }
+    }
+  }
+
   return {
     // Materialise one parsed NAR. A path already there is left alone —
-    // a store path is immutable, so there is nothing to update.
+    // a store path is immutable, so there is nothing to update. The
+    // NAR's programs replace any its listing offered, and the farm
+    // gives up the links of offered programs the NAR lacks
+    // (reconcile).
     write(basename, entries) {
       if (written.has(basename)) {
         return;
       }
       writeEntries(FS, `${STORE_DIR}/${basename}`, entries);
       written.add(basename);
+      const offered = programs.get(basename);
       programs.set(basename, programsOf(entries));
+      if (offered !== undefined) {
+        reconcile(basename, offered);
+      }
     },
 
     // A path's programs before it is written, from its NAR listing
@@ -56,13 +111,7 @@ export function storeShare(FS) {
 
     // Offer a written path's programs in the farm.
     link(basename, precedence) {
-      linkPrograms(
-        FS,
-        BIN_DIR,
-        `${GUEST_STORE_DIR}/${basename}`,
-        programs.get(basename) ?? [],
-        precedence,
-      );
+      linkNames(basename, programs.get(basename) ?? [], precedence);
     },
 
     // Link a batch: the roots — what the reader asked for — first, so
@@ -71,6 +120,7 @@ export function storeShare(FS) {
     // says whether a root may replace a link an earlier batch made.
     linkAll(basenames, roots, precedence) {
       for (const basename of roots) {
+        selected.add(basename);
         this.link(basename, precedence);
       }
       for (const basename of basenames) {

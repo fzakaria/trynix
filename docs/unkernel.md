@@ -392,7 +392,11 @@ the NAR is written without waiting for it. A listing that differs is
 named in the page's log and evicted from the Cache API, so no later
 visit answers from it. The
 answers it gave before the NAR arrived stand, and a name it hid stays
-hidden from a path the guest never downloads. Checked outside the page
+hidden from a path the guest never downloads. The farm is put right
+when the NAR arrives, whether or not the listing differs: a program
+link the listing made that the NAR does not back is removed, and
+another path of the closure with a program of that name takes it, a
+selected one before a dependency. Checked outside the page
 on 2026-11-23, every one of the 319 listings in firefox's aarch64
 closure matched its NAR on all five; ten of them, glibc's among them,
 are an older format without `narOffset`, which the page does not read.
