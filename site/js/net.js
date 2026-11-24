@@ -11,7 +11,39 @@ import { log } from "./log.js";
 const ATTEMPTS = 4;
 const BACKOFF_MS = 400;
 
+// How long a download may go without a byte before it counts as stalled
+// and is retried like any other failed attempt. The clock starts again
+// with every chunk, so a slow download that keeps moving is never cut
+// off however long it takes; gcc's 82 MiB on a slow line takes
+// minutes. One that has stopped would otherwise never end: a lazily
+// served share has no request timeout (unkernel.js), so a guest lookup
+// waiting on the download would wait forever.
+const IDLE_TIMEOUT_MS = 30000;
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// An abort of `controller` once `ms` pass without a call to moved().
+// One timer, set again for the time left when it fires early, rather
+// than one per chunk.
+function stallGuard(controller, ms) {
+  let last = Date.now();
+  let timer;
+  const check = () => {
+    const quiet = Date.now() - last;
+    if (quiet >= ms) {
+      controller.abort(new Error(`no bytes for ${ms / 1000} s`));
+      return;
+    }
+    timer = setTimeout(check, ms - quiet);
+  };
+  timer = setTimeout(check, ms);
+  return {
+    moved() {
+      last = Date.now();
+    },
+    stop: () => clearTimeout(timer),
+  };
+}
 
 // Read a response body into one buffer, reporting chunk sizes as they
 // arrive.
@@ -46,6 +78,9 @@ async function drain(res, { onBytes, onTotal } = {}) {
 // a miss is fetched, returned, and stored once it is complete.
 // onCacheRead reports the source and size of each completed byte read.
 //
+// A download that goes `options.idleMs` (IDLE_TIMEOUT_MS by default)
+// without a byte is abandoned and retried.
+//
 // `verify(bytes)` resolves to null for good bytes and to a reason for
 // bad ones. A body can arrive short without the fetch failing — a
 // mobile connection that drops mid-download looks like a clean end —
@@ -70,8 +105,10 @@ export async function fetchWithProgress(url, options = {}) {
 
   let downloaded = 0;
   for (let attempt = 1; ; attempt += 1) {
+    const controller = new AbortController();
+    const guard = stallGuard(controller, options.idleMs ?? IDLE_TIMEOUT_MS);
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -79,10 +116,12 @@ export async function fetchWithProgress(url, options = {}) {
       // A retry restarts the download, so the progress a failed
       // attempt reported has to be taken back or the bar overcounts.
       const onBytes = (n) => {
+        guard.moved();
         downloaded += n;
         options.onBytes?.(n);
       };
       const bytes = await drain(res, { ...options, onBytes });
+      guard.stop();
 
       const problem = await verify(bytes);
       if (problem !== null) {
@@ -93,6 +132,7 @@ export async function fetchWithProgress(url, options = {}) {
       options.onCacheRead?.(CacheResult.MISS, bytes.byteLength);
       return bytes;
     } catch (err) {
+      guard.stop();
       options.onBytes?.(-downloaded);
       downloaded = 0;
 

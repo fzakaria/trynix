@@ -81,7 +81,8 @@ const MEMORY_FS_STORE_DIR = STORE_DIR.slice(SHARE_DIR.length);
 // takes as long as the download, which for gcc's 82 MiB on a slow line
 // is minutes, and the SDK's default of 30 s would fail it, three times
 // over as the guest retries. A download that cannot finish fails on
-// its own, and the lookup is then answered EIO (lazy.js).
+// its own, a stalled one after 30 s without a byte (net.js), and the
+// lookup is then answered EIO (lazy.js).
 const LAZY_REQUEST_TIMEOUT_MS = 0;
 
 // The file the shell sources as it starts. ash reads the file ENV names

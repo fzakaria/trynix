@@ -334,6 +334,11 @@ A download that fails answers the lookup EIO, which the guest does not
 cache, and the page's log says which path and why. The next lookup
 tries again. The mount has no request timeout: the SDK's default of
 30 s would fail a lookup that waits for a large NAR on a slow line.
+The download has one of its own instead: one that goes 30 s without
+a byte is abandoned and tried again, four attempts in all
+([site/js/net.js](../site/js/net.js)), so a stalled connection cannot
+hold a lookup forever, and a slow one that keeps moving still
+finishes.
 
 ### NAR listings
 
