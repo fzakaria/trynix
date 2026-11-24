@@ -1032,9 +1032,9 @@ function reportSilent(vm, closure, roots) {
 //
 // The programs are the selected ones (`rootDigests`) with their
 // closures. What the page added beside them is left out: the X server
-// links libglvnd and Wayland, and Xwayland draws without GL here
-// (gui.js), so a guest with X11 programs would otherwise get the
-// driver on every later addition. The site's driver is held to that
+// links libglvnd and Wayland, and Xwayland draws with GL only when a
+// selected program brought the driver (gui.js), so a guest with X11
+// programs would otherwise get the driver on every later addition. The site's driver is held to that
 // closure (gldriver.js), an added program's glibc and gcc included,
 // even where the guest has had the driver since its boot.
 async function glDriverPaths(known, rootDigests, onProgress) {

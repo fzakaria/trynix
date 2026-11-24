@@ -54,6 +54,27 @@ test("a program from the driver's own nixpkgs gets it", () => {
   assert.equal(result.driver, NEW);
 });
 
+// Checks that a program that speaks X11 alone and links libglvnd gets
+// the driver too: it draws through GLX on the page's X server, and the
+// driver's libGLX_mesa is what libglvnd's GLX loads for it.
+test("an X11 program that links libglvnd gets the driver", () => {
+  const x11Program = [
+    path("glxgears-9.0.0"),
+    path("libx11-1.8.14"),
+    path("libxcb-1.17.0"),
+    path("libglvnd-1.7.0"),
+    path("glibc-2.42-84"),
+    path("gcc-15.3.0-lib"),
+  ];
+  const result = chooseDriver(x11Program, DRIVERS);
+  assert.equal(result.choice, DriverChoice.ADD);
+  assert.equal(result.driver, NEW);
+
+  // xterm speaks X11 and draws no GL.
+  const xterm = [path("xterm-412"), path("libx11-1.8.14"), path("glibc-2.42")];
+  assert.equal(chooseDriver(xterm, DRIVERS).choice, DriverChoice.NOT_NEEDED);
+});
+
 // Checks that a program older than the newest driver's glibc gets the
 // newest driver it can load, and that version 2.40 sorts above 2.39 and
 // below 2.42 (a string comparison would not).

@@ -58,6 +58,10 @@ const X11_SERVER_PATH = /^[0-9a-z]{32}-xwayland-satellite-\d/;
 const isX11Client = (basename) =>
   LIBX11_PATH.test(basename) || LIBXCB_PATH.test(basename);
 
+// Whether a closure's basenames hold a library an X11 client speaks
+// through, so that a program in it can draw on the page's X server.
+export const speaksX11 = (basenames) => basenames.some(isX11Client);
+
 // Whether a store basename is an X server the relay can start.
 // Xwayland alone is not one: rootless, it needs a window manager to
 // give its windows to a compositor, which the satellite is.

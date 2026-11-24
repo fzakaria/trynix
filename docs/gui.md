@@ -83,9 +83,9 @@ when the frame shrank on leaving full screen, is pulled back until a
 40 by 24 px corner of it is inside, enough to drag it by.
 
 GL programs need a driver, and the page adds one: when the closure
-holds a Wayland program that links libglvnd and no Mesa, the page
-walks in the site's own Mesa, built with the virgl driver alone (see
-[The GL driver](#the-gl-driver)).
+holds a Wayland or X11 program that links libglvnd and no Mesa, the
+page walks in the site's own Mesa, built with the virgl driver alone
+(see [The GL driver](#the-gl-driver)).
 
 The gears demo sets `LIBDECOR_PLUGIN_DIR=` for that command so it can
 draw its first frame without downloading GTK for the window decorations.
@@ -122,6 +122,7 @@ https://trynix.dev/?pkg=xeyes&boot=1&run=xeyes+%26
                                               └─> frame by GPU resource ──┘
  xterm ──X11──> Xwayland ──> xwayland-satellite ──wayland──> wlandr
  (wlandr holds :0 and starts the satellite, which starts Xwayland)
+ etr ──GLX──> Mesa virgl ──DRI3──> Xwayland, drawing with glamor through Mesa virgl
 ```
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
@@ -192,11 +193,12 @@ need it), and Vulkan, video and X11 libraries. The guest has one GPU,
 virtio-gpu, and one driver that can use it.
 
 [nix/mesa-virgl.nix](../nix/mesa-virgl.nix) is nixpkgs' Mesa with
-`gallium-drivers=virgl`, no Vulkan drivers or layers, LLVM off, no
-GLX and Wayland as the only EGL platform. nixpkgs builds Mesa with
-meson's auto features on, so every feature option is named, on or
-off. What libglvnd and a Wayland client need stays: `libEGL_mesa`
-with its `50_mesa.json`, GLES, and GBM's backend `dri_gbm.so`.
+`gallium-drivers=virgl`, no Vulkan drivers or layers, LLVM off, and
+Wayland and X11 as its platforms. nixpkgs builds Mesa with meson's
+auto features on, so every feature option is named, on or off. What
+libglvnd and a Wayland client need stays: `libEGL_mesa` with its
+`50_mesa.json`, GLES, and GBM's backend `dri_gbm.so`; and what an X11
+client needs, `libGLX_mesa` (see [GLX programs](#glx-programs)).
 Mesa is also built against a libdrm without Intel support, since
 that support links libpciaccess, which carries hwdata's PCI id tables
 (10 MB) and virtio-gpu has no PCI ids to look up; and against a libgbm
@@ -246,14 +248,15 @@ The result is Mesa 26.2.2 with `libgallium` holding the one driver:
 | Mesa            | closure paths | compressed | unpacked | only on the site |
 | --------------- | ------------- | ---------- | -------- | ---------------- |
 | nixpkgs' `mesa` | 60            | 301 MB     | 1.12 GB  | none             |
-| `mesa-virgl`    | 13            | 18 MB      | 83 MB    | 3 NARs, 3.1 MB   |
+| `mesa-virgl`    | 20            | 19 MB      | 90 MB    | 3 NARs, 3.2 MB   |
 
-Three paths are the site's own: Mesa (3.0 MB) and the libdrm (114 KB)
-and libgbm (13 KB) it is built against. The other ten (expat, zstd,
-libwayland, libffi, glibc, gcc's runtime and their dependencies) are
-nixpkgs' own builds from cache.nixos.org.
+Three paths are the site's own: Mesa (3.1 MB) and the libdrm (114 KB)
+and libgbm (13 KB) it is built against. The other seventeen (expat,
+zstd, libwayland, libffi, glibc, gcc's runtime, the X11 client
+libraries GLX links and their dependencies) are nixpkgs' own builds
+from cache.nixos.org. GLX added seven of them, 1.4 MB compressed.
 
-None of those ten is shared with a program the index resolves today:
+None of those seventeen is shared with a program the index resolves today:
 the index picks each program's newest build, from a newer nixpkgs
 than the one this flake locks, so mesa-demos 9.0.0 comes with glibc
 2.44 and gcc 16 where the driver has 2.42 and 15. The whole driver
@@ -263,14 +266,14 @@ program's is the one loaded:
 | selection                          | paths | compressed | unpacked |
 | ---------------------------------- | ----- | ---------- | -------- |
 | mesa-demos + `mesa`                | 133   | 380 MB     | 1.47 GB  |
-| mesa-demos, with the site's driver | 124   | 123 MB     | 541 MB   |
+| mesa-demos, with the site's driver | 131   | 124 MB     | 548 MB   |
 
 A program that never draws with GL pays the same when its closure
 holds libglvnd and Wayland, because the page cannot tell from the
 closure whether the program will load the driver: GTK 3 programs and
 mpv get it. For galculator, mousepad, aisleriot and mpv the driver
-adds 13 paths, 14.7 MB from cache.nixos.org and 3.1 MB from the site,
-83 MB unpacked in the page's memory. The page adds it anyway rather
+adds 20 paths, 16.0 MB from cache.nixos.org and 3.2 MB from the site,
+90 MB unpacked in the page's memory. The page adds it anyway rather
 than guess from the binaries: SDL, GTK 4, Qt and Firefox load GL with
 `dlopen`, so no `NEEDED` entry says they will.
 
@@ -451,15 +454,20 @@ status line says so and names two ways to it: a new shell (`sh`), or
 running, the X resources below included. Shells started later have
 both, at the prompt or in a terminal window.
 
-Xwayland runs with `XWAYLAND_NO_GLAMOR=1`: it draws with pixman into
-shared memory, which the compositor reads through kwshm like any
-other program's buffers. With glamor it draws through the GL driver,
-and that works too (xterm's buffers reached the compositor by GPU
-resource), but it needs the site's Mesa in the closure and the GL
-renderer loaded, and xterm's first frame took 6.3 s with it against
-5.0 s without, one cold run each. The GL driver rule looks only at the
-selected programs' closures, so the libglvnd that Xwayland links does
-not bring the driver.
+Xwayland draws with glamor, through the GL driver, when the guest has
+one at `/run/opengl-driver`, which a selected program that links
+libglvnd brings. GLX programs need it (see [GLX
+programs](#glx-programs)). With glamor Xwayland loads the driver into
+its own process, so the driver has to fit Xwayland's glibc too; the
+index's newest satellite comes with glibc 2.44, above the driver's
+floor. Without a driver the launcher sets `XWAYLAND_NO_GLAMOR=1`, and
+Xwayland draws with pixman into shared memory, which the compositor
+reads through kwshm like any other program's buffers. xterm and the
+other X11 programs above bring no driver and draw that way: glamor
+needs the driver's closure and the GL renderer loaded, and xterm's
+first frame took 6.3 s with it against 5.0 s without, one cold run
+each. The GL driver rule looks only at the selected programs' closures,
+so the libglvnd that Xwayland links does not bring the driver.
 
 Xwayland has no core fonts but its built-in `fixed`, and xterm asks
 for one it lacks by default, which printed a warning on the reader's
@@ -506,6 +514,46 @@ openjdk21's are 438 MB. When this was measured, its `java` was not on
 `PATH`, since its `bin` is a link to `lib/openjdk/bin`, so the Swing
 program was started by its store path; the page now follows such a
 link.
+
+### GLX programs
+
+Most X11 programs that draw with GL make their context with GLX.
+nixpkgs builds them against libglvnd, whose GLX loads the vendor
+library the X server's screen names, `libGLX_mesa`, from
+`/run/opengl-driver`; the site's Mesa has it. SFML 2, which
+extremetuxracer draws with, and freeglut, as nixpkgs builds them, make
+their contexts this way and no other.
+
+Mesa's GLX renders with the virgl driver only through DRI3: the
+program renders into buffers it shares with the X server, which
+presents them. Xwayland offers DRI3 only when it draws with glamor,
+which is why the launcher turns glamor on whenever the guest has a GL
+driver. Without DRI3 Mesa prints `screen 0 does not appear to be DRI3
+capable` and falls back to drawing in software with llvmpipe or
+softpipe, neither of which the site's Mesa has.
+
+extremetuxracer 0.8.4 is how this was found. Its menu, measured
+2026-11-24 in headless Chromium with SwiftShader on the laptop below,
+with nixpkgs' Mesa selected beside the game and the satellite:
+
+| Xwayland       | GLX renderer   | frames the compositor took |
+| -------------- | -------------- | -------------------------- |
+| without glamor | llvmpipe       | 3.0 a second               |
+| glamor         | virgl, by DRI3 | 22.6 a second              |
+
+With the site's Mesa in place of nixpkgs', gui-test's glx case counted
+206 frames by GPU resource in 10 s, 20.6 a second, and the window
+opened 9.0 s after the shell.
+
+With no GLX vendor library, which is how the site's Mesa was before
+it had GLX, SFML prints `Failed to create an OpenGL context for this
+window` and goes on, and the game dies of SIGSEGV at address 0:
+SFML's `sf::priv::ensureExtensionsInit` calls `glGetIntegerv` through
+a function pointer that only a context fills in. The same happens to
+the aarch64 build run in qemu's user mode against Xvfb on x86_64 with
+no aarch64 GLX vendor, and with nixpkgs' aarch64 Mesa as the vendor
+the game runs there, so the crash is the missing driver's and not the
+package's.
 
 ### Routes not taken
 
@@ -731,11 +779,11 @@ which can pick a newer build; its Mesa was 26.3.1 against the lock's
 | ----------------------------- | ----- | ---------- | -------- |
 | foot                          | 36    | 29 MB      | 115 MB   |
 | mesa-demos + `mesa`           | 133   | 380 MB     | 1.47 GB  |
-| mesa-demos, the site's driver | 124   | 123 MB     | 541 MB   |
+| mesa-demos, the site's driver | 131   | 124 MB     | 548 MB   |
 
 The unpacked closure is held in the page's memory. With nixpkgs' Mesa
 a GL boot asked the browser for 1.5 GB before the guest did anything;
-with the site's driver it is 541 MB, 458 MB of it mesa-demos' own
+with the site's driver it is 548 MB, 458 MB of it mesa-demos' own
 closure. These numbers, and the times below, are for a boot that
 downloads the whole closure first, which is no longer the default:
 with downloads on first use the page fetches and holds only what the
@@ -797,8 +845,10 @@ compositor:
 - **A shadow sampler** whose texture is not a depth texture, or whose
   sampler does not compare, is refused by WebGL 2 as well, and the
   site's Mesa leaves it as it is; no program run so far has made one.
-- **GLX programs** have not been run. Xwayland draws without glamor
-  here, and the site's Mesa has no GLX.
+- **A GL driver an addition brings to an X server already running**
+  does not give it glamor: Xwayland decides as it starts, so GLX
+  programs it serves get no DRI3. Selecting the GL program with the
+  X11 programs at the boot avoids it.
 - **Downloads set to all** fetch the X server's whole closure before
   the shell: 129 paths, 105 MB compressed. 70 of those paths, 67 MB,
   are there only for libdecor's GTK plugin (GTK 3, ICU, systemd),
@@ -853,6 +903,10 @@ with NEAREST filters while the draw renders into its level 1, which
 reads level 0's red, and an integer sampler with an incomplete texture
 or none on its unit, which reads (0, 0, 0, 1). The case fails on a
 wrong colour or a context error in the renderer's log.
+The glx case boots extremetuxracer alone, so the page has to add the
+X server and the GL driver both, waits for the game's window, and
+checks that its frames went through the page's GL renderer by GPU
+resource, which GLX reaches only by DRI3 on a glamor Xwayland.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.

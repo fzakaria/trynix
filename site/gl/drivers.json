@@ -2,12 +2,12 @@
   "comment": "The GL drivers site/gl/cache serves, written by tools/make-gl-cache.py: paths, every store path the cache serves, which the page asks of the site and of no other cache; and each Mesa store path with the newest GLIBC_ symbol version anything in its closure asks for, and the oldest gcc whose libstdc++ has every GLIBCXX_ version it asks for, which site/js/gldriver.js compares with a program's.",
   "paths": [
     "/nix/store/18i86lckwga1s9sk9y4ccz8xvqxljlcf-mesa-libgbm-26.1.3",
-    "/nix/store/7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134",
-    "/nix/store/bagllif8ryblv4in6lp2dmmv1qjn32vh-mesa-virgl-26.2.2"
+    "/nix/store/2wzskgn5ncjkshbaaff4r71dpb6byz6l-mesa-virgl-26.2.2",
+    "/nix/store/7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134"
   ],
   "drivers": [
     {
-      "storePath": "/nix/store/bagllif8ryblv4in6lp2dmmv1qjn32vh-mesa-virgl-26.2.2",
+      "storePath": "/nix/store/2wzskgn5ncjkshbaaff4r71dpb6byz6l-mesa-virgl-26.2.2",
       "glibc": "2.38",
       "gcc": "11.1"
     }

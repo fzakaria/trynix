@@ -230,11 +230,14 @@ function fontsConf() {
 }
 
 // The launcher the relay runs for the first X client, with the
-// relay's arguments (the display and its listening sockets). Xwayland
-// draws into shared memory, which the compositor reads through kwshm
-// like any other program's buffers: with glamor it would draw through
-// the GL driver, which X11 programs do not otherwise need, and the
-// first window took longer to open.
+// relay's arguments (the display and its listening sockets). With a GL
+// driver in the guest, Xwayland draws with glamor through that driver,
+// which is what gives it DRI3: a GLX program renders with the virgl
+// driver only through DRI3, and without it Mesa's GLX wants a software
+// driver, which the site's Mesa does not have. Without a GL driver,
+// Xwayland draws into shared memory, which the compositor reads through
+// kwshm like any other program's buffers: glamor needs the driver, and
+// xterm's first window took longer to open with it.
 function x11Launcher() {
   return [
     `#!/bin/sh`,
@@ -242,7 +245,8 @@ function x11Launcher() {
     `  echo "trynix: no X server in this guest; select xwayland-satellite" >&2`,
     `  exit 1`,
     `}`,
-    `XWAYLAND_NO_GLAMOR=1 exec ${X11_SERVER_LINK} "$@"`,
+    `[ -e ${OPENGL_DRIVER} ] || export XWAYLAND_NO_GLAMOR=1`,
+    `exec ${X11_SERVER_LINK} "$@"`,
     ``,
   ].join("\n");
 }

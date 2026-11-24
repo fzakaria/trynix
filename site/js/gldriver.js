@@ -2,10 +2,11 @@
 //
 // nixpkgs' GL programs link libglvnd, which loads the system's driver
 // at run time from /run/opengl-driver. The guest has none of its own,
-// so when a selection holds a Wayland program that links libglvnd and
-// no Mesa, the page adds one: Mesa with the virgl driver alone
-// (nix/mesa-virgl.nix), which the site serves from its own binary cache
-// beside cache.nixos.org (docs/gui.md).
+// so when a selection holds a Wayland or X11 program that links
+// libglvnd and no Mesa, the page adds one: Mesa with the virgl driver
+// alone (nix/mesa-virgl.nix), which the site serves from its own binary
+// cache beside cache.nixos.org (docs/gui.md). An X11 program draws
+// through the driver's GLX on the page's X server (x11.js).
 //
 // The driver is loaded into the program's process, so the program's
 // glibc and libstdc++ are the ones it runs against. A Mesa built
@@ -27,10 +28,12 @@
 import { speaksWayland } from "./gui.js";
 import { siteManifest } from "./substituters.js";
 import { compareVersions as compare } from "./version.js";
+import { speaksX11 } from "./x11.js";
 
 // What the chooser decided.
 export const DriverChoice = Object.freeze({
-  // No Wayland program in the selection loads GL through libglvnd.
+  // No Wayland or X11 program in the selection loads GL through
+  // libglvnd.
   NOT_NEEDED: "not-needed",
   // The selection already holds a Mesa.
   PRESENT: "present",
@@ -81,7 +84,7 @@ function oldestIn(basenames, pattern) {
 // for NONE_FITS.
 export function chooseDriver(basenames, drivers) {
   if (
-    !speaksWayland(basenames) ||
+    !(speaksWayland(basenames) || speaksX11(basenames)) ||
     !basenames.some((basename) => GLVND_PATH.test(basename))
   ) {
     return { choice: DriverChoice.NOT_NEEDED };

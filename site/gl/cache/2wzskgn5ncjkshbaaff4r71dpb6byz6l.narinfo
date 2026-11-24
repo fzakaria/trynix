@@ -1,0 +1,9 @@
+StorePath: /nix/store/2wzskgn5ncjkshbaaff4r71dpb6byz6l-mesa-virgl-26.2.2
+URL: nar/1paiwpmznb1bdz46rfdng6bp8gvsq4faqyakl9pg1m3pvyvkzsv8.nar.xz
+Compression: xz
+FileHash: sha256:1paiwpmznb1bdz46rfdng6bp8gvsq4faqyakl9pg1m3pvyvkzsv8
+FileSize: 3118284
+NarHash: sha256:0jwh4y35ckpsl9jhvaaccls4m8j09v9bszmdxxf7x8g3vh8yj7jb
+NarSize: 21466856
+References: 11hx7k584dcpkdbr9dv9pishmnph0r6j-expat-2.8.3 18i86lckwga1s9sk9y4ccz8xvqxljlcf-mesa-libgbm-26.1.3 2wzskgn5ncjkshbaaff4r71dpb6byz6l-mesa-virgl-26.2.2 5apw9ch04zkhyj53gwlb8yky8y34qqgv-libxext-1.3.7 60afk5jlqmx8xh5pr76j7j8vdrhwzrmv-gcc-15.3.0-lib 6wjykzqf6w3kzfhjc4z7dcd84j0dzsgm-glibc-2.42-84 7hf6bqmnrfiqz2ijcbzmkbk1w33bs74b-libdrm-2.4.134 i1iwm8bb7y65ikzix3yz53w062c83psk-libx11-1.8.13 l0qk63acqmqssvclrjgzd2arq4hd0qa2-libxxf86vm-1.1.7 lamn4x1yxzf4f33f8clwc2a701rr761p-libxcb-1.17.0 n61nc0cr8qmrb4923k82a26qvixpk0b8-zstd-1.5.7 njzsfgfwsb3vnh3x1aps082m3jviis54-wayland-1.26.0 qhfn49jb4ajqa4kckwp3xmqcx71ww2w4-libxshmfence-1.3.3
+Deriver: 46lq37jgv8irl9n1ll60d5k0w25a8gbx-mesa-virgl-26.2.2.drv

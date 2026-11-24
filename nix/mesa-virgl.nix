@@ -6,8 +6,9 @@
 # driver a program there can use. nixpkgs' Mesa builds every driver it
 # can, and its closure is 380 MB compressed: LLVM for llvmpipe and the
 # OpenCL frontend, python3 for two Vulkan layer scripts in bin/, and
-# Vulkan, video and X11 libraries. Without them the closure is Mesa
-# and a few libraries the cache already serves.
+# Vulkan and video libraries. Without them the closure is Mesa and a
+# few libraries the cache already serves, among them the X11 client
+# libraries GLX links.
 #
 # `pkgs` is the aarch64-linux package set the guest's programs come
 # from. Mesa is loaded into each program's process, so it has to be
@@ -38,9 +39,13 @@ in
   galliumDrivers = [ "virgl" ];
   vulkanDrivers = [ ];
   vulkanLayers = [ ];
-  # Wayland only: the guest has no X server. EGL's surfaceless and GBM
-  # platforms are always built.
-  eglPlatforms = [ "wayland" ];
+  # Wayland, and X11 for GLX: the page's X server is Xwayland, which
+  # gives GLX programs DRI3 when it draws with glamor (site/js/gui.js).
+  # EGL's surfaceless and GBM platforms are always built.
+  eglPlatforms = [
+    "x11"
+    "wayland"
+  ];
   enablePatentEncumberedCodecs = false;
   withValgrind = false;
 }).overrideAttrs
@@ -67,7 +72,7 @@ in
     # that.
     mesonFlags = [
       "--sysconfdir=/etc"
-      (lib.mesonOption "platforms" "wayland")
+      (lib.mesonOption "platforms" "x11,wayland")
       (lib.mesonOption "gallium-drivers" "virgl")
       (lib.mesonOption "vulkan-drivers" "")
       (lib.mesonOption "vulkan-layers" "")
@@ -76,12 +81,14 @@ in
 
       # What libglvnd and a Wayland EGL client need: EGL and GLES
       # through glvnd, and GBM's backend for the guest's render node.
+      # And GLX through glvnd, for X11 programs on the page's Xwayland:
+      # SFML 2 and freeglut make their GL contexts with GLX alone.
       (lib.mesonEnable "glvnd" true)
       (lib.mesonEnable "egl" true)
       (lib.mesonEnable "gles2" true)
       (lib.mesonEnable "gbm" true)
       (lib.mesonBool "libgbm-external" true)
-      (lib.mesonEnable "glx" false)
+      (lib.mesonOption "glx" "dri")
 
       (lib.mesonEnable "llvm" false)
       (lib.mesonBool "gallium-rusticl" false)

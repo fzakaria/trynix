@@ -280,10 +280,12 @@ test("a session starts the relay with the X11 launcher", async () => {
 });
 
 // Checks what the launcher does: start the X server the page linked
-// into the guest, with Xwayland drawing in shared memory rather than
-// GL, and the relay's arguments passed on; without a linked server, say
-// so and fail, which the relay takes as no X server.
-test("the X11 launcher runs the linked X server without glamor", async () => {
+// into the guest, with the relay's arguments passed on; without a
+// linked server, say so and fail, which the relay takes as no X server.
+// Xwayland draws with glamor when the guest has a GL driver, which is
+// what gives GLX programs DRI3 and so the virgl driver, and in shared
+// memory otherwise.
+test("the X11 launcher uses glamor only with a GL driver", async () => {
   stubFetch();
   const share = fakeShare();
   const session = guestSession({
@@ -298,7 +300,11 @@ test("the X11 launcher runs the linked X server without glamor", async () => {
   assert.match(script, /^#!\/bin\/sh\n/);
   assert.match(script, /\[ -e \/run\/x11-server \] \|\|/);
   assert.match(script, /exit 1/);
-  assert.match(script, /XWAYLAND_NO_GLAMOR=1 exec \/run\/x11-server "\$@"/);
+  assert.match(
+    script,
+    /\n\[ -e \/run\/opengl-driver \] \|\| export XWAYLAND_NO_GLAMOR=1\n/,
+  );
+  assert.match(script, /\nexec \/run\/x11-server "\$@"\n/);
 });
 
 // Checks how the page gives the guest its X server: a link from the
