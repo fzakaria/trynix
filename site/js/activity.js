@@ -40,10 +40,17 @@ const SECONDS_PER_MINUTE = 60;
 // appeared, or the program is still running.
 const WATCH_INTERVAL_MS = 1000;
 
-// How many looks in a row may find the program not running before the
-// strip stops waiting for it, and the longest it waits at all.
+// How many looks in a row may find a program not running, once it has
+// been seen running, before the strip stops waiting for it; how long a
+// program never seen is waited on (its files may still be downloading,
+// or the command failed); and the longest the strip waits at all.
 const ABSENT_LOOKS = 3;
+const UNSEEN_GRACE_MS = 20_000;
 const START_LIMIT_MS = 180_000;
+
+// How long the strip stays open after the last thing it showed ended,
+// so a run of small downloads does not open and close it each time.
+const LINGER_MS = 1200;
 
 // The program a command line runs: the first command's first word past
 // any variable assignments, without its directory. null for a blank
@@ -120,6 +127,32 @@ export function activityLine({ starting, downloads, now }) {
   };
 }
 
+// One look at a program starting: whether the wait is over, and what to
+// carry to the next look. Over once a window more than before has
+// appeared; once the program, seen running, has been gone for
+// ABSENT_LOOKS looks; once a program never seen has had its grace; and
+// at START_LIMIT_MS.
+export function startLook({
+  windowsBefore,
+  windowsNow,
+  running,
+  seen,
+  absent,
+  elapsedMs,
+}) {
+  if (windowsNow > windowsBefore || elapsedMs > START_LIMIT_MS) {
+    return { done: true, seen, absent };
+  }
+  if (running) {
+    return { done: false, seen: true, absent: 0 };
+  }
+  if (!seen) {
+    return { done: elapsedMs > UNSEEN_GRACE_MS, seen, absent };
+  }
+  const gone = absent + 1;
+  return { done: gone >= ABSENT_LOOKS, seen, absent: gone };
+}
+
 // The strip on the page. `element` is the strip; `windowCount()` says
 // how many GUI windows the page shows, and `isRunning(program)` resolves
 // to whether a process of that name runs in the guest.
@@ -139,18 +172,35 @@ export function activityStrip({ element, windowCount, isRunning }) {
   // The clock that moves the elapsed time while a program starts.
   let ticker = null;
 
+  // The timer that closes the strip once it has lingered.
+  let closing = null;
+
+  function show(visible) {
+    element.dataset.visible = String(visible);
+    element.setAttribute("aria-hidden", String(!visible));
+  }
+
   function render() {
     const line = activityLine({
       starting,
       downloads: [...downloads.values()],
       now: Date.now(),
     });
-    const visible = ready && line.visible;
-    element.dataset.visible = String(visible);
-    element.setAttribute("aria-hidden", String(!visible));
-    if (!line.visible) {
+
+    // Nothing to show: close after a moment, leaving the last line up
+    // meanwhile.
+    if (!(ready && line.visible)) {
+      if (closing === null && element.dataset.visible === "true") {
+        closing = setTimeout(() => {
+          closing = null;
+          show(false);
+        }, LINGER_MS);
+      }
       return;
     }
+    clearTimeout(closing);
+    closing = null;
+    show(true);
     primary.textContent = line.primary;
     secondary.textContent = line.secondary;
     elapsed.textContent = line.elapsed;
@@ -203,16 +253,9 @@ export function activityStrip({ element, windowCount, isRunning }) {
       const windowsBefore = windowCount();
       const since = Date.now();
       starting = { program, since };
-      let absent = 0;
+      let carried = { seen: false, absent: 0 };
       let looking = false;
       watch = setInterval(async () => {
-        if (
-          windowCount() > windowsBefore ||
-          Date.now() - since > START_LIMIT_MS
-        ) {
-          stopStarting();
-          return;
-        }
         // One look at a time: a guest busy starting the program may
         // answer slowly.
         if (looking) {
@@ -221,8 +264,18 @@ export function activityStrip({ element, windowCount, isRunning }) {
         looking = true;
         const running = await isRunning(program).catch(() => true);
         looking = false;
-        absent = running ? 0 : absent + 1;
-        if (absent >= ABSENT_LOOKS && starting?.since === since) {
+        if (starting?.since !== since) {
+          return;
+        }
+        const look = startLook({
+          windowsBefore,
+          windowsNow: windowCount(),
+          running,
+          ...carried,
+          elapsedMs: Date.now() - since,
+        });
+        carried = { seen: look.seen, absent: look.absent };
+        if (look.done) {
           stopStarting();
         }
       }, WATCH_INTERVAL_MS);

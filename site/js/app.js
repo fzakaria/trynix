@@ -1169,9 +1169,11 @@ function windowPrograms() {
 // windows, the strip says it is starting until its first window.
 function commandEntered(line) {
   const program = commandProgram(line);
-  if (program !== null && windowPrograms().has(program)) {
-    activity.started(program);
+  if (program === null || !windowPrograms().has(program)) {
+    return;
   }
+  log(`waiting for ${program}'s first window`);
+  activity.started(program);
 }
 
 // The command line the reader just entered at the terminal: the row the

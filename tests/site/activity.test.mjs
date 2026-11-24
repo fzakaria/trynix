@@ -10,6 +10,7 @@ import {
   activityLine,
   commandProgram,
   opensWindows,
+  startLook,
 } from "../../site/js/activity.js";
 
 const DIGEST = "0".repeat(32);
@@ -82,4 +83,38 @@ test("the strip says what is going on", () => {
   assert.equal(both.secondary, "downloading 2 paths · 100 B / 400 B");
   assert.equal(both.progress, 0.25);
   assert.equal(both.elapsed, "1:05");
+});
+
+// Checks when the strip stops waiting for a program: once a window more
+// than before has appeared; once the program, seen running, has been
+// gone for a few looks; once a program never seen has had its grace (a
+// typo, or a command that failed); and at the overall limit. A program
+// not seen yet within its grace is waited on, since its files may still
+// be downloading.
+test("the wait for a program ends on a window, its exit, or a limit", () => {
+  const look = (overrides) =>
+    startLook({
+      windowsBefore: 0,
+      windowsNow: 0,
+      running: true,
+      seen: false,
+      absent: 0,
+      elapsedMs: 1000,
+      ...overrides,
+    });
+  assert.equal(look({ windowsNow: 1 }).done, true);
+  assert.deepEqual(look({}), { done: false, seen: true, absent: 0 });
+  assert.deepEqual(look({ running: false }), {
+    done: false,
+    seen: false,
+    absent: 0,
+  });
+  assert.equal(look({ running: false, elapsedMs: 25_000 }).done, true);
+  assert.equal(look({ running: false, seen: true, absent: 2 }).done, true);
+  assert.deepEqual(look({ running: false, seen: true, absent: 0 }), {
+    done: false,
+    seen: true,
+    absent: 1,
+  });
+  assert.equal(look({ elapsedMs: 200_000 }).done, true);
 });
