@@ -6,7 +6,7 @@
 # xterm-pty is a UMD bundle exposing the openpty global: the line
 # discipline, pinned to the version whose emscripten-pty.js the
 # qemu-wasm build linked against. xzwasm exposes the xzwasm global
-# with XzReadableStream and fzstd exposes fzstd with decompress, both
+# with XzReadableStream and fzstd exposes fzstd with Decompress, both
 # loaded by the page; crabz2 is an ES module the site imports the first
 # time it meets a bzip2 path, which for most boots is never — the cache
 # serves bzip2 for the oldest paths, xz for most of them and zstd for

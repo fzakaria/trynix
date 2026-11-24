@@ -268,7 +268,7 @@ async function decompress(info, compressed) {
   return serialize(async () => {
     try {
       if (info.compression === "zstd") {
-        return fzstd.decompress(compressed);
+        return unzstd(compressed);
       }
       if (info.compression === "bzip2") {
         return await unbzip2(compressed, info.narSize);
@@ -401,6 +401,31 @@ async function unbzip2(compressed, narSize) {
     throw new Error(`unpacked to ${filled} bytes, narinfo says ${narSize}`);
   }
   return nar;
+}
+
+// How much of a zstd archive is handed to the decoder at a time.
+//
+// Not a detail either. fzstd's one-shot decompress() works out bit
+// offsets into its whole input with 32-bit arithmetic, so past 256 MiB
+// of compressed archive they wrap and a sound archive fails as "invalid
+// zstd data": wesnoth 1.18.8's is 405 MiB. The streaming decoder only
+// offsets into the piece it was handed plus at most one unfinished
+// block, so fed in pieces it reads an archive of any size.
+// decode-worker.js keeps a copy of this for the workers.
+const ZSTD_CHUNK = 1024 * 1024;
+
+export function unzstd(compressed) {
+  const parts = [];
+  let total = 0;
+  const decoder = new fzstd.Decompress((part) => {
+    parts.push(part);
+    total += part.byteLength;
+  });
+  for (let at = 0; at < compressed.byteLength; at += ZSTD_CHUNK) {
+    const end = at + ZSTD_CHUNK;
+    decoder.push(compressed.subarray(at, end), end >= compressed.byteLength);
+  }
+  return concat(parts, total);
 }
 
 function concat(parts, total) {
