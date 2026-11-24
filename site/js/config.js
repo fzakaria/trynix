@@ -106,6 +106,13 @@ export const GUI_WLAND = "client.mjs";
 export const GUI_RELAY = "wlandr";
 export const GUI_FONTS = ["DejaVuSansMono.ttf", "DejaVuSans.ttf"];
 
+// The CA certificates the unkernel guest checks HTTPS servers against
+// when its network is on (network.js): nixpkgs' cacert, in a directory
+// nix/site.nix renames after a hash of its contents, as it does the GUI
+// directory.
+export const CERTS_DIR = "certs";
+export const CA_BUNDLE = "ca-bundle.crt";
+
 // The GL drivers the site serves for the unkernel guest (gldriver.js,
 // docs/gui.md): the binary cache that holds them, same-origin with the
 // page, and the manifest naming each driver with the glibc and gcc it

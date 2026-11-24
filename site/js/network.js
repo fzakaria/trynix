@@ -16,6 +16,11 @@
 // `net`) but not name a relay, so a link someone sends cannot route the
 // reader's traffic through a server of its choosing.
 //
+// The guest's base userland has no CA certificates, so HTTPS from the
+// guest could not check a server. With the network on, the page writes
+// the CA bundle the site ships (nixpkgs' cacert, nix/site.nix) into the
+// share, and the shell points TLS clients at it (caBundleShell).
+//
 // The qemu engine's guest has no network device.
 
 import { Engine } from "./engine.js";
@@ -85,6 +90,26 @@ export function netSpec({ mode, relay }) {
     return null;
   }
   return { kind: "net", backend: { kind: "wisp", servers: [relay] } };
+}
+
+// Where TLS clients find CA certificates by convention, for programs
+// that read no variable.
+const CONVENTIONAL_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+
+// The shell lines that point TLS clients at `bundle`, a CA bundle the
+// guest can read: SSL_CERT_FILE for OpenSSL, Go and Python,
+// NIX_SSL_CERT_FILE for nixpkgs' patched OpenSSL and curl, and the
+// conventional path, linked once if nothing is there.
+export function caBundleShell(bundle) {
+  const directory = CONVENTIONAL_BUNDLE.slice(
+    0,
+    CONVENTIONAL_BUNDLE.lastIndexOf("/"),
+  );
+  return [
+    `export SSL_CERT_FILE="${bundle}"`,
+    `export NIX_SSL_CERT_FILE="${bundle}"`,
+    `[ -e ${CONVENTIONAL_BUNDLE} ] || { mkdir -p ${directory} && ln -s ${bundle} ${CONVENTIONAL_BUNDLE}; } 2>/dev/null`,
+  ];
 }
 
 // The choice and relay this browser remembers, or null. Storage can be

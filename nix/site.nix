@@ -79,6 +79,18 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   substituteInPlace $out/js/config.js \
     --replace-fail '"gui"' "\"gui.$hash\""
 
+  # The CA certificates the unkernel guest checks HTTPS servers against
+  # when its network is on (site/js/network.js): nixpkgs' cacert, which
+  # moves with this flake's nixpkgs. Renamed after a hash of its
+  # contents, as gui/ is above, so a deploy with new certificates is
+  # fetched fresh.
+  mkdir -p $out/certs
+  cp ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/certs/ca-bundle.crt
+  hash=$(sha256sum $out/certs/ca-bundle.crt | cut -c1-12)
+  mv $out/certs "$out/certs.$hash"
+  substituteInPlace $out/js/config.js \
+    --replace-fail '"certs"' "\"certs.$hash\""
+
   # The footer names the store path serving the page (a benign
   # self-reference, same as the multiverse and grail sites).
   substituteInPlace $out/js/app.js --replace-fail "__STORE_PATH__" "$out"

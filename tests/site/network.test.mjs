@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 
 import {
   DEFAULT_RELAY,
+  caBundleShell,
   Network,
   netSpec,
   networkOf,
@@ -73,4 +74,25 @@ test("the SDK gets a Wisp device spec, or none", () => {
     backend: { kind: "wisp", servers: [DEFAULT_RELAY] },
   });
   assert.equal(netSpec({ mode: Network.OFF, relay: DEFAULT_RELAY }), null);
+});
+
+// Checks the shell lines that point TLS clients at the CA bundle the
+// page writes into the share: the variables OpenSSL (and nixpkgs'
+// patched OpenSSL) read, and the conventional path for programs that
+// read only that, linked once.
+test("the shell points TLS clients at the share's CA bundle", () => {
+  const lines = caBundleShell("/share/certs/ca-bundle.crt");
+  assert.ok(
+    lines.includes('export SSL_CERT_FILE="/share/certs/ca-bundle.crt"'),
+  );
+  assert.ok(
+    lines.includes('export NIX_SSL_CERT_FILE="/share/certs/ca-bundle.crt"'),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes(
+        "ln -s /share/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt",
+      ),
+    ),
+  );
 });

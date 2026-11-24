@@ -35,6 +35,8 @@ import { lazyFs } from "./lazy.js";
 import { openTerminal } from "./terminal.js";
 import { guestDriver } from "./agent.js";
 import { createSoundOut } from "./sound.js";
+import { caBundleShell } from "./network.js";
+import { CA_BUNDLE, CERTS_DIR } from "./config.js";
 import { consoleRecorder, pause } from "./console.js";
 import { log } from "./log.js";
 import {
@@ -45,6 +47,24 @@ import {
   sessionEnv,
   speaksWayland,
 } from "./gui.js";
+
+// Where the page writes the CA certificates when the guest has a
+// network (network.js), the same path on both sides of the share.
+const CERTS_SHARE_DIR = `${SHARE_DIR}/certs`;
+const CA_BUNDLE_PATH = `${CERTS_SHARE_DIR}/${CA_BUNDLE}`;
+
+// Fetch the site's CA bundle and write it into the share. Resolves to
+// the bundle's path in the guest.
+async function writeCaBundle(FS) {
+  const url = `${CERTS_DIR}/${CA_BUNDLE}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`${url}: HTTP ${res.status}`);
+  }
+  FS.mkdir(CERTS_SHARE_DIR);
+  FS.writeFile(CA_BUNDLE_PATH, new Uint8Array(await res.arrayBuffer()));
+  return CA_BUNDLE_PATH;
+}
 
 // The guest's shell: busybox ash from unkernel's base system, the same
 // shell the qemu guest runs.
@@ -146,8 +166,9 @@ async function visible(kernel, paths) {
 // why each is what it is, and why there is no LD_LIBRARY_PATH). Every
 // shell gets the Wayland session's environment too (gui.js), so a GUI
 // program added after the boot finds the relay from the shell it is
-// typed into.
-function manifest() {
+// typed into. With a network, TLS clients are pointed at the CA bundle
+// in the share (`caBundle`, or null without one).
+function manifest({ caBundle }) {
   const session = Object.entries(sessionEnv()).map(
     ([name, value]) => `export ${name}="${value}"`,
   );
@@ -156,6 +177,7 @@ function manifest() {
     "export TERM=xterm-256color",
     "export LANG=C.UTF-8",
     ...session,
+    ...(caBundle === null ? [] : caBundleShell(caBundle)),
     // Wait for the page's handshake (see HANDSHAKE), on the page's
     // shell alone (see HANDSHAKE_VARIABLE).
     `if [ -n "$${HANDSHAKE_VARIABLE}" ]; then`,
@@ -322,6 +344,19 @@ export async function startUnkernel({
   // go to the page's log with the rest of the boot. Without a `log` the
   // SDK prints them with console.error, and every boot showed the
   // reader a column of red lines that were not errors.
+  // With a network, the CA certificates arrive while the kernel boots,
+  // and are in the share before the shell starts. Without them HTTPS
+  // from the guest fails, so the page says so, and the boot goes on.
+  const caBundle =
+    net === null
+      ? Promise.resolve(null)
+      : writeCaBundle(FS).catch((err) => {
+          log(
+            `network: no CA certificates (${err.message}); HTTPS from the guest will fail`,
+          );
+          return null;
+        });
+
   const sound = createSoundOut({ log, control: soundControl });
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
@@ -431,7 +466,7 @@ export async function startUnkernel({
     // arrived waits for it.
     async run(roots, { store = null } = {}) {
       share.linkAll(share.known(), roots, Precedence.KEEP);
-      FS.writeFile(MANIFEST_FILE, manifest());
+      FS.writeFile(MANIFEST_FILE, manifest({ caBundle: await caBundle }));
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
