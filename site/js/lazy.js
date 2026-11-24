@@ -131,7 +131,8 @@ export function lazyStore({
   // the moment the path is asked for until the download ends; null
   // otherwise. `queued` is the queue the path waits in for room, or
   // null. `listing` is undefined until the listing is asked for, then a
-  // promise, then its root or null.
+  // promise, then its root or null; a NAR that arrives before anything
+  // asked makes it null (checkListing).
   const paths = new Map();
 
   // Paths the guest has touched, whose references are on their way.
@@ -146,9 +147,23 @@ export function lazyStore({
   // Hold the path's listing, if it has one, to the NAR that has just
   // arrived (listing.js, listingMismatch): one that differs is named in
   // the log and dropped.
+  //
+  // A listing still on its way is held to the NAR when it lands; the
+  // NAR is written meanwhile, since the guest believes the NAR either
+  // way. A listing nobody has asked for yet is never asked for: the NAR
+  // answers every lookup of the path from now on, and a listing fetched
+  // later would have no NAR left here to be held to.
   function checkListing(path, entries) {
     const root = path.listing;
-    if (root === undefined || root === null || root instanceof Promise) {
+    if (root === undefined) {
+      path.listing = null;
+      return;
+    }
+    if (root instanceof Promise) {
+      root.then(() => checkListing(path, entries));
+      return;
+    }
+    if (root === null) {
       return;
     }
     const problem = listingMismatch(root, entries);

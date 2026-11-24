@@ -384,8 +384,10 @@ time the guest looks in it, as before listings.
 A listing is not covered by the narinfo's signature; the NAR is,
 through its NarHash. So when a path's NAR arrives, its listing is
 checked against it: names, types, sizes, executable bits and symlink
-targets. A listing that differs is named in the page's log and
-evicted from the Cache API, so no later visit answers from it. The
+targets. A listing still on its way then is checked when it lands, and
+the NAR is written without waiting for it. A listing that differs is
+named in the page's log and evicted from the Cache API, so no later
+visit answers from it. The
 answers it gave before the NAR arrived stand, and a name it hid stays
 hidden from a path the guest never downloads. Checked outside the page
 on 2026-11-23, every one of the 319 listings in firefox's aarch64

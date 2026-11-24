@@ -792,6 +792,80 @@ test("a listing that differs from its NAR is logged and dropped on arrival", asy
   assert.equal(store.listed("z-zlib"), null);
 });
 
+// Checks the other arrival order: a NAR that lands while its path's
+// listing is still on its way is written at once, and the listing is
+// held to it when the listing lands. One that differs is named in the
+// log and dropped, as on the first order; one that agrees is kept. The
+// NAR here has a three-byte file, and z-zlib's listing says five.
+test("a listing that lands after its NAR is still held to it", async () => {
+  const nar = [
+    { path: "", type: "directory" },
+    {
+      path: "libz.so.1",
+      type: "regular",
+      executable: false,
+      data: new Uint8Array(3),
+    },
+  ];
+  const agreeing = nodeOf(nar, "");
+  const differing = {
+    type: "directory",
+    entries: { "libz.so.1": { type: "regular", size: 5 } },
+  };
+  const arriving = { "y-zlib": deferred(), "z-zlib": deferred() };
+  const dropped = [];
+  const written = [];
+  const store = lazyStore({
+    concurrency: 4,
+    listing: (narinfo) =>
+      arriving[narinfo.storePath.slice(STORE.length + 1)].promise,
+    fetch: () => nar,
+    write: (basename) => written.push(basename),
+    dropListing: (narinfo) => dropped.push(narinfo.storePath),
+  });
+  store.add([info("y-zlib"), info("z-zlib")]);
+
+  const listings = ["y-zlib", "z-zlib"].map((basename) => store.list(basename));
+  for (const basename of ["y-zlib", "z-zlib"]) {
+    await store.ensure(basename, Priority.DEMAND);
+  }
+  assert.deepEqual(written, ["y-zlib", "z-zlib"]);
+  assert.deepEqual(dropped, []);
+
+  arriving["y-zlib"].resolve(agreeing);
+  arriving["z-zlib"].resolve(differing);
+  await Promise.all(listings);
+  await settle();
+  assert.deepEqual(dropped, [`${STORE}/z-zlib`]);
+  assert.match(
+    logLines(),
+    /\/nix\/store\/z-zlib: the listing differs.*libz\.so\.1 is 3 bytes, listed as 5/,
+  );
+  assert.equal(store.listed("z-zlib"), null);
+  assert.deepEqual(store.listed("y-zlib"), agreeing);
+});
+
+// Checks that a path written before anything asked for its listing has
+// none fetched afterwards: the NAR answers every lookup from then on,
+// and a listing fetched then would be kept with nothing to hold it to.
+test("a listing is not fetched for a path already written", async () => {
+  const asked = [];
+  const store = lazyStore({
+    concurrency: 4,
+    listing: (narinfo) => {
+      asked.push(narinfo.storePath);
+      return { type: "directory", entries: {} };
+    },
+    fetch: () => [{ path: "", type: "directory" }],
+    write: () => {},
+  });
+  store.add([info("y-zlib")]);
+  await store.ensure("y-zlib", Priority.DEMAND);
+
+  assert.equal(await store.list("y-zlib"), null);
+  assert.deepEqual(asked, []);
+});
+
 // The listing node a parsed NAR (nar.js) holds at `path`: what the cache
 // would list for it.
 function nodeOf(entries, path) {
