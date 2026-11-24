@@ -451,15 +451,18 @@ export async function startUnkernel({
   let x11Linked = null;
 
   // The shell fragment, written into the share for every shell that
-  // starts from now on, with the PulseAudio daemon the closure holds,
-  // started or not: at the boot the page's shell sources the fragment
-  // before the daemon is up.
-  async function writeManifest() {
+  // starts from now on, naming `daemon` as the PulseAudio daemon (a
+  // store basename, or null for none). At the boot that is the daemon
+  // the closure holds, since the page's shell sources the fragment
+  // before the daemon is up. Once a start has been tried, it is the
+  // daemon that runs, so a daemon that failed leaves the shells on ALSA
+  // rather than at a socket nothing listens on.
+  async function writeManifest(daemon) {
     FS.writeFile(
       MANIFEST_FILE,
       manifest({
         caBundle: await caBundle,
-        daemon: pulseDaemonIn(closure()),
+        daemon,
         x11Server,
       }),
     );
@@ -490,16 +493,14 @@ export async function startUnkernel({
     );
   }
 
-  // Whether the PulseAudio daemon is up, as soundSetup last left it.
-  let soundServerRunning = false;
-
   // Start the PulseAudio daemon of the closure, if it holds one
   // (pulse.js). Resolves once the daemon is up with card 0 as its sink,
   // so a client typed at the prompt finds it. A failure is logged rather
   // than thrown: the shell works without it, and ALSA programs still
   // play. The whole closure is looked at, not one addition's paths, so
   // a daemon that failed, as one does while another program holds the
-  // card, is tried again by the next addition.
+  // card, is tried again by the next addition. `server.running` says
+  // afterwards which daemon is up, if any.
   async function soundSetup() {
     const daemon = pulseDaemonIn(closure());
     if (daemon === null) {
@@ -507,7 +508,6 @@ export async function startUnkernel({
     }
     try {
       await server.start(daemon);
-      soundServerRunning = true;
     } catch (err) {
       log(`sound: ${err.message ?? err}`);
     }
@@ -562,7 +562,7 @@ export async function startUnkernel({
       // has not arrived.
       lazyStore = store;
       x11Server = x11ServerIn(closure());
-      await writeManifest();
+      await writeManifest(pulseDaemonIn(closure()));
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
@@ -636,6 +636,11 @@ export async function startUnkernel({
       await console_.waitFor(REDRAWN);
       await gui;
       await soundServerUp;
+
+      // Shells started from now on are told of the daemon as its start
+      // left it: the page's shell was told of the closure's before the
+      // daemon was up, and a daemon that failed is no server.
+      await writeManifest(server.running);
     },
 
     // Add store paths to a guest that is already running. The share is
@@ -662,19 +667,19 @@ export async function startUnkernel({
       // Whether an X server and a running daemon were there before this
       // addition: a shell already running was told of neither otherwise.
       const hadX11Server = x11Server !== null;
-      const hadSoundServer = soundServerRunning;
+      const hadSoundServer = server.running !== null;
       await guiSetup(lazyStore === null ? basenames : closure());
       await soundSetup();
 
       // Every shell from now on is told of what this addition brought,
-      // and the reader is told how to bring the one already running up
-      // to date.
-      await writeManifest();
+      // with the PulseAudio daemon only if it runs, and the reader is
+      // told how to bring the one already running up to date.
+      await writeManifest(server.running);
       const shellUpdates = [];
       if (!hadX11Server && x11Server !== null) {
         shellUpdates.push(ShellUpdate.X11);
       }
-      if (!hadSoundServer && soundServerRunning) {
+      if (!hadSoundServer && server.running !== null) {
         shellUpdates.push(ShellUpdate.PULSE);
       }
 

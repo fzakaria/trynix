@@ -191,8 +191,13 @@ function daemonCommand(daemon) {
 // program stops, and a failure kept would keep PulseAudio's clients
 // out for the life of the guest. `exec` runs a shell command in the
 // guest.
+//
+// `running` is the daemon a start brought up (a store basename), or
+// null before one has and after one failed: what the shells started
+// from then on are told of (soundEnv).
 export function soundServer({ exec }) {
   let started = null;
+  let running = null;
 
   async function run(daemon) {
     const result = await exec(daemonCommand(daemon));
@@ -201,6 +206,7 @@ export function soundServer({ exec }) {
         `the PulseAudio daemon did not start: ${result.stderr.trim()}`,
       );
     }
+    running = daemon;
     log(`sound: the PulseAudio daemon of ${daemon} is running in the guest`);
   }
 
@@ -211,6 +217,10 @@ export function soundServer({ exec }) {
         throw err;
       });
       return started;
+    },
+
+    get running() {
+      return running;
     },
   };
 }

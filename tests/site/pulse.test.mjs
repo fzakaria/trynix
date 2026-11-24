@@ -160,3 +160,27 @@ test("a daemon that failed to start is tried again", async () => {
   await server.start(daemon);
   assert.equal(shell.commands.length, 2);
 });
+
+// Checks what the shells are told once a start has been tried: the
+// daemon the start brought up, or none when it failed. A daemon that
+// could not open the card, because another program held it, was still
+// named to every new shell, which then had PULSE_SERVER at a socket
+// nothing listened on and no CANBERRA_DRIVER to send libcanberra to
+// ALSA. The fake shell fails the first start and lets the second one
+// through.
+test("a daemon that failed to start leaves the shells on ALSA", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell(0, "no sink on hw:0", [1]);
+  const server = soundServer({ exec: shell.exec });
+  assert.equal(server.running, null);
+
+  await assert.rejects(server.start(daemon), /no sink on hw:0/);
+  assert.equal(server.running, null);
+  const failed = soundEnv(server.running);
+  assert.equal(failed.CANBERRA_DRIVER, "alsa");
+  assert.equal(failed.PULSE_SERVER, undefined);
+
+  await server.start(daemon);
+  assert.equal(server.running, daemon);
+  assert.equal(soundEnv(server.running).PULSE_SERVER, `unix:${PULSE_SOCKET}`);
+});

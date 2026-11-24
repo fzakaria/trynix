@@ -620,7 +620,12 @@ client then fails with "No such entity". So the page asks the daemon
 for its sinks with the closure's `pactl` once the socket is open, and
 counts it as up only with card 0's. One without is stopped and the
 failure goes to the page's log; the next addition to the guest starts
-the daemon again, which succeeds once the card is free.
+the daemon again, which succeeds once the card is free. Until then,
+shells started after the failure get `CANBERRA_DRIVER=alsa` and no
+`PULSE_SERVER`, as they would without a daemon in the closure. The
+page's shell at the boot sources its environment before the daemon is
+up, so a daemon that fails there leaves that one shell with
+`PULSE_SERVER` set.
 
 The daemon opens the card as it starts and plays zeros until it
 closes it. The page shows the sound control only once a chunk holds a
