@@ -11,8 +11,8 @@
 // "CPUs").
 //
 // A link can ask for any count up to the kernel's 16 (url.js, `cpus`),
-// and the Settings lane can choose 1, 2, 4, 8 or 16, which this browser
-// then remembers. Either is held to the host's threads.
+// and the Settings lane offers 1, 2, 4, 8 and 16, a choice there going
+// into the link. Either is held to the host's threads.
 
 import { Pointer } from "./memory.js";
 
@@ -28,9 +28,6 @@ const SUGGESTED = Object.freeze({ desktop: 4, firefox: 2, touch: 2 });
 
 // The default leaves half the host's threads to the browser.
 const THREADS_PER_DEFAULT_CPU = 2;
-
-// Where this browser keeps the count chosen in Settings.
-const STORAGE_KEY = "trynix.cpus";
 
 // The browser, where it changes the suggestion.
 export const Browser = Object.freeze({
@@ -104,49 +101,24 @@ export function defaultCpus(device) {
 const bootable = (count) =>
   Number.isInteger(count) && count >= 1 && count <= MAX_CPUS;
 
-// The count to boot with: the link's, then the one this browser
-// remembers, then the device's default. Each with why, for the log and
-// for the Settings lane when the link asked for more than it gets.
-//
-// A link asking for more CPUs than the host has threads gets one per
-// thread rather than the default: the reader asked for many. A
-// remembered count the host cannot run is this browser's choice from
-// another day, and gives way to the default.
-export function pickCpus({ linked, remembered, device }) {
+// The count to boot with: the link's, else the device's default, with
+// why, for the log and for the Settings lane when the link asked for
+// more than it gets. A link asking for more CPUs than the host has
+// threads gets one per thread rather than the default: the reader
+// asked for many.
+export function pickCpus({ linked, device }) {
   if (!device.shared) {
     return defaultCpus(device);
   }
   const most = mostFor(device);
-  if (bootable(linked)) {
-    if (linked > most) {
-      return {
-        count: most,
-        why: `the link asks for ${linked}, and this browser has ${device.threads} threads`,
-      };
-    }
-    return { count: linked, why: "the link asks for it" };
+  if (!bootable(linked)) {
+    return defaultCpus(device);
   }
-  if (CPU_COUNTS.includes(remembered) && remembered <= most) {
-    return { count: remembered, why: "chosen in Settings" };
+  if (linked > most) {
+    return {
+      count: most,
+      why: `the link asks for ${linked}, and this browser has ${device.threads} threads`,
+    };
   }
-  return defaultCpus(device);
-}
-
-// The count this browser remembers, or null (memory.js says why storage
-// may be refused).
-export function rememberedCpus() {
-  try {
-    const value = Number(localStorage.getItem(STORAGE_KEY));
-    return CPU_COUNTS.includes(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-export function rememberCpus(count) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(count));
-  } catch {
-    // Not remembered; the choice still holds for this page.
-  }
+  return { count: linked, why: "the link asks for it" };
 }

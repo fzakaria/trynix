@@ -101,6 +101,9 @@ for what is on screen:
 | `mem=2048`                         | the unkernel guest's memory, in MiB       |
 | `cpus=8`                           | the unkernel guest's CPUs, 1 to 16        |
 | `fetch=all`                        | download the closure before the shell     |
+| `net=off`                          | the unkernel guest's network, on or off   |
+| `wisp=wss://relay.example.org/`    | the Wisp relay the network goes through   |
+| `sound=off`                        | the guest's sound switch                  |
 | `run=sol+%26`                      | type a command at the shell once it is up |
 | `boot=1`                           | start without a click                     |
 

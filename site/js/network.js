@@ -10,11 +10,11 @@
 //
 // The relay is a server: it sees which hosts the guest connects to, and
 // the bytes of anything not encrypted. The default is unkernel's own,
-// at wisp.unkernel.dev, whose author lets trynix.dev use it. The
-// Settings lane can turn the network off or name another relay, and
-// this browser remembers both. A link can turn it on or off (url.js,
-// `net`) but not name a relay, so a link someone sends cannot route the
-// reader's traffic through a server of its choosing.
+// at wisp.unkernel.dev, whose author lets trynix.dev use it. A link can
+// turn the network on or off (url.js, `net`) and name another relay
+// (`wisp`), and a choice made in the Settings lane goes into the link.
+// A link that names a relay of its own says so in Settings and in the
+// page's log, since that relay sees the reader's traffic.
 //
 // The guest's base userland has no CA certificates, so HTTPS from the
 // guest could not check a server. With the network on, the page writes
@@ -39,10 +39,6 @@ const DEFAULT_NETWORK = Network.ON;
 // The schemes a Wisp relay is reached by.
 const RELAY_PROTOCOLS = ["ws:", "wss:"];
 
-// Where this browser keeps the choice and the relay made in Settings.
-const STORAGE_KEY = "trynix.network";
-const RELAY_STORAGE_KEY = "trynix.network.relay";
-
 // A choice as a link or storage holds it, or null when the value is
 // not one.
 export function networkOf(value) {
@@ -62,10 +58,9 @@ export function relayOf(text) {
 }
 
 // Whether this boot has a network and through which relay: the link's
-// choice, then the one this browser remembers, then the default; each
-// with why, for the log.
-export function pickNetwork({ linked, remembered, rememberedRelay, engine }) {
-  const relay = relayOf(rememberedRelay) ?? DEFAULT_RELAY;
+// choice and relay, else the defaults, with why, for the log.
+export function pickNetwork({ linked, linkedRelay, engine }) {
+  const relay = relayOf(linkedRelay) ?? DEFAULT_RELAY;
   if (engine === Engine.QEMU) {
     return {
       mode: Network.OFF,
@@ -75,9 +70,6 @@ export function pickNetwork({ linked, remembered, rememberedRelay, engine }) {
   }
   if (networkOf(linked) !== null) {
     return { mode: linked, relay, why: "the link asks for it" };
-  }
-  if (networkOf(remembered) !== null) {
-    return { mode: remembered, relay, why: "chosen in Settings" };
   }
   return { mode: DEFAULT_NETWORK, relay, why: "the default" };
 }
@@ -110,44 +102,4 @@ export function caBundleShell(bundle) {
     `export NIX_SSL_CERT_FILE="${bundle}"`,
     `[ -e ${CONVENTIONAL_BUNDLE} ] || { mkdir -p ${directory} && ln -s ${bundle} ${CONVENTIONAL_BUNDLE}; } 2>/dev/null`,
   ];
-}
-
-// The choice and relay this browser remembers, or null. Storage can be
-// refused (a private window, blocked site data); the page then uses the
-// defaults.
-export function rememberedNetwork() {
-  try {
-    return networkOf(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
-export function rememberedRelay() {
-  try {
-    return relayOf(localStorage.getItem(RELAY_STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
-export function rememberNetwork(mode) {
-  try {
-    localStorage.setItem(STORAGE_KEY, mode);
-  } catch {
-    // Not remembered; the choice still holds for this page.
-  }
-}
-
-// Remember a relay, or forget it (null) so the default applies.
-export function rememberRelay(relay) {
-  try {
-    if (relay === null) {
-      localStorage.removeItem(RELAY_STORAGE_KEY);
-    } else {
-      localStorage.setItem(RELAY_STORAGE_KEY, relay);
-    }
-  } catch {
-    // Not remembered; the relay still holds for this page.
-  }
 }

@@ -1,7 +1,6 @@
 // Tests how much memory the unkernel guest asks for (site/js/memory.js):
 // the default for the device, the sizes tried when an allocation fails,
-// and which of the link, the browser's remembered choice and the default
-// wins. Each is a pure function of what it is handed, so the tests pass
+// and that the link's size wins over the default. Each is a pure function of what it is handed, so the tests pass
 // in the device's pointer and reported memory rather than a browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -47,24 +46,13 @@ test("the fallbacks are the smaller of 1 GiB and 512 MiB", () => {
   assert.deepEqual(fallbacksBelow(512), []);
 });
 
-// Checks the precedence: a size in the link wins, then the one this
-// browser remembers, then the device's default; a size that is not one
-// the page offers is ignored wherever it came from.
-test("the link wins, then the remembered choice, then the default", () => {
+// Checks the precedence: a size in the link wins, else the device's
+// default; a size that is not one the page offers is ignored.
+test("the link wins, else the default", () => {
   const device = { pointer: Pointer.FINE };
-  assert.equal(
-    pickMemory({ linked: 4096, remembered: 1024, device }).mib,
-    4096,
-  );
-  assert.equal(
-    pickMemory({ linked: null, remembered: 1024, device }).mib,
-    1024,
-  );
-  assert.equal(
-    pickMemory({ linked: null, remembered: null, device }).mib,
-    2048,
-  );
-  assert.equal(pickMemory({ linked: 3000, remembered: 7, device }).mib, 2048);
+  assert.equal(pickMemory({ linked: 4096, device }).mib, 4096);
+  assert.equal(pickMemory({ linked: null, device }).mib, 2048);
+  assert.equal(pickMemory({ linked: 3000, device }).mib, 2048);
 });
 
 // Checks the labels the Settings control shows for each size.

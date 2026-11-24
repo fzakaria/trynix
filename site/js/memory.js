@@ -8,8 +8,8 @@
 // back to the smaller sizes here when an allocation fails
 // (docs/unkernel.md, "Memory").
 //
-// A link can ask for a size (url.js, `mem`), and the Settings lane can
-// choose one, which this browser then remembers. The qemu engine's guest
+// A link can ask for a size (url.js, `mem`), and a size chosen in the
+// Settings lane goes into the link. The qemu engine's guest
 // is a fixed machine (nix/guest/machine.json) and is not sized here.
 
 // The sizes the Settings lane offers, in MiB, smallest first.
@@ -31,9 +31,6 @@ const MIB_PER_GB = 1024;
 const LOW_DEVICE_GB = 4;
 
 const MIB_PER_GIB = 1024;
-
-// Where this browser keeps the size chosen in Settings.
-const STORAGE_KEY = "trynix.memoryMiB";
 
 // The kind of pointer the device has: a touch screen's is coarse. The
 // same test decides whether the page shows its phone key bar (style.css).
@@ -75,14 +72,11 @@ export const fallbacksBelow = (mib) =>
 // A size the page offers, or null.
 const offered = (mib) => (MEMORY_SIZES_MIB.includes(mib) ? mib : null);
 
-// The size to boot with: the link's, then the one this browser
-// remembers, then the device's default. Each with why, for the log.
-export function pickMemory({ linked, remembered, device }) {
+// The size to boot with: the link's, else the device's default. Each
+// with why, for the log.
+export function pickMemory({ linked, device }) {
   if (offered(linked) !== null) {
     return { mib: linked, why: "the link asks for it" };
-  }
-  if (offered(remembered) !== null) {
-    return { mib: remembered, why: "chosen in Settings" };
   }
   return defaultMemory(device);
 }
@@ -90,22 +84,3 @@ export function pickMemory({ linked, remembered, device }) {
 // How the Settings control names a size.
 export const memoryLabel = (mib) =>
   mib < MIB_PER_GIB ? `${mib} MiB` : `${mib / MIB_PER_GIB} GiB`;
-
-// The size this browser remembers, or null. Storage can be refused
-// (a private window, blocked site data); the page then uses the default.
-export function rememberedMemory() {
-  try {
-    const value = Number(localStorage.getItem(STORAGE_KEY));
-    return offered(value);
-  } catch {
-    return null;
-  }
-}
-
-export function rememberMemory(mib) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(mib));
-  } catch {
-    // Not remembered; the choice still holds for this page.
-  }
-}

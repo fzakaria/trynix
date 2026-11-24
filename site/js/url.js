@@ -12,6 +12,8 @@
 //                                          shell starts (or fetch=lazy)
 //   &net=off                               the unkernel guest's network (on
 //                                          by default)
+//   &wisp=wss://relay.example.org/         the Wisp relay it goes through
+//   &sound=off                             the guest's sound switch
 //   &run=sol+%26                           type a command at the shell once
 //                                          the guest is up
 //   &boot=1                                start without a click
@@ -22,7 +24,8 @@
 // same link as the selection.
 
 import { downloadsOf } from "./downloads.js";
-import { networkOf } from "./network.js";
+import { networkOf, relayOf } from "./network.js";
+import { soundOf } from "./sound.js";
 
 const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
@@ -32,6 +35,8 @@ const PARAM_MEMORY = "mem";
 const PARAM_CPUS = "cpus";
 const PARAM_DOWNLOADS = "fetch";
 const PARAM_NETWORK = "net";
+const PARAM_RELAY = "wisp";
+const PARAM_SOUND = "sound";
 const PARAM_RUN = "run";
 const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
@@ -39,7 +44,8 @@ const VERSION_SEPARATOR = "@";
 // { pkgs: [{attr, version|null}], paths: [string],
 //   caches: [{url, key}], engine: string|null, memory: number|null,
 //   cpus: number|null, downloads: string|null, network: string|null,
-//   run: string|null, boot: boolean }
+//   relay: string|null, sound: string|null, run: string|null,
+//   boot: boolean }
 //
 // The engine is handed back as written, or null when the link names
 // none: engine.js decides what a missing or unknown name means. The
@@ -82,6 +88,8 @@ export function readUrl() {
     cpus: countOf(params.get(PARAM_CPUS)),
     downloads: downloadsOf(params.get(PARAM_DOWNLOADS)),
     network: networkOf(params.get(PARAM_NETWORK)),
+    relay: relayOf(params.get(PARAM_RELAY)),
+    sound: soundOf(params.get(PARAM_SOUND)),
     // An empty command is no command: there is nothing to type.
     run: params.get(PARAM_RUN) || null,
     boot: params.get(PARAM_BOOT) === "1",
@@ -103,7 +111,7 @@ function countOf(value) {
 // only the reload path wants it automatic. `engine` stays out unless
 // the caller names one, which keeps a link for the default engine as
 // short as a link was before there were two; `memory`, `cpus`,
-// `downloads`, `network` and `run` likewise.
+// `downloads`, `network`, `relay`, `sound` and `run` likewise.
 export function writeUrl(
   { pkgs, paths, caches = [] },
   {
@@ -113,6 +121,8 @@ export function writeUrl(
     cpus = null,
     downloads = null,
     network = null,
+    relay = null,
+    sound = null,
     run = null,
   } = {},
 ) {
@@ -143,6 +153,12 @@ export function writeUrl(
   }
   if (network !== null) {
     params.set(PARAM_NETWORK, network);
+  }
+  if (relay !== null) {
+    params.set(PARAM_RELAY, relay);
+  }
+  if (sound !== null) {
+    params.set(PARAM_SOUND, sound);
   }
   if (run !== null) {
     params.set(PARAM_RUN, run);

@@ -316,10 +316,9 @@
         </fieldset>
 
         <!-- The aarch64 guest's memory (site/js/memory.js). The radios are
-             written by app.js from MEMORY_SIZES_MIB; a choice is remembered
-             by this browser, goes into the link and is used at the next
-             boot. This box and the three after it are hidden on the x86_64
-             guest (app.js). -->
+             written by app.js from MEMORY_SIZES_MIB; a choice goes into the
+             link and is used at the next boot. This box and the three after
+             it are hidden on the x86_64 guest (app.js). -->
         <fieldset id="memory">
           <legend>Guest memory</legend>
           <div id="memory-sizes"></div>
@@ -406,8 +405,8 @@
           </div>
           <p class="muted">
             Empty means unkernel's relay at wisp.unkernel.dev, which lets this site use it. Another
-            relay must speak Wisp v1 and accept this page's origin; this browser keeps it, and no
-            link carries one.
+            relay must speak Wisp v1 and accept this page's origin. A relay sees which hosts the
+            guest connects to, so a link that names one says so here.
           </p>
           <p id="network-status" class="muted"></p>
         </fieldset>

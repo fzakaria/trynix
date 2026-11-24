@@ -513,7 +513,8 @@ the AudioContext is made only once the page has had one, and until
 then up to 10 s of what programs play is held. The console bar shows
 "sound: click to play"; a clip that ended by the click plays whole,
 and a stream still playing joins live. After that the same control
-switches sound off and on, remembered by this browser.
+switches sound off and on, and puts its position in the link
+(`sound=off`), which a link can also start with.
 
 ```
 https://trynix.dev/?pkg=espeak-ng&boot=1&run=espeak-ng+%27Hello%27

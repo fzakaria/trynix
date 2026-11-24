@@ -269,7 +269,8 @@ async function pump(shell, port, console_) {
 // desktopElement is where GUI programs' windows go (gui.js), over the
 // terminal in consoleElement, and windowsButton is the console bar's
 // button that hides and shows them (frame.js). soundControl is the
-// console bar's sound switch (sound.js). net is the network device's
+// console bar's sound switch (sound.js), soundPosition where it starts
+// and onSoundSwitch what hears it move. net is the network device's
 // spec, or null for none (network.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
@@ -285,6 +286,8 @@ export async function startUnkernel({
   consoleElement,
   desktopElement,
   soundControl,
+  soundPosition,
+  onSoundSwitch,
   net,
   windowsButton,
   memory,
@@ -374,7 +377,12 @@ export async function startUnkernel({
           return null;
         });
 
-  const sound = createSoundOut({ log, control: soundControl });
+  const sound = createSoundOut({
+    log,
+    control: soundControl,
+    position: soundPosition,
+    onSwitch: onSoundSwitch,
+  });
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
     memoryMiB: memory.mib,

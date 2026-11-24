@@ -14,8 +14,8 @@
 // its share is read by QEMU's own 9p code inside the engine, which
 // reads a file synchronously and has no way to wait for a download.
 //
-// A link can name the choice (url.js, `fetch`), and the Settings lane
-// can choose one, which this browser then remembers.
+// A link can name the choice (url.js, `fetch`), and a choice made in the
+// Settings lane goes into the link.
 
 import { Engine } from "./engine.js";
 
@@ -29,19 +29,16 @@ export const Downloads = Object.freeze({
 // The choice a page has when nothing says otherwise.
 const DEFAULT_DOWNLOADS = Downloads.LAZY;
 
-// Where this browser keeps the choice made in Settings.
-const STORAGE_KEY = "trynix.downloads";
-
 // A choice as a link or storage holds it, or null when the value is
 // not one.
 export function downloadsOf(value) {
   return Object.values(Downloads).includes(value) ? value : null;
 }
 
-// When this boot downloads: the link's choice, then the one this
-// browser remembers, then the default; each with why, for the log. The
-// qemu engine downloads everything first whatever was asked.
-export function pickDownloads({ linked, remembered, engine }) {
+// When this boot downloads: the link's choice, else the default, with
+// why, for the log. The qemu engine downloads everything first
+// whatever was asked.
+export function pickDownloads({ linked, engine }) {
   if (engine === Engine.QEMU) {
     return {
       mode: Downloads.ALL,
@@ -51,26 +48,5 @@ export function pickDownloads({ linked, remembered, engine }) {
   if (downloadsOf(linked) !== null) {
     return { mode: linked, why: "the link asks for it" };
   }
-  if (downloadsOf(remembered) !== null) {
-    return { mode: remembered, why: "chosen in Settings" };
-  }
   return { mode: DEFAULT_DOWNLOADS, why: "the default" };
-}
-
-// The choice this browser remembers, or null. Storage can be refused
-// (a private window, blocked site data); the page then uses the default.
-export function rememberedDownloads() {
-  try {
-    return downloadsOf(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
-export function rememberDownloads(mode) {
-  try {
-    localStorage.setItem(STORAGE_KEY, mode);
-  } catch {
-    // Not remembered; the choice still holds for this page.
-  }
 }

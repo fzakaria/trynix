@@ -90,16 +90,12 @@ import {
   MEMORY_SIZES_MIB,
   memoryLabel,
   pickMemory,
-  rememberedMemory,
-  rememberMemory,
   thisDevice,
 } from "./memory.js";
 import {
   MAX_CPUS,
   offeredCpus,
   pickCpus,
-  rememberCpus,
-  rememberedCpus,
   thisDevice as cpuDevice,
 } from "./cpus.js";
 import {
@@ -117,23 +113,15 @@ import {
   x11Note,
   x11ServerIn,
 } from "./x11.js";
-import {
-  Downloads,
-  pickDownloads,
-  rememberDownloads,
-  rememberedDownloads,
-} from "./downloads.js";
+import { Downloads, pickDownloads } from "./downloads.js";
 import {
   DEFAULT_RELAY,
   Network,
   netSpec,
   pickNetwork,
   relayOf,
-  rememberNetwork,
-  rememberRelay,
-  rememberedNetwork,
-  rememberedRelay,
 } from "./network.js";
+import { Sound } from "./sound.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -319,37 +307,21 @@ function linkEngine(state) {
 let linkedMemory = readUrl().memory;
 
 // The unkernel guest's memory for the next boot (memory.js): the link's
-// size, then this browser's choice in Settings, then the device's
-// default.
+// size, else the device's default.
 const device = thisDevice();
-const memoryRemembered = rememberedMemory();
-let memory = pickMemory({
-  linked: linkedMemory,
-  remembered: memoryRemembered,
-  device,
-});
+let memory = pickMemory({ linked: linkedMemory, device });
 
 // The CPU count the page's link names (url.js, `cpus`), or null, and
 // the count for the next boot (cpus.js), chosen the way memory is.
 let linkedCpus = readUrl().cpus;
 const cpuHost = cpuDevice(device);
-const cpusRemembered = rememberedCpus();
-let cpus = pickCpus({
-  linked: linkedCpus,
-  remembered: cpusRemembered,
-  device: cpuHost,
-});
+let cpus = pickCpus({ linked: linkedCpus, device: cpuHost });
 
 // When the next boot downloads its closure (downloads.js, url.js
-// `fetch`): the link's choice, then this browser's, then on first use.
-// A choice made in Settings goes into the link, as the memory does.
+// `fetch`): the link's choice, else on first use. A choice made in
+// Settings goes into the link, as the memory does.
 let linkedDownloads = readUrl().downloads;
-const downloadsRemembered = rememberedDownloads();
-let downloads = pickDownloads({
-  linked: linkedDownloads,
-  remembered: downloadsRemembered,
-  engine: ENGINE,
-});
+let downloads = pickDownloads({ linked: linkedDownloads, engine: ENGINE });
 
 // The command the page's link types at the shell once the guest is up
 // (url.js, `run`), or null. The link keeps it, so a copied link shows
@@ -358,38 +330,21 @@ let downloads = pickDownloads({
 const linkedRun = readUrl().run;
 
 // Whether the next boot has a network, and through which Wisp relay
-// (network.js, url.js `net`): the link's choice, then this browser's,
-// then on through unkernel's relay. A choice made in Settings goes into
-// the link, as the memory does; a relay never does.
+// (network.js, url.js `net` and `wisp`): the link's choice and relay,
+// else on through unkernel's relay. A choice made in Settings goes into
+// the link, as the memory does.
 let linkedNetwork = readUrl().network;
-const networkRemembered = rememberedNetwork();
+let linkedRelay = readUrl().relay;
 let network = pickNetwork({
   linked: linkedNetwork,
-  remembered: networkRemembered,
-  rememberedRelay: rememberedRelay(),
+  linkedRelay,
   engine: ENGINE,
 });
 
-// A choice this browser remembers goes into the link too when the next
-// boot uses it, so the address bar says what the boot will be rather
-// than looking like the defaults; a default stays out. `picked` is the
-// value the boot uses, and a remembered value it does not use (a CPU
-// count this host has no threads for) stays out. All four are the
-// aarch64 guest's, so the x86_64 guest's links carry none of them.
-const adopted = (linked, remembered, picked) =>
-  linked === null && remembered !== null && picked === remembered
-    ? picked
-    : linked;
-if (ENGINE === Engine.UNKERNEL) {
-  linkedMemory = adopted(linkedMemory, memoryRemembered, memory.mib);
-  linkedCpus = adopted(linkedCpus, cpusRemembered, cpus.count);
-  linkedDownloads = adopted(
-    linkedDownloads,
-    downloadsRemembered,
-    downloads.mode,
-  );
-  linkedNetwork = adopted(linkedNetwork, networkRemembered, network.mode);
-}
+// The guest's sound switch (sound.js, url.js `sound`): on unless the
+// link turns it off. The console bar's switch puts its position in the
+// link.
+let linkedSound = readUrl().sound;
 
 // The link for what is on screen, as a URL relative to this page.
 function link({ boot = false } = {}) {
@@ -401,6 +356,8 @@ function link({ boot = false } = {}) {
     cpus: linkedCpus,
     downloads: linkedDownloads,
     network: linkedNetwork,
+    relay: linkedRelay,
+    sound: linkedSound,
     run: linkedRun,
   });
 }
@@ -556,8 +513,8 @@ function reportCpus(vm) {
 }
 
 // The memory choice under Settings: one radio per size memory.js offers,
-// the size the next boot will ask for checked. A choice is remembered by
-// this browser, and replaces the link's size when the link named one.
+// the size the next boot will ask for checked. A choice goes into the
+// link.
 function wireMemoryChoice() {
   for (const mib of MEMORY_SIZES_MIB) {
     const label = document.createElement("label");
@@ -573,7 +530,6 @@ function wireMemoryChoice() {
   memorySizes.addEventListener("change", (event) => {
     const mib = Number(event.target.value);
     memory = { mib, why: "chosen in Settings" };
-    rememberMemory(mib);
     linkedMemory = mib;
     history.replaceState(null, "", link());
     memoryStatus.textContent = vmStarted
@@ -614,7 +570,6 @@ function wireCpuChoice() {
   cpuCounts.addEventListener("change", (event) => {
     const count = Number(event.target.value);
     cpus = { count, why: "chosen in Settings" };
-    rememberCpus(count);
     linkedCpus = count;
     history.replaceState(null, "", link());
     cpuStatus.textContent = vmStarted
@@ -625,8 +580,8 @@ function wireCpuChoice() {
 wireCpuChoice();
 
 // The downloads choice under Settings: on first use, or everything
-// before the shell starts. A choice is remembered by this browser, goes
-// into the link, and takes effect at the next boot.
+// before the shell starts. A choice goes into the link and takes effect
+// at the next boot.
 function wireDownloadsChoice() {
   const option = (mode) =>
     downloadsChoice.querySelector(`input[value="${mode}"]`);
@@ -635,7 +590,6 @@ function wireDownloadsChoice() {
   downloadsChoice.addEventListener("change", (event) => {
     const mode = event.target.value;
     downloads = { mode, why: "chosen in Settings" };
-    rememberDownloads(mode);
     linkedDownloads = mode;
     history.replaceState(null, "", link());
     downloadsStatus.textContent = vmStarted
@@ -661,28 +615,39 @@ if (ENGINE !== Engine.UNKERNEL) {
 }
 
 // The network choice under Settings: on or off, and the relay, empty
-// for unkernel's. A choice is remembered by this browser, goes into the
-// link, and takes effect at the next boot; the relay stays in this
-// browser. A relay that is not a ws: or wss: URL is refused, and says
-// so.
+// for unkernel's. Both go into the link and take effect at the next
+// boot. A relay that is not a ws: or wss: URL is refused, and says so.
+// A relay the link names says so, since that relay sees the guest's
+// traffic.
 function wireNetworkChoice() {
   const option = (mode) =>
     networkChoice.querySelector(`input[name="network"][value="${mode}"]`);
   option(network.mode).checked = true;
-  networkRelay.value = rememberedRelay() ?? "";
+  networkRelay.value = linkedRelay ?? "";
+
+  // What the status line says about the relay the link names, if any.
+  const relayNote = () =>
+    linkedRelay === null
+      ? ""
+      : `This link sends the guest's network through ${new URL(linkedRelay).host}, not unkernel's relay.`;
+  networkStatus.textContent = relayNote();
 
   // What the status line says once something changed.
   const fromNextBoot = () =>
-    vmStarted
-      ? "from the next boot; this guest keeps the network it booted with"
-      : "";
+    [
+      relayNote(),
+      vmStarted
+        ? "From the next boot; this guest keeps the network it booted with."
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
 
   networkChoice.addEventListener("change", (event) => {
     // On or off.
     if (event.target.name === "network") {
       const mode = event.target.value;
       network = { ...network, mode, why: "chosen in Settings" };
-      rememberNetwork(mode);
       linkedNetwork = mode;
       history.replaceState(null, "", link());
       networkStatus.textContent = fromNextBoot();
@@ -695,8 +660,9 @@ function wireNetworkChoice() {
     // The relay: empty goes back to unkernel's.
     const text = networkRelay.value.trim();
     if (text === "") {
-      rememberRelay(null);
+      linkedRelay = null;
       network = { ...network, relay: DEFAULT_RELAY };
+      history.replaceState(null, "", link());
       networkStatus.textContent = fromNextBoot();
       return;
     }
@@ -705,8 +671,9 @@ function wireNetworkChoice() {
       networkStatus.textContent = `Not used: a relay is a ws:// or wss:// URL, and "${text}" is not one.`;
       return;
     }
-    rememberRelay(relay);
+    linkedRelay = relay;
     network = { ...network, relay };
+    history.replaceState(null, "", link());
     networkStatus.textContent = fromNextBoot();
   });
 }
@@ -1490,6 +1457,11 @@ function unkernelEngine(panel) {
       consoleElement,
       desktopElement,
       soundControl,
+      soundPosition: linkedSound ?? Sound.ON,
+      onSoundSwitch: (position) => {
+        linkedSound = position === Sound.ON ? null : position;
+        history.replaceState(null, "", link());
+      },
       windowsButton,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,

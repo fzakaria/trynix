@@ -21,8 +21,9 @@
 // joins live. Making the context early would only get it refused, with
 // a warning in the browser's console.
 //
-// The control is also the switch: sound on, or off, which this browser
-// remembers.
+// The control is also the switch: sound on, or off. A link can start
+// the sound off (url.js, `sound`), and the switch puts its position in
+// the link (`onSwitch`, app.js).
 
 import { HeldClip, isSilent, Overflow, toFloat32 } from "./sound-queue.js";
 
@@ -38,9 +39,17 @@ const PROCESSOR = "trynix-pcm";
 // card's name; programs still choose any rate from 8 to 48 kHz.
 const PREFERRED_RATE = 48000;
 
-// Where this browser remembers that the reader turned sound off.
-const STORAGE_KEY = "trynix.sound";
-const STORED_OFF = "off";
+// The switch's positions, as a link names them.
+export const Sound = Object.freeze({
+  ON: "on",
+  OFF: "off",
+});
+
+// A switch position as a link holds it, or null when the value is not
+// one.
+export function soundOf(value) {
+  return Object.values(Sound).includes(value) ? value : null;
+}
 
 // What the console bar's control shows.
 export const SoundControl = Object.freeze({
@@ -69,26 +78,6 @@ const TITLES = {
 const GAIN_ON = 1;
 const GAIN_OFF = 0;
 
-function rememberedOff() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === STORED_OFF;
-  } catch {
-    return false;
-  }
-}
-
-function remember(control) {
-  try {
-    if (control === SoundControl.OFF) {
-      localStorage.setItem(STORAGE_KEY, STORED_OFF);
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  } catch {
-    // Not remembered; the switch still holds for this page.
-  }
-}
-
 // Whether the page has had the reader's click or key press, which lets
 // an AudioContext start. A browser without the UserActivation API is
 // taken not to have had one, and the next gesture starts the sound.
@@ -96,13 +85,19 @@ const activated = () =>
   globalThis.navigator?.userActivation?.hasBeenActive === true;
 
 // The sink for createKernel's `sound` option, with `stats` for tests.
-// `control` is the console bar's button.
-export function createSoundOut({ log, control }) {
+// `control` is the console bar's button, `position` where the switch
+// starts (Sound), and `onSwitch` hears each new position.
+export function createSoundOut({
+  log,
+  control,
+  position = Sound.ON,
+  onSwitch = () => {},
+}) {
   let context = null;
   let node = null;
   let gain = null;
   let unsupported = false;
-  let off = rememberedOff();
+  let off = position === Sound.OFF;
 
   // Whether a program has played anything but silence, which shows the
   // control. Opening the card is not enough: a sound server in the guest
@@ -285,7 +280,7 @@ export function createSoundOut({ log, control }) {
     }
     off = !off;
     gain.gain.value = off ? GAIN_OFF : GAIN_ON;
-    remember(off ? SoundControl.OFF : SoundControl.ON);
+    onSwitch(off ? Sound.OFF : Sound.ON);
     show();
   });
 

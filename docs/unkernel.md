@@ -173,11 +173,10 @@ The guest's memory is sized per boot ([site/js/memory.js](../site/js/memory.js))
 - A link can ask for a size: `mem=2048`, in MiB, one of the sizes the
   Settings lane offers.
 - The Settings lane offers 512 MiB, 1, 2 and 4 GiB. A choice there goes
-  into the address bar's link and this browser remembers it
-  (`localStorage`). The link's size wins over the remembered one, which
-  wins over the default. The same goes for the CPUs, the downloads and
-  the network below, and all four boxes are hidden on the x86_64 guest,
-  which has none of them.
+  into the address bar's link, and nothing is kept in the browser: the
+  link's size is used, else the default. The same goes for the CPUs,
+  the downloads and the network below, and all four boxes are hidden on
+  the x86_64 guest, which has none of them.
 - When the browser cannot allocate the size, the SDK tries 1 GiB and
   then 512 MiB, and the Settings lane says what the guest booted with.
 
@@ -213,8 +212,8 @@ own thread, on one CPU.
   host deschedules stalls the CPUs that wait for it.
 - The most is one CPU per host thread, up to 16, the SMP kernel's
   `NR_CPUS` (unkernel's own page has the same limit). The Settings lane
-  offers 1, 2, 4, 8 and 16, those the host has the threads for, and
-  this browser remembers the choice. A link can ask for any count from
+  offers 1, 2, 4, 8 and 16, those the host has the threads for, a
+  choice there going into the link. A link can ask for any count from
   1 to 16 with `cpus=`; asking for more than the host has threads boots
   one CPU per thread, and the Settings lane says so.
 - unkernel's profile of its own page (Chrome, a 14-thread desktop) is
@@ -258,9 +257,9 @@ beyond DHCP and DNS, no IPv6, and nothing can connect in.
   the guest connects to, and anything sent unencrypted.
 - Settings can turn the network off or name another relay (a `ws:` or
   `wss:` URL that speaks Wisp v1 and accepts the page's origin), and
-  this browser remembers both. A link can turn it on or off with
-  `net=`, but cannot name a relay, so a link someone sends cannot
-  route a reader's traffic through a server of its choosing.
+  both go into the link: `net=off`, `wisp=<url>`. A relay sees which
+  hosts the guest connects to and anything sent unencrypted, so a link
+  that names one says so in Settings and in the page's log.
 - unkernel's base userland has no CA certificates. With the network
   on, the page writes nixpkgs' CA bundle, which the site ships
   (`certs.<hash>/ca-bundle.crt`, [nix/site.nix](../nix/site.nix)),

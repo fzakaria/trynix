@@ -159,3 +159,29 @@ test("the network choice travels in the link", () => {
     "/?pkg=curl&fetch=all&net=off&run=curl+-I+x",
   );
 });
+
+// Checks that a link can name the guest's Wisp relay and turn its sound
+// off, that a relay that is not a ws: or wss: URL and a sound value
+// that is not on or off are no choice, and that both are written only
+// when given.
+test("the relay and the sound travel in the link", () => {
+  at("?pkg=curl&wisp=wss%3A%2F%2Frelay.example.org%2F&sound=off");
+  assert.equal(readUrl().relay, "wss://relay.example.org/");
+  assert.equal(readUrl().sound, "off");
+
+  at("?pkg=curl&wisp=https%3A%2F%2Fexample.org%2F&sound=loud");
+  assert.equal(readUrl().relay, null);
+  assert.equal(readUrl().sound, null);
+
+  at("");
+  const state = { pkgs: [{ attr: "curl", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=curl");
+  assert.equal(
+    writeUrl(state, {
+      network: "on",
+      relay: "wss://relay.example.org/",
+      sound: "off",
+    }),
+    "/?pkg=curl&net=on&wisp=wss%3A%2F%2Frelay.example.org%2F&sound=off",
+  );
+});
