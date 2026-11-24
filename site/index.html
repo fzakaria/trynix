@@ -379,10 +379,9 @@
             <span>
               <strong>On</strong>
               <span class="muted">
-                The default. Programs in the guest reach the internet: each connection goes over one
-                WebSocket to a Wisp relay, which opens it for the guest. The relay sees which hosts
-                the guest connects to, and anything sent unencrypted; HTTPS stays encrypted from the
-                guest to the server.
+                The default. Programs in the guest reach the internet through a
+                <a href="https://github.com/MercuryWorkshop/wisp-protocol">Wisp</a> relay, which sees
+                the hosts they connect to.
               </span>
             </span>
           </label>
@@ -403,11 +402,6 @@
               placeholder="wss://wisp.unkernel.dev:6680"
             />
           </div>
-          <p class="muted">
-            Empty means unkernel's relay at wisp.unkernel.dev, which lets this site use it. Another
-            relay must speak Wisp v1 and accept this page's origin. A relay sees which hosts the
-            guest connects to, so a link that names one says so here.
-          </p>
           <p id="network-status" class="muted"></p>
         </fieldset>
 
