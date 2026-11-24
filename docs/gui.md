@@ -73,8 +73,8 @@ closure). When no driver the site serves fits the program, the status
 line says why.
 
 X11 programs need an X server, and the page adds one: when a selected
-program's closure holds libX11 and no libwayland, the page walks in
-xwayland-satellite, and every shell gets `DISPLAY=:0` (see
+program's closure holds libX11 or libxcb and no libwayland, the page
+walks in xwayland-satellite, and every shell gets `DISPLAY=:0` (see
 [X11 programs](#x11-programs)). Each X11 window opens as a window of
 its own, like a Wayland program's.
 
@@ -337,9 +337,12 @@ connects.
 ### Which programs get it
 
 The page decides per selected program, from that program's own
-closure ([site/js/x11.js](../site/js/x11.js)): libX11 and no
-libwayland. The closures of foot, galculator, mpv, wireshark-qt and
-xpdf all hold libX11 beside libwayland, through their toolkits and
+closure ([site/js/x11.js](../site/js/x11.js)): an X client library and
+no libwayland. The client library is libX11, or libxcb, which libX11
+is built on: xlsatoms and xlsclients speak X11 through libxcb alone,
+and booted alone with the rule looking for libX11 they found no
+display. The closures of foot, galculator, mpv, wireshark-qt and xpdf
+all hold libX11 beside libwayland, through their toolkits and
 libraries, and those programs run on the relay as before.
 
 When one does, the page resolves `xwayland-satellite` in the

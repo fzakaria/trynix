@@ -110,6 +110,24 @@ test("an X11 program beside a Wayland program still gets an X server", () => {
   assert.deepEqual(result.programs, [basename("xeyes-1.3.1")]);
 });
 
+// Checks that a program that speaks X11 through XCB alone, with no
+// libX11 in its closure, gets an X server: xlsatoms and xlsclients are
+// two, and booted alone they found no display. A Wayland program whose
+// closure holds libxcb, as Mesa's brings it, still gets none.
+test("an XCB program without libX11 gets an X server", () => {
+  const closure = closureOf({
+    ...GRAPH,
+    "xlsatoms-1.1.4": ["libxcb-1.17.0", "glibc-2.44"],
+    "foot-1.25.0": ["wayland-1.26.0", "libxcb-1.17.0", "glibc-2.44"],
+  });
+  const result = chooseX11Server(closure, [
+    digestFor("xlsatoms-1.1.4"),
+    digestFor("foot-1.25.0"),
+  ]);
+  assert.equal(result.choice, X11Choice.ADD);
+  assert.deepEqual(result.programs, [basename("xlsatoms-1.1.4")]);
+});
+
 // Checks that older nixpkgs' spelling of the library, xorg.libX11's
 // libX11-1.6.x, counts as libX11.
 test("libX11 is recognised under its older name", () => {

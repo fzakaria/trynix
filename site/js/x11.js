@@ -17,12 +17,14 @@
 // program's glibc.
 //
 // Which programs need it is decided per selected program, from its own
-// closure: libX11 and no libwayland means the program can speak X11
-// alone. nixpkgs' GTK 3 and Qt programs carry libX11 through their
-// toolkit beside libwayland, and run on the relay without an X server.
-// A program whose closure holds both and speaks only X11 anyway (Java's
-// AWT, whose closure holds GTK) is not recognised; selecting
-// xwayland-satellite with it is the way in.
+// closure: an X client library and no libwayland means the program can
+// speak X11 alone. The client library is libX11, or libxcb, which
+// libX11 is built on and which xlsatoms and xlsclients use alone.
+// nixpkgs' GTK 3 and Qt programs carry the X client libraries through
+// their toolkit beside libwayland, and run on the relay without an X
+// server. A program whose closure holds libwayland and speaks only X11
+// anyway (Java's AWT, whose closure holds GTK) is not recognised;
+// selecting xwayland-satellite with it is the way in.
 
 import { reachable } from "./closure.js";
 import { speaksWayland, X11_DISPLAY } from "./gui.js";
@@ -55,9 +57,15 @@ export const ShellStart = Object.freeze({
 });
 
 // Store basenames, by the nixpkgs package each one is. libX11 is
-// xorg.libX11 (libX11-1.6.5) in older nixpkgs and libx11 in newer.
+// xorg.libX11 (libX11-1.6.5) in older nixpkgs and libx11 in newer;
+// libxcb is libxcb in both.
 const LIBX11_PATH = /^[0-9a-z]{32}-lib[xX]11-\d/;
+const LIBXCB_PATH = /^[0-9a-z]{32}-libxcb-\d/;
 const X11_SERVER_PATH = /^[0-9a-z]{32}-xwayland-satellite-\d/;
+
+// Whether a store basename is a library an X11 client speaks through.
+const isX11Client = (basename) =>
+  LIBX11_PATH.test(basename) || LIBXCB_PATH.test(basename);
 
 // Whether a store basename is an X server the relay can start.
 // Xwayland alone is not one: rootless, it needs a window manager to
@@ -89,7 +97,7 @@ export function chooseX11Server(closure, rootDigests) {
   const programs = [];
   for (const digest of rootDigests) {
     const own = basenamesOf(reachable(closure, [digest]));
-    if (!own.some((basename) => LIBX11_PATH.test(basename))) {
+    if (!own.some(isX11Client)) {
       continue;
     }
     if (speaksWayland(own)) {
