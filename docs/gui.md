@@ -45,6 +45,13 @@ the Fullscreen API for video only. What programs are told about the
 screen is the frame's size, so maximize fills the frame, in full
 screen too.
 
+On a phone a window is usually wider than the frame. A window larger
+than the frame opens maximized and fills it, which tells the program
+the frame's size, and the windows button is the way back to the
+terminal. A floating window moved past the frame's edge, or left there
+when the frame shrank on leaving full screen, is pulled back until a
+40 by 24 px corner of it is inside, enough to drag it by.
+
 GL programs need a driver, and the page adds one: when the closure
 holds a Wayland program that links libglvnd and no Mesa, the page
 walks in the site's own Mesa, built with the virgl driver alone (see
@@ -73,8 +80,8 @@ line says why.
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
 [site/js/frame.js](../site/js/frame.js) the console frame the windows
-open in: its size, where windows open, the keyboard between the
-windows and the terminal, and the bar's buttons. `#desktop` covers the console's
+open in: its size, where windows open, the keyboard between them and
+the terminal, and the bar's buttons. `#desktop` covers the console's
 body and takes no pointer itself, so a press outside every window
 reaches the terminal; wland gives each window's canvases their own.
 
@@ -462,6 +469,9 @@ through the page's GL renderer by GPU resource and not through
 llvmpipe. `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
+`--viewport phone` runs them in a phone-sized window, where foot opens
+maximized and the terminal is reached through the windows button;
+Chromium also emulates a touch screen there.
 `--gpu hardware` draws Chromium's WebGL with the host's GPU instead of
 SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
 the console, terminal and windows, at each step.
@@ -469,7 +479,8 @@ the console, terminal and windows, at each step.
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline, and
 [tests/site/frame.test.mjs](../tests/site/frame.test.mjs) the frame's
-rules: where a new window opens, and what the windows button offers.
+rules: which windows open maximized, where the others open, where a
+window past the edge goes back to, and what the windows button offers.
 
 ## Updating it
 

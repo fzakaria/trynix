@@ -15,6 +15,7 @@ take a frame from it.
     nix run .#gui-test -- --site <site> --case foot --screenshots /tmp/gui
     nix run .#gui-test -- --site <site> --with firefox
     nix run .#gui-test -- --site <site> --fetch all
+    nix run .#gui-test -- --site <site> --viewport phone
 
 The cases:
 
@@ -34,6 +35,13 @@ fetches store paths as the program opens them, `all` before the shell
 starts. Without it the link leaves the choice to the page, whose
 default is lazy.
 
+--viewport is the browser window's size: a desktop's, where a window
+floats over the terminal, or a phone's, where a window is wider than
+the console and opens maximized (site/js/frame.js), so the way back to
+the terminal is the console bar's windows button. Chromium also
+emulates a touch screen for the phone, which gives the page its touch
+layout; Firefox only takes the size.
+
 The browser is Chromium, driven over the DevTools protocol as the other
 tools here drive it, or with `--with firefox`, Firefox over WebDriver
 BiDi, which is the protocol Firefox speaks now that it has dropped the
@@ -47,6 +55,7 @@ published driver lacks; the gl case fails there.
 
 import argparse
 import base64
+import collections
 import importlib.util
 import json
 import os
@@ -140,13 +149,32 @@ FREE_TERMINAL_POINT = f"""(() => {{
   return null;
 }})()"""
 
+# The middle of the console bar's windows button, which hides every
+# window and gives the terminal the keyboard (site/js/frame.js).
+WINDOWS_BUTTON_POINT = """(() => {
+  const button = document.getElementById('console-windows');
+  button.scrollIntoView({ block: 'nearest' });
+  const r = button.getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+})()"""
+
 # How far into a window's content the click that focuses it lands.
 CLICK_DEPTH = 20
 
-# The browser window's size: a desktop's, so the console is as tall as
-# a reader would see it and a program's window floats over the terminal.
-VIEWPORT_WIDTH = 1280
-VIEWPORT_HEIGHT = 1000
+# The browser window's size for --viewport. A desktop's makes the
+# console as tall as a reader would see it, with a program's window
+# floating over the terminal; a phone's is narrower than foot's window.
+# `mobile` asks Chromium for a phone's touch screen as well.
+Viewport = collections.namedtuple("Viewport", ["width", "height", "mobile"])
+VIEWPORT_DESKTOP = "desktop"
+VIEWPORT_PHONE = "phone"
+VIEWPORTS = {
+    VIEWPORT_DESKTOP: Viewport(width=1280, height=1000, mobile=False),
+    VIEWPORT_PHONE: Viewport(width=390, height=844, mobile=True),
+}
+
+# The touch points Chromium's emulated touch screen offers.
+TOUCH_POINTS = 5
 
 # The physical key for each character typed, which is what wland reads
 # (KeyboardEvent.code, mapped to an evdev key on a US layout). Only
@@ -192,14 +220,20 @@ class Chromium:
     def __init__(self, binary, profile, gpu):
         self.browser = cpu.Browser(binary, profile, gpu=gpu)
 
-    def set_viewport(self, width, height):
+    def set_viewport(self, viewport):
         self.browser.send(
             "Emulation.setDeviceMetricsOverride",
-            width=width,
-            height=height,
+            width=viewport.width,
+            height=viewport.height,
             deviceScaleFactor=1,
-            mobile=False,
+            mobile=viewport.mobile,
         )
+        if viewport.mobile:
+            self.browser.send(
+                "Emulation.setTouchEmulationEnabled",
+                enabled=True,
+                maxTouchPoints=TOUCH_POINTS,
+            )
 
     def navigate(self, url):
         self.browser.send("Page.navigate", url=url)
@@ -333,11 +367,11 @@ class Firefox:
         text = result["result"].get("value")
         return None if text is None else json.loads(text)
 
-    def set_viewport(self, width, height):
+    def set_viewport(self, viewport):
         self.send(
             "browsingContext.setViewport",
             context=self.context,
-            viewport={"width": width, "height": height},
+            viewport={"width": viewport.width, "height": viewport.height},
         )
 
     def navigate(self, url):
@@ -478,9 +512,10 @@ def wait_for(browser, expression, limit, label):
     raise SystemExit(f"FAIL {label}: nothing after {limit} s\n{tail}")
 
 
-def boot(browser, base, packages, fetch, run=None):
-    """Boot `packages` and wait for the shell; returns the seconds taken."""
-    browser.set_viewport(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+def boot(browser, base, packages, fetch, viewport, run=None):
+    """Boot `packages` in a browser window of `viewport`'s size and wait
+    for the shell; returns the seconds taken."""
+    browser.set_viewport(VIEWPORTS[viewport])
     browser.navigate(page_url(base, packages, fetch, run))
     _, seconds = wait_for(
         browser,
@@ -503,9 +538,9 @@ def first_frame(browser):
     return seconds
 
 
-def screenshot(browser, directory, name):
+def screenshot(browser, directory, name, viewport):
     """Save the console, the terminal and the windows over it, as a PNG
-    in `directory`."""
+    in `directory`, named for the case's step and the viewport."""
     if directory is None:
         return
     browser.evaluate("document.getElementById('console').scrollIntoView()")
@@ -514,7 +549,7 @@ def screenshot(browser, directory, name):
         ".getBoundingClientRect(); return { x: r.x + scrollX, y: r.y + scrollY,"
         " width: r.width, height: r.height }; })()"
     )
-    path = os.path.join(directory, f"{name}.png")
+    path = os.path.join(directory, f"{name}-{viewport}.png")
     with open(path, "wb") as f:
         f.write(browser.screenshot(clip))
     print(f"  screenshot: {path}")
@@ -537,14 +572,18 @@ def type_into_window(browser, text):
 
 
 def type_into_terminal(browser, text):
-    """Press the page's terminal where no window covers it, then type
-    `text` as key events."""
+    """Press the page's terminal where no window covers it, or the
+    console bar's windows button when windows cover all of it, then type
+    `text` as key events. Returns how the terminal was reached."""
     point = browser.evaluate(FREE_TERMINAL_POINT)
+    reached = "a press on the terminal beside the window"
     if point is None:
-        raise SystemExit("FAIL windows cover the whole terminal")
+        point = browser.evaluate(WINDOWS_BUTTON_POINT)
+        reached = "the windows button, the window covering the terminal"
     browser.click(point["x"], point["y"])
     for char in text:
         browser.press(char)
+    return reached
 
 
 def guest_has(browser, path):
@@ -557,11 +596,11 @@ def guest_has(browser, path):
     return found is True
 
 
-def run_foot(browser, base, screenshots, fetch):
+def run_foot(browser, base, screenshots, fetch, viewport):
     """foot: boot it, start it, wait for its window, type into it, then
     type into the page's terminal behind it."""
     print("foot")
-    seconds = boot(browser, base, FOOT_PACKAGES, fetch)
+    seconds = boot(browser, base, FOOT_PACKAGES, fetch, viewport)
     print(f"  shell after {seconds:.1f} s")
 
     browser.type(FOOT_COMMAND)
@@ -571,19 +610,20 @@ def run_foot(browser, base, screenshots, fetch):
     # Give the terminal its first prompt before the picture is taken
     # and before keys go to it.
     time.sleep(2)
-    screenshot(browser, screenshots, "foot")
+    screenshot(browser, screenshots, "foot", viewport)
 
     type_into_window(browser, FOOT_TYPED)
     if not wait_for_file(browser, FOOT_TYPED_FILE):
-        screenshot(browser, screenshots, "foot-typed")
+        screenshot(browser, screenshots, "foot-typed", viewport)
         raise SystemExit("FAIL keys typed into foot's window never reached it")
     print(f"  keys reached foot: {FOOT_TYPED_FILE} written")
-    screenshot(browser, screenshots, "foot-typed")
+    screenshot(browser, screenshots, "foot-typed", viewport)
 
     browser.evaluate(COUNT_WINDOW_KEYS)
-    type_into_terminal(browser, TERMINAL_TYPED)
+    reached = type_into_terminal(browser, TERMINAL_TYPED)
+    print(f"  terminal reached by {reached}")
     ran = wait_for_file(browser, TERMINAL_TYPED_FILE)
-    screenshot(browser, screenshots, "terminal-typed")
+    screenshot(browser, screenshots, "terminal-typed", viewport)
     if not ran:
         raise SystemExit("FAIL keys typed into the terminal never reached a shell")
     if TERMINAL_TYPED_FILE not in browser.transcript():
@@ -606,11 +646,11 @@ def wait_for_file(browser, path):
     return False
 
 
-def run_gl(browser, base, screenshots, fetch):
+def run_gl(browser, base, screenshots, fetch, viewport):
     """gl: boot es2gears with Mesa, wait for its window and its frame
     rate, and check that the frames came through the GL renderer."""
     print("gl")
-    seconds = boot(browser, base, GL_PACKAGES, fetch, run=GL_COMMAND)
+    seconds = boot(browser, base, GL_PACKAGES, fetch, viewport, run=GL_COMMAND)
     print(f"  shell after {seconds:.1f} s; the link types {GL_COMMAND!r}")
     added = DRIVER_ADDED.search(
         browser.evaluate("document.getElementById('debug-log').textContent")
@@ -652,7 +692,7 @@ def run_gl(browser, base, screenshots, fetch):
     print(f"  virgl submits {submits}, frames taken by GPU resource {images}")
     if submits == 0 or images == 0:
         raise SystemExit("FAIL es2gears did not draw through the page's renderer")
-    screenshot(browser, screenshots, "es2gears")
+    screenshot(browser, screenshots, "es2gears", viewport)
 
 
 RUNNERS = {"foot": run_foot, "gl": run_gl}
@@ -675,6 +715,12 @@ def main():
     )
     parser.add_argument("--case", action="append", choices=CASES)
     parser.add_argument("--screenshots", help="a directory to save the console in")
+    parser.add_argument(
+        "--viewport",
+        choices=list(VIEWPORTS),
+        default=VIEWPORT_DESKTOP,
+        help="the browser window's size: a desktop's (the default) or a phone's",
+    )
     parser.add_argument(
         "--fetch",
         choices=FETCH_MODES,
@@ -704,7 +750,9 @@ def main():
                 binary, os.path.join(workdir, case), GPUS[args.gpu]
             )
             try:
-                RUNNERS[case](browser, base, args.screenshots, args.fetch)
+                RUNNERS[case](
+                    browser, base, args.screenshots, args.fetch, args.viewport
+                )
             finally:
                 browser.close()
     finally:

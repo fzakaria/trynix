@@ -15,16 +15,24 @@
 // hands the keyboard to the next window, and with none left the frame
 // gives it to the terminal.
 //
-// A new window opens clear of the shell's prompt where it can. The
-// console bar has a button that hides every window, bringing the
+// The console bar has a button that hides every window, bringing the
 // terminal forward, and shows them again, and a full-screen button for
-// the whole frame.
+// the whole frame. A window larger than the frame, which on a phone is
+// most of them, opens maximized, and a smaller one opens clear of the
+// shell's prompt where it can. A window moved past the frame's edge,
+// or left there when the frame shrank, is pulled back until a grip of
+// it is inside.
 
 import { log } from "./log.js";
 
 // The class the console takes once a GUI program has connected:
 // style.css grows the terminal so windows fit.
 const WINDOWED_CLASS = "windowed";
+
+// How much of a floating window stays inside the frame: wland's own
+// Alt+drag keeps the same strip (wm.ts), wide enough to take hold of
+// and as tall as a title bar, which is where the window is moved from.
+export const WINDOW_GRIP = Object.freeze({ width: 40, height: 24 });
 
 // The gap a window opened at the frame's bottom leaves under it: the
 // same as wland's cascade leaves on the left (view.ts).
@@ -48,6 +56,10 @@ const FullScreenLabel = Object.freeze({
   EXIT: "exit full screen",
 });
 
+// Whether a window's box is wider or taller than the frame's.
+export const oversized = (box, frame) =>
+  box.width > frame.width || box.height > frame.height;
+
 // Where a new window at `box`, wland's cascade near the frame's top,
 // opens. wland's place covers the top of the terminal, which is where
 // the shell's prompt is until the screen has filled, so while the
@@ -60,6 +72,18 @@ export function opensAt(box, frame, cursorDepth) {
     return { left: box.left, top: box.top };
   }
   return { left: box.left, top: bottom };
+}
+
+// Where a window at `box` goes so that a grip of it is inside `frame`:
+// its left or right strip within the sides, its top edge between the
+// frame's top and a grip's height above the bottom.
+export function keepReachable(box, frame) {
+  const left = Math.min(
+    Math.max(box.left, WINDOW_GRIP.width - box.width),
+    frame.width - WINDOW_GRIP.width,
+  );
+  const top = Math.min(Math.max(box.top, 0), frame.height - WINDOW_GRIP.height);
+  return { left, top };
 }
 
 // The windows button for wland's window entries: nothing to do with no
@@ -171,9 +195,10 @@ export function consoleFrame({
     desktop.engine.setWindowPosition(win.conn, win.surface, at.left, at.top);
   }
 
-  // A new window opens clear of the terminal's prompt (opensAt). A
-  // window is looked at once, as soon as its first commit has given it
-  // a size.
+  // A new window larger than the frame opens maximized, which tells
+  // the program the frame's size; any other opens clear of the
+  // terminal's prompt (opensAt). A window is looked at once, as soon as
+  // its first commit has given it a size.
   function placeNew() {
     const entries = new Map(
       desktop.windows().map((entry) => [entry.key, entry]),
@@ -199,7 +224,29 @@ export function consoleFrame({
       if (win.maximized || win.fullscreen) {
         continue;
       }
+      if (oversized(box, frameSize())) {
+        entries.get(win.key)?.setMaximized(true);
+        continue;
+      }
       moveWindow(win, box, opensAt(box, frameSize(), cursorDepth()));
+    }
+  }
+
+  // Every floating window keeps a grip inside the frame.
+  function keepWindowsReachable() {
+    const frame = frameSize();
+    if (frame.width === 0 || frame.height === 0) {
+      return;
+    }
+    for (const win of desktop.view.windows()) {
+      if (win.minimized || win.maximized || win.fullscreen) {
+        continue;
+      }
+      const box = boxOf(win);
+      if (!Number.isFinite(box.left) || !Number.isFinite(box.top)) {
+        continue;
+      }
+      moveWindow(win, box, keepReachable(box, frame));
     }
   }
 
@@ -266,6 +313,7 @@ export function consoleFrame({
       return;
     }
     placeNew();
+    keepWindowsReachable();
     relabel();
     returnKeyboard();
   }
@@ -291,7 +339,9 @@ export function consoleFrame({
       consoleElement.scrollIntoView({ block: "nearest" });
     },
 
-    // The compositor is running: wire the windows button.
+    // The compositor is running: wire the windows button, and keep
+    // windows reachable when the frame changes size (full screen, a
+    // resized browser) and after every drag, which ends at a release.
     attach(handle) {
       desktop = handle;
 
@@ -306,6 +356,8 @@ export function consoleFrame({
 
       keepFocus(button);
       button.addEventListener("click", pressWindows);
+      new ResizeObserver(changed).observe(container);
+      document.addEventListener("pointerup", changed);
       changed();
     },
   };
