@@ -323,17 +323,31 @@
           vendor = import ./nix/vendor.nix { inherit pkgs; };
         in
         {
-          # the site assembles: the entry page and the hashed module tree
-          # are where the build put them
           # the site's GL driver asks for no newer glibc than its manifest
           # says, which is what the page decides by (nix/gl-check.nix)
           gl-driver = import ./nix/gl-check.nix { inherit pkgs; };
 
-          site = pkgs.runCommand "trynix-site-check" { } ''
-            test -f ${self.packages.${system}.site}/index.html
-            test -f ${self.packages.${system}.site}/js.*/app.js
-            touch $out
-          '';
+          # the site assembles: the entry page and the hashed module tree
+          # are where the build put them, and the GL renderer's module
+          # names its wasm by the wasm's content hash. The page fetches
+          # virgl.mjs by a versioned URL, and the module resolves
+          # virgl.wasm against its own URL, under a path _headers caches
+          # for a year, so a bare name would pair a new module with a
+          # browser's copy of the old wasm
+          site =
+            let
+              site = self.packages.${system}.site;
+            in
+            pkgs.runCommand "trynix-site-check" { } ''
+              test -f ${site}/index.html
+              test -f ${site}/js.*/app.js
+              wasm=$(sha256sum ${site}/vendor/unkernel/virgl.wasm | cut -c1-12)
+              if ! grep -q "\"virgl.wasm?v=$wasm\"" ${site}/vendor/unkernel/virgl.mjs; then
+                echo "virgl.mjs does not name virgl.wasm by its hash, $wasm"
+                exit 1
+              fi
+              touch $out
+            '';
 
           # The snapshot resumes a guest that was captured from one
           # particular kernel and initramfs, and holds them in its RAM.

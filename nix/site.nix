@@ -127,6 +127,13 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   substituteInPlace $out/vendor/unkernel/web.mjs \
     --replace-fail '"./_chunks/core.mjs"' "\"./_chunks/core.mjs?v=$chunk\""
 
+  # The same for the GL renderer: the page fetches virgl.mjs by its
+  # versioned URL, and the module asks for virgl.wasm by a bare name
+  # beside it, which no version reaches either.
+  wasm=$(sha256sum $out/vendor/unkernel/virgl.wasm | cut -c1-12)
+  substituteInPlace $out/vendor/unkernel/virgl.mjs \
+    --replace-fail '"virgl.wasm"' "\"virgl.wasm?v=$wasm\""
+
   # The same trick for the files the page fetches by a fixed name and
   # keeps in the browser's Cache API, which keys on the URL: their
   # content hashes ride as a query string instead.
