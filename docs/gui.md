@@ -629,13 +629,14 @@ plays none of it on the card, is stopped and the page's started in its
 place. One without is stopped and the failure goes to the page's log;
 the next addition to the guest starts the daemon again, which succeeds
 once the card is free. Until then, shells started after the failure
-get `CANBERRA_DRIVER=alsa` and no `PULSE_SERVER`, as they would without
-a daemon in the closure. The page's shell at the boot sources its
-environment before the daemon is up, so a daemon that fails there
-leaves that one shell with `PULSE_SERVER` set. Every addition asks the
-daemon for its sinks again: one stopped in the guest, with `pactl exit`
-say, is started again by the next addition, and one that cannot be is
-no longer named to new shells.
+get `CANBERRA_DRIVER=alsa` and have `PULSE_SERVER` unset, as they would
+without a daemon in the closure. The page's shell at the boot sources
+its environment before the daemon is up, so a daemon that fails there
+leaves that one shell with `PULSE_SERVER` set, which a shell started
+from that shell unsets. Every addition asks the daemon for its sinks
+again: one stopped in the guest, with `pactl exit` say, is started
+again by the next addition, and one that cannot be is no longer named
+to new shells.
 
 The daemon opens the card as it starts and plays zeros until it
 closes it. The page shows the sound control only once a chunk holds a

@@ -64,12 +64,13 @@ test("of two daemons the newer is started", () => {
 });
 
 // Checks what every shell is told: with a daemon, where its socket is,
-// under the session's runtime directory; without one, libcanberra is
-// sent to ALSA, since it otherwise picks its PulseAudio backend
-// whenever that loads and has nothing to fall back to. With a daemon,
-// libcanberra's driver is unset (null): a shell typed at a prompt from
-// before the daemon came inherits CANBERRA_DRIVER=alsa, and kept, it
-// sent libcanberra to a card the daemon holds.
+// under the session's runtime directory; without one, no socket (null),
+// and libcanberra is sent to ALSA, since it otherwise picks its
+// PulseAudio backend whenever that loads and has nothing to fall back
+// to. With a daemon, libcanberra's driver is unset (null): a shell
+// typed at a prompt from before the daemon came inherits
+// CANBERRA_DRIVER=alsa, and kept, it sent libcanberra to a card the
+// daemon holds.
 test("the shell's environment follows whether a daemon runs", () => {
   const runtimeDir = sessionEnv().XDG_RUNTIME_DIR;
   assert.ok(PULSE_SOCKET.startsWith(`${runtimeDir}/`));
@@ -80,7 +81,20 @@ test("the shell's environment follows whether a daemon runs", () => {
 
   const alone = soundEnv(null);
   assert.equal(alone.CANBERRA_DRIVER, "alsa");
-  assert.equal(alone.PULSE_SERVER, undefined);
+  assert.equal(alone.PULSE_SERVER, null);
+});
+
+// Checks that the environment without a daemon clears what the one
+// with a daemon sets, and the other way round: each names every
+// variable the other does, unset (null) where it has no value. At the
+// boot the page's shell is told of the closure's daemon before the
+// daemon is up. A daemon that then failed left PULSE_SERVER out of the
+// rewritten environment, so a shell started from the page's shell
+// inherited the socket nothing listened on and sourced nothing over it.
+test("with and without a daemon the shells hear of the same variables", () => {
+  const served = soundEnv(path("pulseaudio-17.0"));
+  const alone = soundEnv(null);
+  assert.deepEqual(Object.keys(alone).sort(), Object.keys(served).sort());
 });
 
 // Checks the command that starts the daemon: the closure's own binary,
@@ -201,7 +215,7 @@ test("a daemon that failed to start leaves the shells on ALSA", async () => {
   assert.equal(server.running, null);
   const failed = soundEnv(server.running);
   assert.equal(failed.CANBERRA_DRIVER, "alsa");
-  assert.equal(failed.PULSE_SERVER, undefined);
+  assert.equal(failed.PULSE_SERVER, null);
 
   await server.start(daemon);
   assert.equal(server.running, daemon);
