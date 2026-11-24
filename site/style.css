@@ -631,6 +631,30 @@ code {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+/* A progress row's label that links to its setting: the row reads as
+   before, with a dotted underline saying there is more behind it. */
+a.label {
+  color: inherit;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+a.label:hover {
+  text-decoration-color: currentColor;
+}
+
+/* The setting a progress row's link opened, marked for a moment. */
+.flash {
+  animation: flash 1.6s ease-out;
+}
+@keyframes flash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

@@ -744,18 +744,47 @@ cachesInput.addEventListener("input", () => {
 
 // The lane tabs: anchors so each is a real link, one visible at a time.
 const laneNav = document.getElementById("lanes");
+
+// Show the lane named `name` and mark its tab.
+function showLane(name) {
+  for (const link of laneNav.querySelectorAll("a[data-lane]")) {
+    link.classList.toggle("active", link.dataset.lane === name);
+  }
+  for (const lane of document.querySelectorAll(".lane[data-lane]")) {
+    lane.hidden = lane.dataset.lane !== name;
+  }
+}
+
 laneNav.addEventListener("click", (event) => {
   const tab = event.target.closest("a[data-lane]");
   if (tab === null) {
     return;
   }
   event.preventDefault();
-  for (const link of laneNav.querySelectorAll("a[data-lane]")) {
-    link.classList.toggle("active", link === tab);
+  showLane(tab.dataset.lane);
+});
+
+// A progress row's label that links to a setting (FIRST_USE_ROW) opens
+// the Settings lane at that setting and marks it for a moment, so the
+// reader sees which box the row meant.
+const SETTINGS_LANE = "settings";
+const FLASH_CLASS = "flash";
+bootProgress.addEventListener("click", (event) => {
+  const link = event.target.closest('a.label[href^="#"]');
+  if (link === null) {
+    return;
   }
-  for (const lane of document.querySelectorAll(".lane[data-lane]")) {
-    lane.hidden = lane.dataset.lane !== tab.dataset.lane;
+  event.preventDefault();
+  const setting = document.getElementById(link.hash.slice(1));
+  if (setting === null) {
+    return;
   }
+  showLane(SETTINGS_LANE);
+  setting.scrollIntoView({ behavior: "smooth", block: "center" });
+  setting.classList.remove(FLASH_CLASS);
+  // Read layout so the animation restarts on a second click.
+  void setting.offsetWidth;
+  setting.classList.add(FLASH_CLASS);
 });
 
 // ---------- the boot ----------
@@ -926,6 +955,17 @@ function reboot() {
 }
 
 // ---------- a closure served on first use ----------
+
+// The progress row for the paths that download on first use. Its label
+// links to the Downloads setting, where a reader who would rather wait
+// once at the boot can choose that instead.
+const FIRST_USE_ROW = [
+  "on first use",
+  {
+    href: "#downloads",
+    title: "Downloads setting: when the rest of the closure downloads",
+  },
+];
 
 // The closure a guest is served lazily (lazy.js, downloads.js), for the
 // life of the guest it booted with; null for a guest that booted with
@@ -1326,7 +1366,7 @@ async function boot() {
       : qemuEngine(panel, telemetry);
   const closureRow = panel.row(lazily ? "selected packages" : "closure");
   const vmRow = panel.row("virtual machine");
-  const firstUseRow = lazily ? panel.row("on first use") : null;
+  const firstUseRow = lazily ? panel.row(...FIRST_USE_ROW) : null;
 
   try {
     const roots = await rootsOf(entries.map((entry) => entry.digest));
@@ -1630,7 +1670,7 @@ async function addLazily({
   const eager = [...eagerOf([...fresh.values()], rootDigests), ...waiting];
   served.show({
     selected: row,
-    closure: panel.row("on first use"),
+    closure: panel.row(...FIRST_USE_ROW),
     eager,
     loadTelemetry: telemetry,
   });

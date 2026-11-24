@@ -10,13 +10,22 @@ export class ProgressPanel {
     container.replaceChildren();
   }
 
-  row(label) {
+  // One stage's row. With `href`, the label is a link to where the
+  // stage's behaviour is chosen (the "on first use" row to the Downloads
+  // setting), and `title` says what is there.
+  row(label, { href = null, title = null } = {}) {
     const el = document.createElement("div");
     el.className = "progress-row";
 
-    const name = document.createElement("span");
+    const name = document.createElement(href === null ? "span" : "a");
     name.className = "label";
     name.textContent = label;
+    if (href !== null) {
+      name.href = href;
+    }
+    if (title !== null) {
+      name.title = title;
+    }
 
     const bar = document.createElement("div");
     bar.className = "bar";
