@@ -6,12 +6,13 @@
 # xterm-pty is a UMD bundle exposing the openpty global: the line
 # discipline, pinned to the version whose emscripten-pty.js the
 # qemu-wasm build linked against. xzwasm exposes the xzwasm global
-# with XzReadableStream and fzstd exposes fzstd with Decompress, both
-# loaded by the page; crabz2 is an ES module the site imports the first
-# time it meets a bzip2 path, which for most boots is never — the cache
-# serves bzip2 for the oldest paths, xz for most of them and zstd for
-# the newest. coi-serviceworker injects the COOP/COEP headers on hosts
-# that cannot set them (GitHub Pages).
+# with XzReadableStream, loaded by the page; crabz2 is an ES module the
+# site imports the first time it meets a bzip2 path, which for most
+# boots is never: the cache serves bzip2 for the oldest paths, xz for
+# most of them and zstd for the newest. The zstd decoder is not here:
+# it is zstd's own, built from source (nix/unzstd-wasm.nix).
+# coi-serviceworker injects the COOP/COEP headers on hosts that cannot
+# set them (GitHub Pages).
 #
 # unkernel is the second engine (site/js/engine.js): a Linux kernel
 # compiled to wasm, with its JavaScript SDK. The npm package carries
@@ -33,7 +34,6 @@ let
 
   xtermPty = npm "xterm-pty" "0.10.1" "0jj3m2lhnvxk65b0mwa5f1dpfq22ilsyw6b61rn51ccs9kyk276a";
   xzwasm = npm "xzwasm" "0.1.2" "18zc8z5hfy34cy3z7a5baz07hccl2y0y17y7qsxiy4wsw8v6ig7n";
-  fzstd = npm "fzstd" "0.1.1" "1ia5gjcs9r9pfj4jqd3jac233a08qy9342fh27i7n1ir6hnyxljy";
   crabz2 = npm "crabz2" "0.4.0" "1iy7ihsc536zqbjkysh11l55sxk2mb5ibbpf5b7jpn0md84ws3p1";
   coi = npm "coi-serviceworker" "0.1.7" "05ln49m3gfi5x71azfbvmb0ww13ii2xmvkr3x46j45g2913nsm3a";
   ghostty =
@@ -74,10 +74,6 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   for patch in ${../patches/xzwasm}/*.patch; do
     patch -d $out -p1 < "$patch"
   done
-  rm -r unpack/package
-
-  tar -xzf ${fzstd} -C unpack
-  cp unpack/package/umd/index.js $out/fzstd.js
   rm -r unpack/package
 
   # bzip2, which is what cache.nixos.org served before it moved to xz,
