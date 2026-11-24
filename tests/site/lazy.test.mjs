@@ -243,6 +243,45 @@ test("a lookup starts at once; background fetches wait for room", async () => {
   assert.deepEqual(started, ["g-app", "j-lib", "h-lib", "i-lib"]);
 });
 
+// Checks paths a program's loader will open next (elf.js): they wait
+// for room like background fetches, so a program whose RUNPATH names
+// dozens of paths does not start dozens of downloads at once, and they
+// start ahead of the background fetches, in the order asked, a queued
+// background path moving up when the loader names it. A lookup the
+// guest waits on still starts at once.
+test("what a loader opens next waits for room, ahead of the background", async () => {
+  const { store, started, finish } = controlled({ concurrency: 1 });
+  store.add([
+    info("k-app", ["l-icons", "m-lib"]),
+    info("l-icons"),
+    info("m-lib"),
+    info("n-lib"),
+    info("o-lib"),
+  ]);
+
+  // The app downloads; its references wait in the background.
+  store.touch("k-app");
+  assert.deepEqual(started, ["k-app"]);
+
+  // Its loader will open n-lib and m-lib: both wait, ahead of l-icons.
+  store.ensure("n-lib", Priority.NEXT).catch(() => {});
+  store.ensure("m-lib", Priority.NEXT).catch(() => {});
+  assert.deepEqual(started, ["k-app"]);
+
+  await finish("k-app");
+  assert.deepEqual(started, ["k-app", "n-lib"]);
+
+  // The guest asks for o-lib and waits: it starts at once.
+  store.ensure("o-lib", Priority.DEMAND).catch(() => {});
+  assert.deepEqual(started, ["k-app", "n-lib", "o-lib"]);
+
+  await finish("n-lib");
+  await finish("o-lib");
+  assert.deepEqual(started, ["k-app", "n-lib", "o-lib", "m-lib"]);
+  await finish("m-lib");
+  assert.deepEqual(started, ["k-app", "n-lib", "o-lib", "m-lib", "l-icons"]);
+});
+
 // Checks the counts the page's progress row shows: the closure's size,
 // and what has been written so far, in paths and compressed bytes.
 test("the store counts what it has written against the closure", async () => {
@@ -502,6 +541,35 @@ test("opening a program fetches what its loader will open", async () => {
   await finish(program);
   await opened;
   assert.deepEqual(started, [program, LIBC, "v-gtk"]);
+});
+
+// Checks that what a program's loader will open is started within the
+// store's bound of four downloads, rather than all at once: solitaire's
+// RUNPATHs had 37 downloads running together. The rest start as room
+// is made.
+test("what a program's loader will open starts within the bound", async () => {
+  const program = "w-sol";
+  const libraries = ["x-1", "x-2", "x-3", "x-4", "x-5", "x-6"];
+  const binary = elf({
+    searchPath: libraries.map((name) => `${STORE}/${name}/lib`).join(":"),
+  });
+  const { fs, started, finish } = servedLazily(
+    [info(program), ...libraries.map((name) => info(name))],
+    {
+      [program]: {
+        [`${STORE}/${program}`]: { type: "dir" },
+        [`${STORE}/${program}/sol`]: { type: "file", data: binary },
+      },
+    },
+  );
+
+  const opened = fs.open(`${STORE}/${program}/sol`, { read: true });
+  await finish(program);
+  await opened;
+  assert.deepEqual(started, [program, "x-1", "x-2", "x-3", "x-4"]);
+
+  await finish("x-1");
+  assert.deepEqual(started, [program, "x-1", "x-2", "x-3", "x-4", "x-5"]);
 });
 
 // libc's listing as the cache publishes it: the library, a relative

@@ -407,17 +407,18 @@ program needs, then each library each of those needs. Each first touch
 of a path would be a round trip to the cache. Three things start paths
 early:
 
-- opening a file starts the store paths its ELF headers name for the
-  dynamic loader, its interpreter and its RUNPATH or RPATH
-  directories, all at once ([site/js/elf.js](../site/js/elf.js));
+- opening a file queues its ELF interpreter and the store paths in its
+  RUNPATH or RPATH, in search order ([site/js/elf.js](../site/js/elf.js)).
 - touching a path starts its narinfo references of 2 MiB or less in
   the background, which covers the icon themes, schemas and fonts no
   ELF header names. Only one level, or the whole closure would
   download the moment anything was touched;
 - a selected package's references are all started at the boot.
 
-Background downloads run four at a time, largest first. A download
-the guest is waiting on starts at once, whatever else is running.
+When fewer than four downloads are running, the next slot goes to an
+ELF prediction first. Each touched path's other references are queued
+largest first. A download the guest is waiting on starts immediately,
+even when all four slots are busy.
 
 Starting paths early pays for itself. With all three turned off, so
 that every path waits for the guest to ask, click to output at

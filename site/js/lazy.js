@@ -30,8 +30,12 @@
 // cache. Two things start paths before the guest asks for them:
 //
 //   When the guest opens a file, the store paths its ELF headers name
-//   for the dynamic loader (elf.js) are fetched at once: they are what
-//   the loader opens next.
+//   for the dynamic loader (elf.js) are fetched next, ahead of the
+//   background fetches: they are what the loader opens next. They wait
+//   for room like a background fetch, since a RUNPATH can name dozens
+//   of paths and the loader finds many of its libraries in the first
+//   few; once the loader looks in one, the guest is waiting on it and
+//   it starts at once.
 //
 //   When the guest first touches a path, the paths its narinfo
 //   references are fetched in the background, which covers what no ELF
@@ -52,6 +56,9 @@ import { absoluteTarget } from "./store.js";
 export const Priority = Object.freeze({
   // The guest is waiting on it: start now, whatever else is in flight.
   DEMAND: "demand",
+  // The guest's dynamic loader will open it next: start when there is
+  // room, ahead of every PREFETCH.
+  NEXT: "next",
   // The guest will probably want it soon: start when there is room.
   PREFETCH: "prefetch",
 });
@@ -96,30 +103,34 @@ const basenameOf = (info) => info.storePath.slice(STORE_PREFIX.length);
 // fetch(info) resolves to a path's parsed NAR (store.js, fetchNar), and
 // write(basename, entries) puts it into the guest's share; either may
 // be async. `concurrency` bounds the background fetches: a lookup the
-// guest waits on starts at once, and background fetches only start
-// while fewer than `concurrency` downloads of either kind are running.
+// guest waits on starts at once, and the others (NEXT, then PREFETCH)
+// only start while fewer than `concurrency` downloads of any kind are
+// running.
 // listing(info), when given, resolves to a path's NAR listing's root,
 // or to null when there is none to be had (listing.js).
 export function lazyStore({ fetch, write, concurrency, listing }) {
   // basename -> { info, written, promise, settle, queued, listing }.
   // `promise` is the download every lookup of the path waits on, from
   // the moment the path is asked for until the download ends; null
-  // otherwise. `listing` is undefined until the listing is asked for,
-  // then a promise, then its root or null.
+  // otherwise. `queued` is the queue the path waits in for room, or
+  // null. `listing` is undefined until the listing is asked for, then a
+  // promise, then its root or null.
   const paths = new Map();
 
   // Paths the guest has touched, whose references are on their way.
   const touched = new Set();
 
-  // Background fetches waiting for room, oldest first.
-  const queue = [];
+  // Fetches waiting for room, oldest first in each: what the loader
+  // opens next (NEXT), which goes first, and the background (PREFETCH).
+  const next = [];
+  const background = [];
   let running = 0;
 
   // Download, check and write one path, and settle the promise its
   // lookups wait on. A failure leaves the path unwritten and forgets
   // the download, so the next lookup starts another.
   function start(path) {
-    path.queued = false;
+    path.queued = null;
     running += 1;
     const basename = basenameOf(path.info);
 
@@ -160,11 +171,23 @@ export function lazyStore({ fetch, write, concurrency, listing }) {
       );
   }
 
-  // Start background fetches while there is room.
+  // Start waiting fetches while there is room, NEXT first.
   function pump() {
-    while (running < concurrency && queue.length > 0) {
-      start(queue.shift());
+    while (running < concurrency) {
+      const path = next.shift() ?? background.shift();
+      if (path === undefined) {
+        return;
+      }
+      start(path);
     }
+  }
+
+  // Put a path that is waiting for room in `queue`, out of the one it
+  // was in.
+  function requeue(path, queue) {
+    path.queued.splice(path.queued.indexOf(path), 1);
+    path.queued = queue;
+    queue.push(path);
   }
 
   // Give a path a download its lookups can wait on, queued or started.
@@ -181,15 +204,15 @@ export function lazyStore({ fetch, write, concurrency, listing }) {
       start(path);
       return;
     }
-    path.queued = true;
-    queue.push(path);
+    path.queued = priority === Priority.NEXT ? next : background;
+    path.queued.push(path);
     pump();
   }
 
-  // A lookup of a path that is still waiting for room in the
-  // background: take it out of the queue and start it now.
+  // A lookup of a path that is still waiting for room: take it out of
+  // its queue and start it now.
   function promote(path) {
-    queue.splice(queue.indexOf(path), 1);
+    path.queued.splice(path.queued.indexOf(path), 1);
     start(path);
   }
 
@@ -207,7 +230,7 @@ export function lazyStore({ fetch, write, concurrency, listing }) {
           written: false,
           promise: null,
           settle: null,
-          queued: false,
+          queued: null,
           listing: undefined,
         });
       }
@@ -225,8 +248,17 @@ export function lazyStore({ fetch, write, concurrency, listing }) {
         request(path, priority);
         return path.promise;
       }
-      if (priority === Priority.DEMAND && path.queued) {
+      if (path.queued === null) {
+        return path.promise;
+      }
+
+      // A path still waiting for room moves up: to now for a lookup
+      // the guest waits on, ahead of the background for one the loader
+      // opens next.
+      if (priority === Priority.DEMAND) {
         promote(path);
+      } else if (priority === Priority.NEXT && path.queued === background) {
+        requeue(path, next);
       }
       return path.promise;
     },
@@ -414,7 +446,9 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
 
   // Start what the dynamic loader will open for a file of the closure
   // path `basename` the guest has just opened (elf.js), once per file.
-  // These are needed within milliseconds, so they start at once.
+  // These are needed within milliseconds, so they go ahead of the
+  // background fetches; the one the loader looks in first starts at
+  // once when it does, if it has not already.
   function expectLoads(path, basename, file) {
     if (inspected.has(path)) {
       return;
@@ -426,7 +460,7 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
     }
     for (const needed of loaderStorePaths(bytes)) {
       if (needed !== basename) {
-        store.ensure(needed, Priority.DEMAND).catch(() => {});
+        store.ensure(needed, Priority.NEXT).catch(() => {});
       }
     }
   }
