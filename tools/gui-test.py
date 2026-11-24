@@ -33,6 +33,13 @@ The cases:
            adds the X server itself (site/js/x11.js) and no GL driver.
            Waits for its window, then types into it and checks that
            the keys reached xterm's shell.
+    feedback
+           tools/gl-feedback.py, run in the guest with python3 through
+           the site's GL driver: three draws into textures, the second
+           into a texture still bound to a sampler of its program,
+           which WebGL refuses (patches/mesa/). Checks that each draw
+           read back its colour and that the renderer reported no
+           context error.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -507,7 +514,26 @@ X11_TYPED = f"touch {X11_TYPED_FILE}\r"
 X11_TITLE = "xterm"
 
 
-CASES = ["foot", "gl", "x11"]
+# The feedback case: the guest program, where the case writes it, and
+# the python3 that runs it. mesa-demos is selected for its closure,
+# whose libglvnd and Wayland client are what make the page add its GL
+# driver; the driver's link in the guest is logged once it is made.
+FEEDBACK_PACKAGES = ["python3", "mesa-demos"]
+FEEDBACK_SCRIPT = os.path.join(HERE, "gl-feedback.py")
+FEEDBACK_IN_GUEST = "/tmp/gl-feedback.py"
+GUEST_PYTHON = "/share/bin/python3"
+DRIVER_LINKED = "/run/opengl-driver is"
+FEEDBACK_PASSED = "FEEDBACK-TEST PASS"
+VIRGL_RENDERER = "renderer: virgl"
+
+# What the renderer logs when a GL error puts a guest context in error
+# (vrend_check_no_error), and how long its log has to catch up after
+# the program's last read.
+CONTEXT_ERROR = "context error reported"
+LOG_SETTLE_SECONDS = 2
+
+
+CASES = ["foot", "gl", "x11", "feedback"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -621,6 +647,20 @@ def type_into_terminal(browser, text):
     for char in text:
         browser.press(char)
     return reached
+
+
+def guest_shell(browser, command, stdin=None):
+    """Run `command` with the guest's /bin/sh through the page's exec,
+    with `stdin` as its input; returns stdout, stderr and exitCode."""
+    options = "" if stdin is None else ", { input: " + json.dumps(stdin) + " }"
+    reply = browser.evaluate_async(
+        "window.trynix.kernel.exec('/bin/sh', ['-c', "
+        + json.dumps(command)
+        + "]"
+        + options
+        + ").then((r) => JSON.stringify(r))"
+    )
+    return json.loads(reply)
 
 
 def guest_has(browser, path):
@@ -766,7 +806,51 @@ def run_x11(browser, base, screenshots, fetch, viewport):
     screenshot(browser, screenshots, "xterm-typed", viewport)
 
 
-RUNNERS = {"foot": run_foot, "gl": run_gl, "x11": run_x11}
+def run_feedback(browser, base, screenshots, fetch, viewport):
+    """feedback: boot python3 with the site's GL driver, run
+    tools/gl-feedback.py in the guest and check what each draw read back
+    and the renderer's log."""
+    del screenshots  # The program draws off screen.
+    print("feedback")
+    seconds = boot(browser, base, FEEDBACK_PACKAGES, fetch, viewport)
+    print(f"  shell after {seconds:.1f} s")
+    wait_for(
+        browser,
+        "document.getElementById('debug-log').textContent.includes("
+        + json.dumps(DRIVER_LINKED)
+        + ")",
+        BOOT_LIMIT_SECONDS,
+        "GL driver link",
+    )
+
+    # The program goes in as the input of a cat, then runs.
+    with open(FEEDBACK_SCRIPT) as f:
+        written = guest_shell(browser, f"cat > {FEEDBACK_IN_GUEST}", f.read())
+    if written["exitCode"] != 0:
+        raise SystemExit(f"FAIL writing {FEEDBACK_IN_GUEST}: {written['stderr']}")
+    result = guest_shell(browser, f"{GUEST_PYTHON} {FEEDBACK_IN_GUEST}")
+    for line in (result["stdout"] + result["stderr"]).splitlines():
+        print(f"  {line}")
+
+    # The renderer logs a context error as it runs the command buffer,
+    # which the program's reads waited for; the log reaches the page
+    # a moment later.
+    time.sleep(LOG_SETTLE_SECONDS)
+    log = browser.evaluate("document.getElementById('debug-log').textContent")
+    errors = [line.strip() for line in log.splitlines() if CONTEXT_ERROR in line]
+    for line in errors:
+        print(f"  renderer: {line}")
+
+    if VIRGL_RENDERER not in result["stdout"]:
+        raise SystemExit("FAIL the program did not draw through virgl")
+    if errors:
+        raise SystemExit("FAIL the renderer put the program's context in error")
+    if result["exitCode"] != 0 or FEEDBACK_PASSED not in result["stdout"]:
+        raise SystemExit("FAIL a draw read back the wrong colour")
+    print("  every draw read back its colour; no context error")
+
+
+RUNNERS = {"foot": run_foot, "gl": run_gl, "x11": run_x11, "feedback": run_feedback}
 
 
 def main():

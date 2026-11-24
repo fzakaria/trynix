@@ -793,6 +793,13 @@ the page's shell ran it while wland sent no key to any window and
 holds none focused. It checks that es2gears' frames went through the
 page's GL renderer by GPU resource and not through llvmpipe, and types
 a line into xterm's window and checks that xterm's shell ran it.
+The feedback case runs
+[tools/gl-feedback.py](../tools/gl-feedback.py) with python3 in the
+guest: three draws, each read back, the second into a texture still
+bound to a sampler unit of its program. WebGL 2 refuses that draw, and
+unkernel's renderer then refuses every later draw of the program's
+context; the case fails on a wrong colour or a context error in the
+renderer's log.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
