@@ -18,7 +18,23 @@ const BACKOFF_MS = 400;
 // minutes. One that has stopped would otherwise never end: a lazily
 // served share has no request timeout (unkernel.js), so a guest lookup
 // waiting on the download would wait forever.
+//
+// The window weighs two costs. Too short, and a slow link's pauses, a
+// phone's on a poor signal or a nested page's, start a download over
+// from its first byte; too long, and the reader waits that long on a
+// program whose file is not coming. Half a minute without a single
+// byte is the choice. Time the page itself was held up, as a phone's
+// tab in the background and a nested page are, does not count
+// (stallGuard).
 const IDLE_TIMEOUT_MS = 30000;
+
+// A guard's timer that fires later than this share of the window after
+// it was due says the page itself was held up meanwhile: a tab in the
+// background, a phone that slept, a thread busy with something else.
+// Bytes may have arrived in that time and still wait their turn to be
+// read, so the guard looks again this share of the window later, once,
+// before it calls the download stalled.
+const LATE_SHARE = 0.1;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -26,17 +42,41 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // One timer, set again for the time left when it fires early, rather
 // than one per chunk.
 function stallGuard(controller, ms) {
+  const late = ms * LATE_SHARE;
   let last = Date.now();
+  let due = 0;
   let timer;
+  // Whether the look about to happen was put off for a late timer. A
+  // look is put off once at most, so a page held up all the time still
+  // gives up on a download that has stopped.
+  let putOff = false;
+
+  const arm = (wait) => {
+    due = Date.now() + wait;
+    timer = setTimeout(check, wait);
+  };
   const check = () => {
-    const quiet = Date.now() - last;
+    const now = Date.now();
+
+    // The timer fired well after it was due: the page was held up, and
+    // what arrived meanwhile gets read before the quiet is measured.
+    if (now - due > late && !putOff) {
+      putOff = true;
+      arm(late);
+      return;
+    }
+    putOff = false;
+
+    // Quiet for the whole window: the download has stopped.
+    const quiet = now - last;
     if (quiet >= ms) {
       controller.abort(new Error(`no bytes for ${ms / 1000} s`));
       return;
     }
-    timer = setTimeout(check, ms - quiet);
+    arm(ms - quiet);
   };
-  timer = setTimeout(check, ms);
+  arm(ms);
+
   return {
     moved() {
       last = Date.now();

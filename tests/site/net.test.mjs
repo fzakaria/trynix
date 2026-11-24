@@ -100,3 +100,49 @@ test(
     assert.equal(calls.count, 1);
   },
 );
+
+// Spin the thread for `ms`, as a page busy with something else does:
+// no timer and no chunk is handled meanwhile.
+function holdThread(ms) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    // Held.
+  }
+}
+
+// How long the thread is held up in the next test, from when, and when
+// the chunk that arrives meanwhile is due: after the download's window
+// is up, before the thread is free, so the guard's timer and the chunk
+// are both waiting when it is.
+const HOLD_START_MS = 10;
+const HOLD_MS = 300;
+const LATE_CHUNK_MS = 120;
+
+// Checks that a page held up longer than the window, as a phone's tab
+// in the background or a page in a guest inside another guest is, does
+// not give up a download whose bytes arrived while it was held: the
+// guard's timer fires late, before the chunk waiting behind it is read,
+// and the quiet it measures is the page's, not the network's.
+test(
+  "a page held up past the window does not call its download stalled",
+  { timeout: TEST_LIMIT_MS },
+  async () => {
+    const calls = fakeFetch([
+      {
+        chunks: [
+          { after: 0, bytes: [1] },
+          { after: LATE_CHUNK_MS, bytes: [2] },
+        ],
+        stalls: false,
+      },
+    ]);
+    setTimeout(() => holdThread(HOLD_MS), HOLD_START_MS);
+
+    const bytes = await fetchWithProgress("https://cache.example/held", {
+      idleMs: IDLE_MS,
+    });
+
+    assert.deepEqual([...bytes], [1, 2]);
+    assert.equal(calls.count, 1);
+  },
+);

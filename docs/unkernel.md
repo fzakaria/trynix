@@ -340,7 +340,11 @@ The download has one of its own instead: one that goes 30 s without
 a byte is abandoned and tried again, four attempts in all
 ([site/js/net.js](../site/js/net.js)), so a stalled connection cannot
 hold a lookup forever, and a slow one that keeps moving still
-finishes.
+finishes. Time the page itself was held up, as a tab in the background
+or a page in a guest nested inside another guest is, does not count
+toward the 30 s: a timer that fires late gets one more look before the
+download is called stalled, so bytes that arrived meanwhile are read
+first.
 
 ### NAR listings
 
