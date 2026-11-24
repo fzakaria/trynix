@@ -86,11 +86,12 @@ jobs:
 
       # GUI programs cross more of the page than anything boot-test
       # reaches: the relay the page starts in the guest, wland's
-      # compositor on the page, kwshm for foot's pixels, and for
-      # es2gears the site's GL driver, the guest's virtio-gpu device and
-      # the page's GL renderer. A shell appears with every one of those
-      # broken. The runner has no GPU, so Chromium draws WebGL with
-      # SwiftShader (--gpu software). Needs the network, as above.
+      # compositor on the page, kwshm for foot's pixels, for es2gears
+      # the site's GL driver, the guest's virtio-gpu device and the
+      # page's GL renderer, and for xterm the X server the page adds. A
+      # shell appears with every one of those broken. The runner has no
+      # GPU, so Chromium draws WebGL with SwiftShader (--gpu software).
+      # Needs the network, as above.
       - name: Shows GUI programs' windows
         run: nix run .#gui-test -- --site "$(nix build .#site --no-link --print-out-paths)" --gpu software
 

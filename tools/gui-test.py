@@ -29,6 +29,10 @@ The cases:
            by Mesa's virgl driver through the page's WebGL2
            (SwiftShader by default, so the frame rate it prints is a
            floor, not a measurement of a GPU).
+    x11    xterm, which speaks only X11, selected alone, so the page
+           adds the X server itself (site/js/x11.js) and no GL driver.
+           Waits for its window, then types into it and checks that
+           the keys reached xterm's shell.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -470,7 +474,22 @@ FPS_LINES = 2
 FPS_LIMIT_SECONDS = 60
 
 
-CASES = ["foot", "gl"]
+# The x11 case: xterm alone; the page adds xwayland-satellite, and says
+# so in its log, and the link types the command. A line typed into the
+# window writes a file, as in the foot case.
+X11_PACKAGES = ["xterm"]
+X11_COMMAND = "xterm &"
+SERVER_ADDED = re.compile(r"x11: added (/nix/store/\S+-xwayland-satellite-\S+)")
+DRIVER_ADDED_ANY = re.compile(r"gl: added ")
+X11_TYPED_FILE = "/tmp/xterm-typed"
+X11_TYPED = f"touch {X11_TYPED_FILE}\r"
+
+# The title wland reports for xterm's window, which the satellite takes
+# from the X11 window's name.
+X11_TITLE = "xterm"
+
+
+CASES = ["foot", "gl", "x11"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -695,7 +714,41 @@ def run_gl(browser, base, screenshots, fetch, viewport):
     screenshot(browser, screenshots, "es2gears", viewport)
 
 
-RUNNERS = {"foot": run_foot, "gl": run_gl}
+def run_x11(browser, base, screenshots, fetch, viewport):
+    """x11: boot xterm alone, let the link start it, wait for its window,
+    and type into it."""
+    print("x11")
+    seconds = boot(browser, base, X11_PACKAGES, fetch, viewport, run=X11_COMMAND)
+    print(f"  shell after {seconds:.1f} s; the link types {X11_COMMAND!r}")
+    log = browser.evaluate("document.getElementById('debug-log').textContent")
+    added = SERVER_ADDED.search(log)
+    if added is None:
+        raise SystemExit("FAIL the page added no X server for xterm")
+    print(f"  X server added: {added.group(1)}")
+    if DRIVER_ADDED_ANY.search(log) is not None:
+        raise SystemExit("FAIL the page added a GL driver for xterm")
+
+    seconds = first_frame(browser)
+    print(f"  first frame {seconds:.2f} s after the shell")
+    titles = browser.evaluate(
+        "window.trynix.desktop.windows().map((w) => w.title)"
+    )
+    if X11_TITLE not in titles:
+        raise SystemExit(f"FAIL no window titled {X11_TITLE!r}: {titles}")
+
+    # Give xterm's shell its first prompt before the picture is taken
+    # and before keys go to it.
+    time.sleep(2)
+    screenshot(browser, screenshots, "xterm", viewport)
+    type_into_window(browser, X11_TYPED)
+    if not wait_for_file(browser, X11_TYPED_FILE):
+        screenshot(browser, screenshots, "xterm-typed", viewport)
+        raise SystemExit("FAIL keys typed into xterm's window never reached it")
+    print(f"  keys reached xterm: {X11_TYPED_FILE} written")
+    screenshot(browser, screenshots, "xterm-typed", viewport)
+
+
+RUNNERS = {"foot": run_foot, "gl": run_gl, "x11": run_x11}
 
 
 def main():
