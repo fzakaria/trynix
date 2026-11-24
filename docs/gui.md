@@ -538,8 +538,6 @@ compositor:
 - **Keyboard layout** is US, which is wland's.
 - **The touch key bar** types into the terminal only. A tap on it gives
   the terminal the keyboard, even while a window has it.
-- **`/root` does not exist** in unkernel's base system, so programs
-  that write settings under `$HOME` complain and carry on.
 - **PipeWire-only programs**, such as `pw-play`, stay silent: the
   page starts no PipeWire daemon.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
