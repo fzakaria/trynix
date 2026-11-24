@@ -261,12 +261,13 @@ test(
 );
 
 // Tests the zstd path against the vendored decoder, fed in pieces the
-// way store.js feeds it (unzstd says why). fzstd is a UMD script the
-// page loads with a <script> tag; run as a script here, it sets the
-// same global store.js reads. Skipped, like the bzip2 tests, where
-// site/vendor has not been assembled.
+// way unzstd.js feeds it (it says why). fzstd is a UMD script the page
+// loads with a <script> tag; run as a script here, it sets the same
+// global unzstd reads, and store.js's import of unzstd.js has set
+// globalThis.unzstd. Skipped, like the bzip2 tests, where site/vendor
+// has not been assembled.
 import { runInThisContext } from "node:vm";
-import { unzstd } from "../../site/js/store.js";
+/* global unzstd */
 
 const fzstdScript = new URL("../../site/vendor/fzstd.js", import.meta.url);
 if (existsSync(fzstdScript)) {
@@ -333,10 +334,62 @@ test("a zstd frame past 256 MiB unpacks", { skip: noFzstd }, async () => {
   }
   archive.set(block, at);
 
-  const out = unzstd(archive);
+  const out = unzstd(archive, raws * raw + nar.byteLength);
   assert.equal(out.byteLength, raws * raw + nar.byteLength);
   assert.deepEqual(out.subarray(raws * raw), nar);
 });
+
+// Tests that a zstd archive is held to the size its narinfo signed
+// while it unpacks, as a bzip2 one is. unzstd writes each block into a
+// buffer of that size, so an archive that runs past it is stopped at
+// the block that would overflow the buffer, and one that stops short
+// is reported as short rather than reaching the hash check as a wrong
+// archive. Each test decodes the fixture's one frame against a size
+// one byte off.
+test(
+  "a zstd archive that unpacks past its signed size is refused",
+  { skip: noFzstd },
+  async () => {
+    const nar = new Uint8Array(await readFile(narFixture));
+    const frame = new Uint8Array(await readFile(zstdFrame));
+
+    assert.throws(
+      () => unzstd(frame, nar.byteLength - 1),
+      new RegExp(`unpacks past the ${nar.byteLength - 1} bytes narinfo says`),
+    );
+  },
+);
+
+test(
+  "a zstd archive that unpacks short of its signed size is refused",
+  { skip: noFzstd },
+  async () => {
+    const nar = new Uint8Array(await readFile(narFixture));
+    const frame = new Uint8Array(await readFile(zstdFrame));
+
+    assert.throws(
+      () => unzstd(frame, nar.byteLength + 1),
+      new RegExp(
+        `unpacked to ${nar.byteLength} bytes, narinfo says ${nar.byteLength + 1}`,
+      ),
+    );
+  },
+);
+
+// Tests an archive whose narinfo gives no NarSize, which unzstd cannot
+// size a buffer for: it unpacks whole all the same, into a buffer
+// sized once the last block is out. The fixture's one frame is decoded
+// with no size and compared with the unpacked fixture.
+test(
+  "a zstd archive with no signed size unpacks whole",
+  { skip: noFzstd },
+  async () => {
+    const nar = new Uint8Array(await readFile(narFixture));
+    const frame = new Uint8Array(await readFile(zstdFrame));
+
+    assert.deepEqual(unzstd(frame, undefined), nar);
+  },
+);
 
 // Checks a package whose bin is a symlink to a directory inside it, as
 // openjdk's is (bin -> lib/openjdk/bin): its programs are what that
