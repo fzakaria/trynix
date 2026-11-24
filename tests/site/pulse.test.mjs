@@ -1,11 +1,23 @@
 // Tests the guest's PulseAudio server (site/js/pulse.js): which closures
 // hold a daemon the page starts, what every shell is told about it, and
-// the command that starts it. Closures are lists of store basenames, the
-// way the closure walk produces them, and the guest's shell is a
-// function that records what it was asked to run.
+// the command that starts and stops it. Closures are lists of store
+// basenames, the way the closure walk produces them, and the guest's
+// shell is a function that records what it was asked to run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import {
   pulseDaemonIn,
@@ -13,11 +25,33 @@ import {
   soundEnv,
   soundServer,
 } from "../../site/js/pulse.js";
-import { sessionEnv } from "../../site/js/gui.js";
+import { RUNTIME_DIR, sessionEnv } from "../../site/js/gui.js";
+import { GUEST_STORE_DIR } from "../../site/js/share.js";
 
 const DIGEST = "0123456789abcdfghijklmnpqrsvwxyz";
 const OTHER_DIGEST = "abcdfghijklmnpqrsvwxyz0123456789";
 const path = (name, digest = DIGEST) => `${digest}-${name}`;
+
+// A stand-in for a PulseAudio daemon: a shell script, which runs under
+// its file's name, pulseaudio, and waits until it is sent SIGTERM.
+const STAND_IN_DAEMON = [
+  "#!/bin/sh",
+  "sleep 600 &",
+  "trap 'kill $!; exit 0' TERM",
+  "wait",
+  "",
+].join("\n");
+
+// Whether process `pid` has exited: it is gone, or it is a zombie its
+// parent has not collected yet.
+function exited(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z");
+  } catch {
+    return true;
+  }
+}
 
 // A guest shell that answers every command with `exitCode`, or with
 // the next of `exitCodes` while any are left, and keeps what it was
@@ -139,8 +173,8 @@ test("a daemon that fails says why", async () => {
 // the card as it started, still opens its socket, and every client then
 // failed with "No such entity". So the command asks the daemon for its
 // sinks, with the closure's own pactl, once the socket is open, and
-// before it takes a daemon already running as the server; a daemon with
-// no sink is stopped.
+// before it takes a server already on the socket as its own; a daemon
+// with no sink is stopped.
 test("the daemon counts as started only with the card's sink", async () => {
   const daemon = path("pulseaudio-17.0");
   const shell = fakeShell();
@@ -153,13 +187,13 @@ test("the daemon counts as started only with the card's sink", async () => {
   const started = lines.findIndex((line) => line.includes("setsid"));
   assert.ok(
     asked.some((at) => at < started),
-    "a daemon already running is taken without asking for its sinks",
+    "a server already on the socket is taken without asking for its sinks",
   );
   assert.ok(
     asked.some((at) => at > started),
     "a new daemon is taken without asking for its sinks",
   );
-  assert.match(command, /kill \$\(pidof pulseaudio\)/);
+  assert.match(command, /list short sinks .*\|\| \{.*stop_daemon/);
 });
 
 // Checks that a start that failed is not kept: the next one runs the
@@ -254,4 +288,95 @@ test("only module-alsa-sink's sink on hw:0 is the card's sink", async () => {
   assert.equal(counts(row(0, "alsa_output.hw_0", "module-null-sink.c")), false);
   assert.equal(counts(row(0, "alsa_output.hw_1", "module-alsa-sink.c")), false);
   assert.equal(counts(""), false);
+});
+
+// Checks which processes stopping the daemon ends, by running the start
+// command's stop_daemon through a real shell, with the guest's runtime
+// directory and store moved under a temporary directory. Stand-ins take
+// the place of three servers: the daemon whose PID the start recorded,
+// a reader's own daemon, both processes named pulseaudio, and a server
+// listening on the page's socket, which a stand-in pactl asked to exit
+// removes. Only the recorded daemon and the server on the page's socket
+// are stopped. Killing every process named pulseaudio ended a server a
+// reader had started on /tmp/private.sock.
+test("stopping the daemon spares other PulseAudio servers", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell();
+  await soundServer({ exec: shell.exec }).start(daemon);
+  const [command] = shell.commands;
+
+  // The file the start records its daemon's PID in, and the shell
+  // functions the command opens with, through the one that stops the
+  // daemon.
+  const pidFile = /^echo \$! > (\S+)$/m.exec(command)?.[1];
+  assert.ok(pidFile !== undefined, "the start records no PID");
+  const stop = /^[\s\S]*?^stop_daemon\(\) \{$[\s\S]*?^\}$/m.exec(command)?.[0];
+  assert.ok(stop !== undefined, "no stop_daemon in the command");
+
+  // The guest's paths, moved under a temporary directory.
+  const root = mkdtempSync(join(tmpdir(), "pulse-"));
+  const moved = (text) =>
+    text
+      .replaceAll(RUNTIME_DIR, join(root, "run"))
+      .replaceAll(GUEST_STORE_DIR, join(root, "store"));
+  const socket = moved(PULSE_SOCKET);
+  mkdirSync(dirname(socket), { recursive: true });
+
+  // The stand-in daemons, and the PID of the page's one in its file.
+  const standIn = join(root, "pulseaudio");
+  writeFileSync(standIn, STAND_IN_DAEMON);
+  chmodSync(standIn, 0o755);
+  const managed = spawn(standIn, [], { stdio: "ignore" });
+  const private_ = spawn(standIn, [], { stdio: "ignore" });
+  writeFileSync(moved(pidFile), `${managed.pid}\n`);
+
+  // The server on the page's socket, and a pactl that logs what it is
+  // asked and, asked to exit, removes the socket as the server would.
+  const server = createServer();
+  await new Promise((resolve) => server.listen(socket, resolve));
+  const pactlLog = join(root, "pactl.log");
+  const pactl = moved(`${GUEST_STORE_DIR}/${daemon}/bin/pactl`);
+  mkdirSync(dirname(pactl), { recursive: true });
+  writeFileSync(
+    pactl,
+    [
+      "#!/bin/sh",
+      `echo "$*" >> ${pactlLog}`,
+      `if [ "$3" = exit ]; then rm -f "\${2#unix:}"; fi`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(pactl, 0o755);
+
+  try {
+    // Each stand-in daemon runs under the daemon's name before the stop.
+    for (const { pid } of [managed, private_]) {
+      for (let tries = 0; ; tries += 1) {
+        const comm = readFileSync(`/proc/${pid}/comm`, "utf8").trim();
+        if (comm === "pulseaudio") {
+          break;
+        }
+        assert.ok(tries < 100, `stand-in ${pid} runs as ${comm}`);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    const stopped = spawnSync("sh", ["-c", `${moved(stop)}\nstop_daemon`], {
+      encoding: "utf8",
+    });
+    assert.equal(stopped.status, 0, stopped.stderr);
+
+    assert.ok(exited(managed.pid), "the page's daemon still runs");
+    assert.ok(!exited(private_.pid), "the reader's daemon was stopped");
+    assert.match(
+      readFileSync(pactlLog, "utf8"),
+      new RegExp(`^-s unix:${socket} exit$`, "m"),
+    );
+    assert.ok(!existsSync(socket), "the server on the socket was not stopped");
+  } finally {
+    managed.kill();
+    private_.kill();
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

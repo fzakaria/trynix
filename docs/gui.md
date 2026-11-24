@@ -623,10 +623,14 @@ It logs the error and opens its socket anyway, with no sink, and every
 client then fails with "No such entity". So the page asks the daemon
 for its sinks with the closure's `pactl` once the socket is open, and
 counts it as up only with card 0's: the row `module-alsa-sink.c` makes
-for hw:0, named `alsa_output.hw_0`. A daemon already running with any
-other sink, such as a null sink that takes every client's audio and
-plays none of it on the card, is stopped and the page's started in its
-place. One without is stopped and the failure goes to the page's log;
+for hw:0, named `alsa_output.hw_0`. A server already on the page's
+socket with any other sink, such as a null sink that takes every
+client's audio and plays none of it on the card, is stopped and the
+page's daemon started in its place. Stopping ends the daemon the page
+started, by the PID its start recorded, and whatever server answers on
+the page's socket, which `pactl exit` asks to go. A PulseAudio server a
+reader starts on a socket of their own keeps running. A new daemon
+without card 0's sink is stopped and the failure goes to the page's log;
 the next addition to the guest starts the daemon again, which succeeds
 once the card is free. Until then, shells started after the failure
 get `CANBERRA_DRIVER=alsa` and have `PULSE_SERVER` unset, as they would

@@ -38,7 +38,14 @@ const PULSE_DIR = `${RUNTIME_DIR}/pulse`;
 export const PULSE_SOCKET = `${PULSE_DIR}/native`;
 const PULSE_LOG = `${RUNTIME_DIR}/pulseaudio.log`;
 
-// The process name the daemon runs as, which says whether one is up.
+// The file the start records its daemon's PID in, beside its output.
+// Every PulseAudio server in the guest runs under the daemon's name, so
+// the PID is how the page tells its own daemon from a reader's.
+const PULSE_PID_FILE = `${RUNTIME_DIR}/pulseaudio.pid`;
+
+// The process name the daemon runs as. A recorded PID is stopped only
+// while its process has that name, since a PID is reused once its
+// process is gone.
 const DAEMON_NAME = "pulseaudio";
 
 // The ALSA device the daemon plays on: kwsnd, the guest's one card.
@@ -61,7 +68,7 @@ const SHORT_LIST_SEPARATOR = "\t";
 const IDLE_CLOSE_S = 1;
 
 // How often the page looks for the daemon's socket, or for a stopped
-// daemon to have exited, in seconds.
+// server to have gone, in seconds.
 const POLL_S = "0.1";
 
 // How many times the page looks for the daemon's socket: the daemon's
@@ -69,13 +76,13 @@ const POLL_S = "0.1";
 // fetched yet.
 const SOCKET_POLLS = 600;
 
-// The client that asks the daemon for its sinks, from the same package,
-// and how long it may take, in seconds: its first run may read
-// libraries the daemon did not.
+// The client that asks a server for its sinks, or to exit, from the
+// daemon's package, and how long it may take, in seconds: its first run
+// may read libraries the daemon did not.
 const CLIENT_NAME = "pactl";
-const SINKS_LIMIT_S = 60;
+const CLIENT_LIMIT_S = 60;
 
-// How many times the page looks for a stopped daemon to have exited.
+// How many times the page looks for a stopped server to have gone.
 const STOP_POLLS = 50;
 
 // How many lines of the daemon's output a failure carries.
@@ -137,7 +144,10 @@ export function soundEnv(daemon) {
 // guest.
 //
 // The daemon is not daemonized and never exits on its own; setsid
-// gives it a session of its own, as the Wayland relay has (gui.js).
+// gives it a session of its own, as the Wayland relay has (gui.js). The
+// background job's PID, which the command records, is the daemon's:
+// setsid forks only when its caller leads a process group, and a
+// background job of a shell without job control does not.
 //
 // A daemon counts as up only once card 0 is its sink, which the
 // closure's pactl is asked. A daemon whose ALSA module failed, because
@@ -145,8 +155,13 @@ export function soundEnv(daemon) {
 // on to open its socket, and every client of it fails with "No such
 // entity". Any other sink is no sink of the card's: a daemon with only
 // a null sink answers every client and plays nothing on the card. A
-// daemon already running is taken as it is only if it has card 0's
-// sink; one without is stopped and a new one started.
+// server already on the socket is taken as it is only if it has card
+// 0's sink; otherwise it is stopped and a new daemon started.
+//
+// Stopping ends two processes at most: the daemon whose PID the last
+// start recorded, and whatever server still answers on the socket,
+// which pactl asks to exit. A PulseAudio server a reader started on a
+// socket of their own runs under the same name and is left alone.
 //
 // The command fails if the daemon logs an error (`E:`) before its
 // socket opens, if no socket appears in time, or if the daemon has no
@@ -156,6 +171,7 @@ export function soundEnv(daemon) {
 function daemonCommand(daemon) {
   const directory = `${GUEST_STORE_DIR}/${daemon}/bin`;
   const binary = `${directory}/${DAEMON_NAME}`;
+  const client = `${directory}/${CLIENT_NAME} -s unix:${PULSE_SOCKET}`;
 
   // The check for card 0's sink: its row in the short listing, the
   // name and driver columns between their separators, with the dots
@@ -164,8 +180,7 @@ function daemonCommand(daemon) {
     .map((column) => column.replaceAll(".", "\\."))
     .join(SHORT_LIST_SEPARATOR);
   const hasSink =
-    `timeout ${SINKS_LIMIT_S} ${directory}/${CLIENT_NAME} -s unix:${PULSE_SOCKET}` +
-    ` list short sinks 2> /dev/null |` +
+    `timeout ${CLIENT_LIMIT_S} ${client} list short sinks 2> /dev/null |` +
     ` grep -q '${SHORT_LIST_SEPARATOR}${cardSink}${SHORT_LIST_SEPARATOR}'`;
   const modules = [
     `module-alsa-sink device=${CARD_DEVICE}`,
@@ -185,22 +200,48 @@ function daemonCommand(daemon) {
   ];
   const giveUp = `tail -n ${FAILURE_LINES} ${PULSE_LOG} >&2; stop_daemon; exit 1`;
   return [
-    `stop_daemon() {`,
-    `  kill $(pidof ${DAEMON_NAME}) 2> /dev/null`,
+    // Whether process $1 has exited: it is gone, or it is a zombie
+    // nothing has collected yet.
+    `exited() {`,
+    `  [ ! -e /proc/$1 ] || grep -q '^State:.*zombie' /proc/$1/status 2> /dev/null`,
+    `}`,
+
+    // Run the command given until it succeeds, or the polls run out.
+    `wait_until() {`,
     `  stops=0`,
-    `  while pidof ${DAEMON_NAME} > /dev/null && [ $stops -lt ${STOP_POLLS} ]; do`,
+    `  until "$@" || [ $stops -ge ${STOP_POLLS} ]; do`,
     `    stops=$((stops + 1))`,
     `    sleep ${POLL_S}`,
     `  done`,
     `}`,
-    `if pidof ${DAEMON_NAME} > /dev/null; then`,
-    `  ${hasSink} && exit 0`,
-    `  stop_daemon`,
-    `fi`,
+
+    // Stop the daemon the last start recorded, if its PID still runs
+    // under the daemon's name, and then any server left on the socket.
+    // A server that exits removes its socket; a daemon that was killed
+    // leaves one nothing answers on.
+    `stop_daemon() {`,
+    `  pid=$(cat ${PULSE_PID_FILE} 2> /dev/null)`,
+    `  rm -f ${PULSE_PID_FILE}`,
+    `  if [ -n "$pid" ] && [ "$(cat /proc/$pid/comm 2> /dev/null)" = ${DAEMON_NAME} ]; then`,
+    `    kill $pid 2> /dev/null`,
+    `    wait_until exited $pid`,
+    `  fi`,
+    `  if [ -S ${PULSE_SOCKET} ] && timeout ${CLIENT_LIMIT_S} ${client} exit > /dev/null 2>&1; then`,
+    `    wait_until [ ! -S ${PULSE_SOCKET} ]`,
+    `  fi`,
+    `}`,
+
+    // Take the server on the socket if card 0 is its sink, and start
+    // the daemon afresh otherwise, recording its PID.
+    `[ -S ${PULSE_SOCKET} ] && ${hasSink} && exit 0`,
+    `stop_daemon`,
     `mkdir -p -m 700 ${PULSE_DIR}`,
     `rm -f ${PULSE_SOCKET}`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${binary} ${flags.join(" ")} ${modules.join(" ")}` +
       ` < /dev/null > ${PULSE_LOG} 2>&1 &`,
+    `echo $! > ${PULSE_PID_FILE}`,
+
+    // Wait for the socket, and then for card 0's sink.
     `polls=0`,
     `until [ -S ${PULSE_SOCKET} ]; do`,
     `  grep -q '^E: ' ${PULSE_LOG} 2> /dev/null && { ${giveUp}; }`,
