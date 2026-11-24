@@ -458,12 +458,14 @@
       <div id="console">
         <div id="console-bar">
           <span id="console-tty">ttyS0</span>
-          <span class="console-bar-end">
-            <!-- The guest's sound (site/js/sound.js): shown once a
-                 program opens the sound card, as a switch. -->
-            <button type="button" id="sound-control" hidden></button>
-            <span title="libghostty-vt, compiled to wasm">ghostty</span>
-          </span>
+          <!-- The guest's sound (site/js/sound.js): shown once a
+               program opens the sound card, as a switch. -->
+          <button type="button" id="sound-control" hidden></button>
+          <span title="libghostty-vt, compiled to wasm">ghostty</span>
+          <!-- Hides the GUI windows to bring the terminal forward, and
+               shows them again; shown while there is a window
+               (site/js/frame.js). -->
+          <button type="button" id="console-windows" hidden></button>
         </div>
         <div id="console-body">
           <div id="console-veil"><span class="spinner" id="console-spinner"></span><span id="console-note"></span></div>

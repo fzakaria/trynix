@@ -136,6 +136,7 @@ const keyBarElement = document.getElementById("keybar");
 const consoleElement = document.getElementById("console");
 const desktopElement = document.getElementById("desktop");
 const soundControl = document.getElementById("sound-control");
+const windowsButton = document.getElementById("console-windows");
 const consoleVeil = document.getElementById("console-veil");
 const consoleNote = document.getElementById("console-note");
 const consoleSpinner = document.getElementById("console-spinner");
@@ -1365,6 +1366,7 @@ function unkernelEngine(panel) {
       consoleElement,
       desktopElement,
       soundControl,
+      windowsButton,
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,
       net: netSpec(network),

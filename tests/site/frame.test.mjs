@@ -1,10 +1,17 @@
 // Tests the console frame's rules for GUI windows (site/js/frame.js):
-// where a new window opens. Each rule is a function of plain sizes, so
-// the tests pass plain objects and need no page.
+// where a new window opens, and what the bar's windows button offers
+// for a list of windows. Each rule is a function of plain sizes or of
+// wland's window entries, so the tests pass plain objects and need no
+// page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { WINDOW_MARGIN, opensAt } from "../../site/js/frame.js";
+import {
+  WINDOW_MARGIN,
+  WindowsAction,
+  opensAt,
+  windowsButton,
+} from "../../site/js/frame.js";
 
 // A frame the size of the console's body on a desktop.
 const FRAME = { width: 900, height: 700 };
@@ -33,4 +40,22 @@ test("a new window opens away from the terminal's cursor", () => {
     left: FOOT.left,
     top: FOOT.top,
   });
+});
+
+// Checks the windows button for each mix of shown and minimized
+// windows: absent with no windows, "hide" while any window shows, and
+// "show" with the count once every window is hidden.
+test("the windows button hides shown windows and shows hidden ones", () => {
+  const shown = { minimized: false };
+  const hidden = { minimized: true };
+
+  assert.equal(windowsButton([]).action, WindowsAction.NONE);
+
+  const hide = windowsButton([shown, hidden]);
+  assert.equal(hide.action, WindowsAction.HIDE);
+  assert.equal(hide.label, "hide windows");
+
+  const show = windowsButton([hidden, hidden]);
+  assert.equal(show.action, WindowsAction.SHOW);
+  assert.equal(show.label, "show windows (2)");
 });

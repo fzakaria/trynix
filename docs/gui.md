@@ -36,8 +36,11 @@ the rest) stop acting on keys. When the window holding the keyboard
 closes or is minimized, the next window takes it, and with none left
 the terminal does.
 
-What programs are told about the screen is the frame's size, so
-maximize fills the frame.
+The console bar has a button for the windows. "hide windows" minimizes
+every window and gives the terminal the keyboard; "show windows" brings
+them back in their stacking order, including a window its program
+minimized itself. What programs are told about the screen is the
+frame's size, so maximize fills the frame.
 
 GL programs need a driver, and the page adds one: when the closure
 holds a Wayland program that links libglvnd and no Mesa, the page
@@ -67,8 +70,8 @@ line says why.
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
 [site/js/frame.js](../site/js/frame.js) the console frame the windows
-open in: its size, where windows open, and the keyboard between the
-windows and the terminal. `#desktop` covers the console's
+open in: its size, where windows open, the keyboard between the
+windows and the terminal, and the bar's windows button. `#desktop` covers the console's
 body and takes no pointer itself, so a press outside every window
 reaches the terminal; wland gives each window's canvases their own.
 
@@ -463,7 +466,7 @@ the console, terminal and windows, at each step.
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline, and
 [tests/site/frame.test.mjs](../tests/site/frame.test.mjs) the frame's
-rules: where a new window opens.
+rules: where a new window opens, and what the windows button offers.
 
 ## Updating it
 

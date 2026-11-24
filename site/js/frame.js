@@ -15,7 +15,9 @@
 // hands the keyboard to the next window, and with none left the frame
 // gives it to the terminal.
 //
-// A new window opens clear of the shell's prompt where it can.
+// A new window opens clear of the shell's prompt where it can. The
+// console bar has a button that hides every window, bringing the
+// terminal forward, and shows them again.
 
 // The class the console takes once a GUI program has connected:
 // style.css grows the terminal so windows fit.
@@ -29,6 +31,13 @@ export const WINDOW_MARGIN = 24;
 // for a new window to open at the bottom rather than where wland put
 // it, at the top.
 const CURSOR_UPPER_HALF = 0.5;
+
+// What the windows button does next, which is also what it says.
+export const WindowsAction = Object.freeze({
+  NONE: "none",
+  HIDE: "hide",
+  SHOW: "show",
+});
 
 // Where a new window at `box`, wland's cascade near the frame's top,
 // opens. wland's place covers the top of the terminal, which is where
@@ -44,10 +53,30 @@ export function opensAt(box, frame, cursorDepth) {
   return { left: box.left, top: bottom };
 }
 
+// The windows button for wland's window entries: nothing to do with no
+// windows, hide them while any shows, show them once all are hidden.
+export function windowsButton(windows) {
+  if (windows.length === 0) {
+    return { action: WindowsAction.NONE, label: "" };
+  }
+  const hidden = windows.filter((entry) => entry.minimized).length;
+  if (hidden < windows.length) {
+    return { action: WindowsAction.HIDE, label: "hide windows" };
+  }
+  return { action: WindowsAction.SHOW, label: `show windows (${hidden})` };
+}
+
+// A press on a bar button leaves the keyboard where it was. A button
+// takes focus on a press, and with it the keyboard from the terminal
+// or from a window; the click still comes.
+function keepFocus(button) {
+  button.addEventListener("mousedown", (event) => event.preventDefault());
+}
+
 // The frame around wland's desktop. `consoleElement` is the console,
-// `container` the element wland draws windows in, `terminal` the
-// terminal behind the windows, and `focusTerminal` gives the terminal
-// the keyboard.
+// `container` the element wland draws windows in, `windowsButton` the
+// bar's windows button, `terminal` the terminal behind the windows,
+// and `focusTerminal` gives the terminal the keyboard.
 //
 // gui.js calls open() when the first program connects, passes changed()
 // to wland as its window-list and focus callback, and hands the
@@ -55,6 +84,7 @@ export function opensAt(box, frame, cursorDepth) {
 export function consoleFrame({
   consoleElement,
   container,
+  windowsButton: button,
   terminal,
   focusTerminal,
 }) {
@@ -129,6 +159,14 @@ export function consoleFrame({
     }
   }
 
+  // The windows button says what a press does next, and is hidden
+  // while there is no window.
+  function relabel() {
+    const state = windowsButton(desktop.windows());
+    button.hidden = state.action === WindowsAction.NONE;
+    button.textContent = state.label;
+  }
+
   // With no window holding the keyboard while wland's hidden element
   // still has the page's focus, the window that had it went: the
   // terminal takes the keyboard. Focus that is anywhere else on the
@@ -143,6 +181,37 @@ export function consoleFrame({
     focusTerminal();
   }
 
+  // The windows button: hide every window and give the terminal the
+  // keyboard, or show them again, bottom of the stack first, so the
+  // stacking comes back as it was and the top window takes the keyboard.
+  function pressWindows() {
+    const entries = desktop.windows();
+    const { action } = windowsButton(entries);
+    if (action === WindowsAction.HIDE) {
+      for (const entry of entries) {
+        if (!entry.minimized) {
+          entry.minimize();
+        }
+      }
+      focusTerminal();
+      return;
+    }
+    if (action !== WindowsAction.SHOW) {
+      return;
+    }
+    const stacking = new Map(
+      desktop.view
+        .windows()
+        .map((win) => [win.key, Number(win.element.style.zIndex) || 0]),
+    );
+    const bottomFirst = [...entries].sort(
+      (a, b) => stacking.get(a.key) - stacking.get(b.key),
+    );
+    for (const entry of bottomFirst) {
+      entry.restore();
+    }
+  }
+
   // Everything above, once the current task is done. wland calls
   // changed() while it dispatches the compositor's events, and a call
   // back into the compositor then could free a commit's pixels before
@@ -153,6 +222,7 @@ export function consoleFrame({
       return;
     }
     placeNew();
+    relabel();
     returnKeyboard();
   }
   function changed() {
@@ -177,7 +247,7 @@ export function consoleFrame({
       consoleElement.scrollIntoView({ block: "nearest" });
     },
 
-    // The compositor is running.
+    // The compositor is running: wire the windows button.
     attach(handle) {
       desktop = handle;
 
@@ -190,6 +260,8 @@ export function consoleFrame({
         desktop.input.blur(),
       );
 
+      keepFocus(button);
+      button.addEventListener("click", pressWindows);
       changed();
     },
   };

@@ -257,9 +257,10 @@ async function pump(shell, port, console_) {
 // engine: { main, kernel, gl }, the versioned URLs of the SDK's
 // browser entry, of the kernel and of the GL renderer's module.
 // desktopElement is where GUI programs' windows go (gui.js), over the
-// terminal in consoleElement (frame.js), and soundControl the console
-// bar's sound switch (sound.js). net is the network device's spec, or
-// null for none (network.js). memory is
+// terminal in consoleElement, and windowsButton is the console bar's
+// button that hides and shows them (frame.js). soundControl is the
+// console bar's sound switch (sound.js). net is the network device's
+// spec, or null for none (network.js). memory is
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
 // to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
@@ -275,6 +276,7 @@ export async function startUnkernel({
   desktopElement,
   soundControl,
   net,
+  windowsButton,
   memory,
   cpus,
   engine,
@@ -447,6 +449,7 @@ export async function startUnkernel({
     frame: consoleFrame({
       consoleElement,
       container: desktopElement,
+      windowsButton,
       terminal: ui.terminal,
       focusTerminal: ui.focus,
     }),
