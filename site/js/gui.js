@@ -46,6 +46,25 @@ const FONTS_CONF = `${GUI_SHARE_DIR}/fonts.conf`;
 export const RUNTIME_DIR = "/run/user/0";
 const DISPLAY_NAME = "wayland-0";
 const RELAY_LOG = `${RUNTIME_DIR}/wlandr.log`;
+const RELAY_SOCKET = `${RUNTIME_DIR}/${DISPLAY_NAME}`;
+
+// How often the guest is asked whether the relay listens on its socket,
+// and how long before the page stops asking. The relay makes the socket
+// as it starts; the limit is for a guest busy with other work, such as
+// the shell and the programs read ahead at the boot.
+const SOCKET_POLL_MS = 100;
+const SOCKET_LIMIT_MS = 10000;
+
+// What the guest says about the relay (relayState's exit status).
+const RelayState = Object.freeze({
+  // The socket is there.
+  LISTENING: 0,
+  // The relay runs and has no socket yet.
+  STARTING: 1,
+  // The relay is not running; it printed why to its log, which the
+  // command prints.
+  GONE: 2,
+});
 
 // Where nixpkgs' libglvnd, libgbm and Vulkan loader look for the
 // system's GL driver: on NixOS a link to Mesa (hardware.graphics).
@@ -150,19 +169,60 @@ async function fetchGuiFile(name) {
 // relay takes GL programs' buffers by GPU resource; without one they
 // render in software into shared memory like any other program. setsid
 // gives the relay a session of its own, so no shell's hangup reaches
-// it.
+// it. The command prints the relay's PID, the running one's or the new
+// one's. A background job keeps its PID through setsid: setsid forks
+// only when its caller leads a process group, and a background job of
+// a shell without job control does not.
 function relayCommand() {
   const link = `vsock:${HOST_CID}:${WAYLAND_PORT}`;
   return [
     `[ -s ${MACHINE_ID} ] || tr -d - < ${RANDOM_UUID} > ${MACHINE_ID}`,
-    `pidof wlandr > /dev/null && exit 0`,
+    `relay=$(pidof -s wlandr) && echo "$relay" && exit 0`,
     `mkdir -p -m 700 ${RUNTIME_DIR}`,
     `flags=--link-on-demand`,
     `[ -c ${RENDER_NODE} ] && flags="$flags --dmabuf virtgpu:${RENDER_NODE} --no-fence-wait"`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${RELAY_PATH} --link ${link}` +
       ` --buffers kwshm --display ${DISPLAY_NAME} $flags` +
       ` < /dev/null > ${RELAY_LOG} 2>&1 &`,
+    `echo $!`,
   ].join("\n");
+}
+
+// The shell command that says how the relay with PID `pid` is doing, as
+// a RelayState exit status. The PID, not the name: until the shell's
+// child has run setsid and then the relay, no process is named wlandr.
+function relayState(pid) {
+  return [
+    `[ -S ${RELAY_SOCKET} ] && exit ${RelayState.LISTENING}`,
+    `kill -0 ${pid} 2> /dev/null && exit ${RelayState.STARTING}`,
+    `cat ${RELAY_LOG} >&2`,
+    `exit ${RelayState.GONE}`,
+  ].join("\n");
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Wait until the relay with PID `pid` listens on its socket. The
+// command that starts the relay puts it in the background, so that
+// command's exit status says the shell ran it and nothing more; the
+// socket is what a Wayland program connects to.
+async function relayListening(exec, pid) {
+  const deadline = Date.now() + SOCKET_LIMIT_MS;
+  for (;;) {
+    const result = await exec(relayState(pid));
+    if (result.exitCode === RelayState.LISTENING) {
+      return;
+    }
+    if (result.exitCode !== RelayState.STARTING) {
+      throw new Error(`the relay exited: ${result.stderr.trim()}`);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `the relay runs and has not made ${RELAY_SOCKET} in ${SOCKET_LIMIT_MS} ms`,
+      );
+    }
+    await delay(SOCKET_POLL_MS);
+  }
 }
 
 // The guest half of the session: the relay and the fonts in the share,
@@ -172,7 +232,9 @@ function relayCommand() {
 // prepare() downloads the files, and can start while the closure is
 // still arriving; start() writes them and starts the relay, once the
 // guest is up. Each does its work once however often it is called (a
-// second GUI program added to a running guest).
+// second GUI program added to a running guest), and a call after one
+// that failed tries again: a download or a relay that failed once
+// would otherwise keep GUI programs out for the life of the guest.
 export function guestSession({ FS, exec }) {
   let files = null;
   let started = null;
@@ -181,7 +243,10 @@ export function guestSession({ FS, exec }) {
     files ??= Promise.all([
       fetchGuiFile(GUI_RELAY),
       ...GUI_FONTS.map(fetchGuiFile),
-    ]);
+    ]).catch((err) => {
+      files = null;
+      throw err;
+    });
     return files;
   }
 
@@ -201,13 +266,21 @@ export function guestSession({ FS, exec }) {
     if (result.exitCode !== 0) {
       throw new Error(`the relay did not start: ${result.stderr.trim()}`);
     }
+    const pid = Number.parseInt(result.stdout, 10);
+    if (!Number.isInteger(pid)) {
+      throw new Error(`the relay did not start: no PID in "${result.stdout}"`);
+    }
+    await relayListening(exec, pid);
     log("gui: the Wayland relay is running in the guest");
   }
 
   return {
     prepare,
     start() {
-      started ??= run();
+      started ??= run().catch((err) => {
+        started = null;
+        throw err;
+      });
       return started;
     },
   };

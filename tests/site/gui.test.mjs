@@ -30,6 +30,11 @@ function fakeShare() {
   };
 }
 
+// What the guest's shell answers a command with when it succeeds: the
+// command that starts the relay prints the relay's PID.
+const RELAY_PID = 119;
+const RELAY_STARTED = { exitCode: 0, stdout: `${RELAY_PID}\n`, stderr: "" };
+
 // fetch answers every request with the name it was asked for as the
 // body, so a written file says which site file it came from.
 function stubFetch() {
@@ -70,7 +75,7 @@ test("a session writes the relay, the fonts and fontconfig's file", async () => 
   const share = fakeShare();
   const session = guestSession({
     FS: share,
-    exec: async () => ({ exitCode: 0 }),
+    exec: async () => RELAY_STARTED,
   });
   await session.start();
 
@@ -103,14 +108,15 @@ test("a session starts the relay once", async () => {
     FS: fakeShare(),
     exec: async (command) => {
       commands.push(command);
-      return { exitCode: 0 };
+      return RELAY_STARTED;
     },
   });
   await Promise.all([session.start(), session.start()]);
   await session.start();
 
-  assert.equal(commands.length, 1);
-  const [command] = commands;
+  const starts = commands.filter((command) => command.includes("--link"));
+  assert.equal(starts.length, 1);
+  const [command] = starts;
   const env = sessionEnv();
   assert.match(command, /--link vsock:2:1023/);
   assert.match(command, /--buffers kwshm/);
@@ -129,7 +135,7 @@ test("a session writes a machine id where there is none", async () => {
     FS: fakeShare(),
     exec: async (command) => {
       commands.push(command);
-      return { exitCode: 0 };
+      return RELAY_STARTED;
     },
   });
   await session.start();
@@ -151,5 +157,97 @@ test("a relay that does not start is an error", async () => {
   await assert.rejects(
     session.start(),
     /the relay did not start: wlandr: not found/,
+  );
+});
+
+// A guest shell for the relay's start: the command that starts the
+// relay exits with `started`, and the check for its socket answers with
+// each of `states` in turn, the last one for good. Records every
+// command.
+function relayShell(started, states) {
+  const commands = [];
+  const answers = [...states];
+  return {
+    commands,
+    exec: async (command) => {
+      commands.push(command);
+      if (command.includes("--link")) {
+        return { ...RELAY_STARTED, exitCode: started };
+      }
+      const state = answers.length > 1 ? answers.shift() : answers[0];
+      return state;
+    },
+  };
+}
+
+// The socket check's answers: the socket is there; the relay runs and
+// has no socket yet; the relay has exited, with what it logged.
+const LISTENING = { exitCode: 0, stderr: "" };
+const STARTING = { exitCode: 1, stderr: "" };
+const GONE = { exitCode: 2, stderr: "wlandr: cannot bind wayland-0\n" };
+
+// Checks that the session waits for the relay's socket before saying
+// the relay is up: the command that starts the relay puts it in the
+// background, so its exit status says nothing about whether the relay
+// listens. The guest is asked until the socket is there.
+test("a session is up once the relay's socket is there", async () => {
+  stubFetch();
+  const shell = relayShell(0, [STARTING, STARTING, LISTENING]);
+  const session = guestSession({ FS: fakeShare(), exec: shell.exec });
+  await session.start();
+
+  const checks = shell.commands.filter(
+    (command) => !command.includes("--link"),
+  );
+  assert.equal(checks.length, 3);
+  assert.match(checks[0], new RegExp(`kill -0 ${RELAY_PID}`));
+  assert.match(
+    checks[0],
+    new RegExp(`-S /run/user/0/${sessionEnv().WAYLAND_DISPLAY}`),
+  );
+});
+
+// Checks that a relay that exits before it listens is an error that
+// carries what the relay logged, rather than a session the page calls
+// up with nothing behind it.
+test("a relay that exits before it listens is an error", async () => {
+  stubFetch();
+  const shell = relayShell(0, [GONE]);
+  const session = guestSession({ FS: fakeShare(), exec: shell.exec });
+  await assert.rejects(session.start(), /wlandr: cannot bind wayland-0/);
+});
+
+// Checks that a session whose start failed starts afresh the next time
+// it is asked, both when the site's files could not be fetched and when
+// the relay did not start: one failure used to keep GUI programs from
+// the guest for as long as it ran.
+test("a session that failed to start tries again when asked", async () => {
+  // The site's files cannot be fetched the first time.
+  let refusals = 1;
+  globalThis.fetch = async (url) => {
+    if (refusals > 0) {
+      refusals -= 1;
+      throw new TypeError("Failed to fetch");
+    }
+    return new Response(url.split("/").at(-1));
+  };
+  const share = fakeShare();
+  let shell = relayShell(1, [LISTENING]);
+  const session = guestSession({
+    FS: share,
+    exec: (command) => shell.exec(command),
+  });
+  await assert.rejects(session.prepare(), /Failed to fetch/);
+
+  // The files arrive, and the relay does not start.
+  await assert.rejects(session.start(), /the relay did not start/);
+  assert.ok(share.files.has("/share/gui/wlandr"));
+
+  // The relay starts.
+  shell = relayShell(0, [LISTENING]);
+  await session.start();
+  assert.equal(
+    shell.commands.filter((command) => command.includes("--link")).length,
+    1,
   );
 });

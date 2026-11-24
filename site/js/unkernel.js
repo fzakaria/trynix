@@ -313,8 +313,10 @@ export async function startUnkernel({
   const glDrivers = [];
   const write = share.write.bind(share);
   share.write = (basename, entries) => {
+    // A download that fails here is tried again, and reported, by the
+    // session's start.
     if (speaksWayland([basename])) {
-      session.prepare();
+      session.prepare().catch(() => {});
     }
     if (isGlDriver(entries)) {
       glDrivers.push(basename);
