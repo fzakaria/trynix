@@ -32,27 +32,50 @@ test("a window larger than the frame is oversized", () => {
   assert.equal(oversized({ ...FOOT, height: FRAME.height + 1 }, FRAME), true);
 });
 
-// Checks where a new window opens against the terminal's cursor: at the
-// frame's bottom while the cursor is in the upper half, so the prompt
-// the program was started from stays in view, and where wland put it
-// otherwise. A window too tall to clear its place is never moved up.
-test("a new window opens away from the terminal's cursor", () => {
-  const nearTop = 0.1;
-  const nearBottom = 0.9;
-  assert.deepEqual(opensAt(FOOT, FRAME, nearTop), {
-    left: FOOT.left,
-    top: FRAME.height - FOOT.height - WINDOW_MARGIN,
-  });
-  assert.deepEqual(opensAt(FOOT, FRAME, nearBottom), {
-    left: FOOT.left,
-    top: FOOT.top,
-  });
+// The most the frame may grow to on a desktop: about the viewport.
+const TALLEST = 900;
 
-  const tall = { ...FOOT, height: FRAME.height - WINDOW_MARGIN };
-  assert.deepEqual(opensAt(tall, FRAME, nearTop), {
-    left: FOOT.left,
-    top: FOOT.top,
-  });
+// The shell's prompt line in the frame's pixels: near the top after a
+// boot, near the bottom once the screen has filled.
+const PROMPT_TOP = { top: 20, bottom: 40 };
+const PROMPT_LOW = { top: 640, bottom: 660 };
+
+// Checks where a new window opens and how tall the frame becomes for
+// it: just under the prompt line when it fits there, the frame growing
+// only as far as the window needs; above a low prompt, where wland put
+// it, when it fits there without growing; and as low as it fits whole
+// when the frame cannot grow enough.
+test("a new window opens under the prompt, growing the frame to fit", () => {
+  const under = PROMPT_TOP.bottom + WINDOW_MARGIN;
+  assert.deepEqual(
+    opensAt(FOOT, { frame: FRAME, prompt: PROMPT_TOP, tallest: TALLEST }),
+    { left: FOOT.left, top: under, height: FRAME.height },
+  );
+
+  const short = { ...FRAME, height: 480 };
+  assert.deepEqual(
+    opensAt(FOOT, { frame: short, prompt: PROMPT_TOP, tallest: TALLEST }),
+    {
+      left: FOOT.left,
+      top: under,
+      height: under + FOOT.height + WINDOW_MARGIN,
+    },
+  );
+
+  assert.deepEqual(
+    opensAt(FOOT, { frame: FRAME, prompt: PROMPT_LOW, tallest: TALLEST }),
+    { left: FOOT.left, top: FOOT.top, height: FRAME.height },
+  );
+
+  const capped = 560;
+  assert.deepEqual(
+    opensAt(FOOT, { frame: short, prompt: PROMPT_TOP, tallest: capped }),
+    {
+      left: FOOT.left,
+      top: capped - FOOT.height - WINDOW_MARGIN,
+      height: capped,
+    },
+  );
 });
 
 // Checks that a window inside the frame stays where it is, and that one

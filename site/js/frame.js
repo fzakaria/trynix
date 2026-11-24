@@ -25,9 +25,14 @@
 
 import { log } from "./log.js";
 
-// The class the console takes once a GUI program has connected:
-// style.css grows the terminal so windows fit.
+// The class the console takes once a GUI program has connected.
 const WINDOWED_CLASS = "windowed";
+
+// The terminal's height before any window, and the room the frame
+// leaves on screen when it grows, in rem: style.css's #terminal height,
+// and what is left of the viewport for the bar and a margin.
+const FRAME_BASE_REM = 30;
+const FRAME_GAP_REM = 4;
 
 // How much of a floating window stays inside the frame: wland's own
 // Alt+drag keeps the same strip (wm.ts), wide enough to take hold of
@@ -37,11 +42,6 @@ export const WINDOW_GRIP = Object.freeze({ width: 40, height: 24 });
 // The gap a window opened at the frame's bottom leaves under it: the
 // same as wland's cascade leaves on the left (view.ts).
 export const WINDOW_MARGIN = 24;
-
-// How far down the terminal its cursor may be, as a share of its rows,
-// for a new window to open at the bottom rather than where wland put
-// it, at the top.
-const CURSOR_UPPER_HALF = 0.5;
 
 // What the windows button does next, which is also what it says.
 export const WindowsAction = Object.freeze({
@@ -61,17 +61,42 @@ export const oversized = (box, frame) =>
   box.width > frame.width || box.height > frame.height;
 
 // Where a new window at `box`, wland's cascade near the frame's top,
-// opens. wland's place covers the top of the terminal, which is where
-// the shell's prompt is until the screen has filled, so while the
-// cursor (`cursorDepth`, 0 at the top row, 1 below the last) is in the
-// upper half the window opens at the bottom instead and the prompt the
-// program was started from stays in view. It is never moved up.
-export function opensAt(box, frame, cursorDepth) {
-  const bottom = frame.height - box.height - WINDOW_MARGIN;
-  if (cursorDepth > CURSOR_UPPER_HALF || bottom <= box.top) {
-    return { left: box.left, top: box.top };
+// opens, and how tall the frame is then. `prompt` is the shell's
+// cursor line ({ top, bottom }) in the frame's pixels, `frame` the
+// frame's size now, and `tallest` the most the frame may grow to.
+//
+// The window opens just under the prompt line, so the line the program
+// was started from stays in view with the window right below it, and
+// the frame grows only as far as the window needs. A window that fits
+// above a low prompt without growing the frame stays where wland put
+// it. One that fits in neither place opens as low as it fits whole.
+export function opensAt(box, { frame, prompt, tallest }) {
+  const under = prompt.bottom + WINDOW_MARGIN;
+  const fitsUnder = (height) => under + box.height + WINDOW_MARGIN <= height;
+
+  // Under the prompt, in the frame as it is.
+  if (fitsUnder(frame.height)) {
+    return { left: box.left, top: under, height: frame.height };
   }
-  return { left: box.left, top: bottom };
+
+  // Above a low prompt, where wland put it.
+  if (box.top + box.height + WINDOW_MARGIN <= prompt.top) {
+    return { left: box.left, top: box.top, height: frame.height };
+  }
+
+  // Under the prompt, in a frame grown to fit, up to the tallest.
+  const height = Math.min(
+    Math.max(frame.height, under + box.height + WINDOW_MARGIN),
+    tallest,
+  );
+  if (fitsUnder(height)) {
+    return { left: box.left, top: under, height };
+  }
+  return {
+    left: box.left,
+    top: Math.max(0, height - box.height - WINDOW_MARGIN),
+    height,
+  };
 }
 
 // Where a window at `box` goes so that a grip of it is inside `frame`:
@@ -169,10 +194,47 @@ export function consoleFrame({
     height: container.clientHeight,
   });
 
-  // How far down the terminal its cursor is: 0 at the top row, 1 below
-  // the last.
-  const cursorDepth = () =>
-    (terminal.buffer.active.cursorY + 1) / terminal.rows;
+  // The element whose height the frame takes: style.css's #terminal.
+  const terminalBox = consoleElement.querySelector("#terminal");
+
+  // The shell's cursor line in the frame's pixels: the terminal's rows
+  // are its drawn height split evenly, from where it sits in the frame.
+  function promptLine() {
+    const drawn = terminal.element.getBoundingClientRect();
+    const offset = drawn.top - container.getBoundingClientRect().top;
+    const row = drawn.height / terminal.rows;
+    const cursor = terminal.buffer.active.cursorY;
+    return { top: offset + cursor * row, bottom: offset + (cursor + 1) * row };
+  }
+
+  // The most the frame may grow to: nearly the viewport's height, and
+  // never less than the terminal's own.
+  function tallestFrame() {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return Math.max(
+      FRAME_BASE_REM * rem,
+      window.innerHeight - FRAME_GAP_REM * rem,
+    );
+  }
+
+  // Grow the frame to `height`, by the terminal's height, which the
+  // frame takes; the terminal refits its rows. Not on a touch device,
+  // where terminal.js sizes the terminal to what is on screen, nor in
+  // full screen, where the frame fills the screen already.
+  function growFrame(height) {
+    const frame = frameSize();
+    if (
+      height <= frame.height ||
+      matchMedia("(pointer: coarse)").matches ||
+      document.fullscreenElement === consoleElement
+    ) {
+      return;
+    }
+    const grown =
+      terminalBox.getBoundingClientRect().height + height - frame.height;
+    terminalBox.style.height = `${grown}px`;
+    consoleElement.scrollIntoView({ block: "nearest" });
+  }
 
   // A window's box from the styles wland gives its element: the window
   // geometry's size, and its place in the container.
@@ -195,10 +257,11 @@ export function consoleFrame({
     desktop.engine.setWindowPosition(win.conn, win.surface, at.left, at.top);
   }
 
-  // A new window larger than the frame opens maximized, which tells
-  // the program the frame's size; any other opens clear of the
-  // terminal's prompt (opensAt). A window is looked at once, as soon as
-  // its first commit has given it a size.
+  // A new window larger than the frame at its tallest opens maximized
+  // in a frame grown that far, which tells the program the frame's
+  // size; any other opens under the terminal's prompt, the frame
+  // growing as far as it needs (opensAt). A window is looked at once,
+  // as soon as its first commit has given it a size.
   function placeNew() {
     const entries = new Map(
       desktop.windows().map((entry) => [entry.key, entry]),
@@ -224,11 +287,16 @@ export function consoleFrame({
       if (win.maximized || win.fullscreen) {
         continue;
       }
-      if (oversized(box, frameSize())) {
+      const frame = frameSize();
+      const tallest = tallestFrame();
+      if (oversized(box, { width: frame.width, height: tallest })) {
+        growFrame(tallest);
         entries.get(win.key)?.setMaximized(true);
         continue;
       }
-      moveWindow(win, box, opensAt(box, frameSize(), cursorDepth()));
+      const at = opensAt(box, { frame, prompt: promptLine(), tallest });
+      growFrame(at.height);
+      moveWindow(win, box, at);
     }
   }
 
@@ -329,10 +397,9 @@ export function consoleFrame({
     container,
     changed,
 
-    // The first program connected: show the container and grow the
-    // frame, then bring the whole frame on screen, where the window
-    // will open. The output wland tells programs about is the
-    // container's size, so this comes before the compositor starts.
+    // The first program connected: show the container, then bring the
+    // whole frame on screen, where the window will open. The frame
+    // grows as windows need (placeNew).
     open() {
       container.hidden = false;
       consoleElement.classList.add(WINDOWED_CLASS);

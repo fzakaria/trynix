@@ -22,12 +22,14 @@ https://trynix.dev/?pkg=galculator&boot=1&run=galculator+%26
 ```
 
 Windows open over the terminal, inside the console's frame, with the
-terminal drawn behind them. When the first program connects the frame
-grows to nearly the viewport's height, the terminal refits its rows,
-and the page scrolls the whole frame on screen. A new window opens at
-the bottom of the frame while the shell's prompt is in the upper half,
-so the prompt the program was started from stays in view. Windows move
-by their title bar or by Alt+drag.
+terminal drawn behind them. A new window opens just under the shell's
+prompt line, so the command that started it stays in view with the
+window right below, and the frame grows only as far as the window
+needs, up to nearly the viewport's height; the terminal refits its
+rows and the page scrolls the frame on screen. A window that fits
+above a low prompt without growing the frame stays where the
+compositor put it, and one larger than the tallest frame opens
+maximized. Windows move by their title bar or by Alt+drag.
 
 The keyboard goes to one place at a time. A click on a window gives it
 the keyboard; a click on the terminal outside every window gives the

@@ -670,14 +670,6 @@ code {
 #desktop .wland-window[data-wland-fullscreen] {
   box-shadow: none;
 }
-/* Once a GUI program has connected, the terminal grows to nearly the
-   viewport's height, so windows fit over it and the whole frame still
-   fits on screen (site/js/frame.js scrolls it there). The terminal
-   refits its rows to the new height. On a touch device the terminal
-   already fills the screen (site/js/terminal.js). */
-#console.windowed #terminal {
-  height: max(30rem, calc(100vh - 4rem));
-}
 /* Full screen: the bar on top, the key bar at the bottom, and the
    terminal and windows filling what is between. */
 #console:fullscreen {
