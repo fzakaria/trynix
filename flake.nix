@@ -36,6 +36,10 @@
           site = import ./nix/site.nix { inherit pkgs; };
           default = site;
 
+          # zstd's decoder compiled to wasm, which the site carries for
+          # the zstd NARs (nix/unzstd-wasm.nix)
+          unzstd-wasm = import ./nix/unzstd-wasm.nix { inherit pkgs; };
+
           # the CPU probe tools/cpu-test.py boots inside the guest to
           # check the emulator's arithmetic (nix/probe.nix)
           probe = import ./nix/probe.nix { inherit pkgs; };
