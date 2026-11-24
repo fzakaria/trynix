@@ -119,6 +119,30 @@ test("programs are linked into the farm, and precedence decides a collision", ()
   );
 });
 
+// Checks that a batch's roots replace the links an earlier batch made
+// but not each other's: within one batch the root selected first keeps
+// a name, as it does at a boot, where the roots link with KEEP. A boot
+// links one hello; a later batch of two more, both with REPLACE, gives
+// `hello` to the first of the two, where each root replacing the last
+// gave it to the second.
+test("a batch replaces earlier links, its first root keeping a name", () => {
+  const fs = fakeMemoryFs();
+  const share = storeShare(memoryFsCalls(fs));
+  const booted = "bbb-hello-2.12.2";
+  const older = "xyz-hello-2.10";
+  share.write(booted, ENTRIES);
+  share.linkAll([booted], [booted], Precedence.KEEP);
+
+  share.write(older, ENTRIES);
+  share.write(HELLO, ENTRIES);
+  share.linkAll([older, HELLO], [older, HELLO], Precedence.REPLACE);
+  assert.equal(
+    fs.nodes.get("/bin/hello").target,
+    `/nix/store/${older}/bin/hello`,
+  );
+  assert.equal(fs.nodes.get("/bin/hi").target, `/nix/store/${older}/bin/hi`);
+});
+
 // Checks programs offered from a listing before the path is written: they
 // are linked like a written path's, the path does not count as written,
 // and writing it later changes neither.

@@ -651,6 +651,9 @@ export async function startUnkernel({
     // { shellUpdates }: what this addition brought that the shell
     // already running lacks (gui.js, ShellUpdate).
     //
+    // `roots` are the basenames of the packages this addition selects,
+    // which replace any link of the same name, so the package added
+    // last wins; a package the guest already had stays as it was.
     // `written` names paths of this addition already written into the
     // share, which a lazily served closure does as each path arrives.
     // The rest of a lazy addition is in the store, and is neither

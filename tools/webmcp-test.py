@@ -58,6 +58,12 @@ ADDED_OUTPUT = "20205"
 BOOT_ID_COMMAND = "cat /proc/sys/kernel/random/boot_id"
 COMMAND_NOT_FOUND = 127
 
+# Two versions of PACKAGE selected together for one boot, in this order,
+# and the first line `hello --version` prints for one of them.
+BOTH_VERSIONS = ["2.10", "2.12.2"]
+VERSION_COMMAND = f"{PACKAGE} --version"
+VERSION_LINE = "hello (GNU Hello) {}"
+
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
 CACHE_URL = "https://trynix.cachix.org"
@@ -303,6 +309,53 @@ def check_live_addition(browser, checks):
     checks.equal("original command output", original["output"], GREETING)
 
 
+def version_line(browser):
+    """The first line `hello --version` prints in the running guest, or
+    None when the command failed."""
+    result = json.loads(call(browser, "run-command", command=VERSION_COMMAND))
+    if result["status"] != 0:
+        return None
+    return result["output"].splitlines()[0]
+
+
+def check_addition_keeps_winner(browser, checks, base):
+    """Two versions of one command booted together, then figlet added.
+
+    Of the two, the one selected first runs: a boot links the roots in
+    selection order and the first keeps the name. Adding figlet, which
+    has no such command, must leave the same version running. The
+    page's add note says the most recently added package wins a name,
+    and neither version was added after the other. Each addition used
+    to relink every selected package with replacement on, so the last
+    one selected took the name, and hello --version said 2.12.2 after
+    saying 2.10.
+    """
+    print("two versions of one command, booted together")
+    browser.send("Page.navigate", url=base)
+    await_tools(browser)
+    call(
+        browser,
+        "select-packages",
+        packages=[{"attr": PACKAGE, "version": version} for version in BOTH_VERSIONS],
+    )
+    said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+    checks.true("booted", said.startswith("booted;"))
+    booted = version_line(browser)
+    checks.equal(
+        "the version selected first runs", booted, VERSION_LINE.format(BOTH_VERSIONS[0])
+    )
+
+    print("figlet added")
+    call(
+        browser,
+        "select-packages",
+        packages=[{"attr": ADDED_PACKAGE, "version": ADDED_VERSION}],
+    )
+    said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
+    checks.true("added without booting", said.startswith("added to the running guest;"))
+    checks.equal("the same version runs after the addition", version_line(browser), booted)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
@@ -403,6 +456,9 @@ def main():
             "carries the guest's welcome",
             cpu.SHELL_MARKER in call(browser, "read-console"),
         )
+
+        # A fresh page and guest, since this boot selects two versions.
+        check_addition_keeps_winner(browser, checks, base)
     finally:
         browser.close()
         if shutdown is not None:

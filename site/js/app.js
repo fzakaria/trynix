@@ -1939,7 +1939,17 @@ async function addToRunningVM() {
   try {
     const roots = await rootsOf([...selection.keys()]);
     const rootDigests = digestsOf(roots);
-    guestRoots.push(...rootDigests);
+
+    // The roots this addition brings, which alone may take a program's
+    // name from a package already in the guest, so the most recently
+    // added package wins (the page's add note). Every selected root
+    // used to, and the one selected last took each name it shared:
+    // adding figlet switched which of two hellos booted together ran.
+    const newRootDigests = rootDigests.filter(
+      (digest) => !guestRoots.includes(digest),
+    );
+    guestRoots.push(...newRootDigests);
+
     const fresh = await walkRoots(
       rootDigests,
       (n) => row.note(`${n} narinfos`),
@@ -1974,6 +1984,7 @@ async function addToRunningVM() {
         fresh,
         roots,
         rootDigests,
+        newRootDigests,
         gl,
         x11,
         panel,
@@ -2001,7 +2012,7 @@ async function addToRunningVM() {
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }
-    const added = await vm.add(unpacked, basenamesOf(mounted, rootDigests));
+    const added = await vm.add(unpacked, basenamesOf(mounted, newRootDigests));
     reportSilent(vm, mounted, roots);
     reportGl(gl.result);
     reportX11(x11.result);
@@ -2052,11 +2063,14 @@ function unfetchedSelections(rootDigests) {
 // Add to a guest whose closure is served lazily. What the addition
 // brings joins the closure the guest lists at once; the new selections
 // are fetched before the page says they were added, and the rest
-// arrives on first use, as at the boot.
+// arrives on first use, as at the boot. `newRootDigests` are the roots
+// the guest did not have, whose programs take their names
+// (addToRunningVM).
 async function addLazily({
   fresh,
   roots,
   rootDigests,
+  newRootDigests,
   gl,
   x11,
   panel,
@@ -2083,7 +2097,7 @@ async function addLazily({
 
   const added = await vm.add(
     [],
-    basenamesOf(mounted, rootDigests),
+    basenamesOf(mounted, newRootDigests),
     eager.map(basenameOf),
   );
   reportSilent(vm, mounted, roots);

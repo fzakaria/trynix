@@ -150,12 +150,13 @@ whole closure downloaded.
 
 `/share/bin` is a farm of symlinks, one per program in the closure, and
 the one directory the guest keeps on PATH. What the reader selected is
-linked first and wins a name collision; the rest of the closure only
-fills names still free, so a dependency never shadows a selection. The
-symlink farm is what makes adding a package to a running VM silent: the
-page writes the new store paths and links, 9p shows them to the guest
-the moment they exist, and the new selection's links replace old ones
-so the most recent choice runs. Nothing is typed at the guest's shell.
+linked first, in the order selected, and the first to take a name keeps
+it; the rest of the closure only fills names still free, so a
+dependency never shadows a selection. The symlink farm is what makes
+adding a package to a running VM silent: the page writes the new store
+paths and links, 9p shows them to the guest the moment they exist, and
+the new selection's links replace old ones so the most recent choice
+runs. Nothing is typed at the guest's shell.
 (The shell remembers a command it has already run at its old path until
 `hash -r`.)
 

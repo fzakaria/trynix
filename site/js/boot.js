@@ -326,8 +326,9 @@ export async function startVM({
     // and 9p's local backend passes every lookup through to it, so
     // writing a new store path after boot is enough for the guest to
     // find it — no remount, no reboot. The farm is what lets the
-    // guest's PATH stay as it was: the new roots replace any link of
-    // the same name, so the package added last wins.
+    // guest's PATH stay as it was: `roots`, the basenames of the
+    // packages this addition selects, replace any link of the same
+    // name, so the package added last wins.
     //
     // Returns what the unkernel engine's add returns (unkernel.js). This
     // guest gets no X server or PulseAudio daemon from the page, so an

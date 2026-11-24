@@ -118,10 +118,20 @@ export function storeShare(FS) {
     // they win a collision, then the rest only where a name is still
     // free, so a dependency never shadows a selection. `precedence`
     // says whether a root may replace a link an earlier batch made.
+    // Within the batch the first root to take a name keeps it, as at a
+    // boot, so which of two roots selected together wins is the same
+    // for a boot and for an addition.
     linkAll(basenames, roots, precedence) {
+      const claimed = new Set();
       for (const basename of roots) {
         selected.add(basename);
-        this.link(basename, precedence);
+        const names = (programs.get(basename) ?? []).filter(
+          (name) => !claimed.has(name),
+        );
+        linkNames(basename, names, precedence);
+        for (const name of names) {
+          claimed.add(name);
+        }
       }
       for (const basename of basenames) {
         if (!roots.includes(basename)) {
