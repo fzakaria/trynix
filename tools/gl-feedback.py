@@ -13,6 +13,14 @@ whole context in error, so a later draw with no loop fails too. The
 site's Mesa sends the renderer a stand-in view for such a draw
 (patches/mesa/).
 
+The same goes for a sampler whose unit holds a texture of another type:
+an integer texture where the shader declares a float sampler, or a float
+one where it declares an integer sampler. Firefox's WebRender makes such
+draws. GL calls the values undefined, WebGL 2 refuses the draw, and the
+site's Mesa sends a stand-in of the sampler's type. A unit with no texture counts too: Mesa
+puts an RGBA8 texture there, which an integer sampler cannot take on
+WebGL 2.
+
     python3 gl-feedback.py [<libEGL.so.1> <libGLESv2.so.2>]
 
 Without paths, libglvnd's from the store. Prints the renderer and one
@@ -44,6 +52,7 @@ GL_FLOAT = 0x1406
 GL_TEXTURE_2D = 0x0DE1
 GL_TEXTURE0 = 0x84C0
 GL_RGBA8 = 0x8058
+GL_RGBA8I = 0x8D8E
 GL_RGBA = 0x1908
 GL_UNSIGNED_BYTE = 0x1401
 GL_FRAMEBUFFER = 0x8D40
@@ -51,6 +60,7 @@ GL_COLOR_ATTACHMENT0 = 0x8CE0
 GL_FRAMEBUFFER_COMPLETE = 0x8CD5
 GL_TRIANGLES = 0x0004
 GL_TEXTURE_MIN_FILTER = 0x2801
+GL_TEXTURE_MAG_FILTER = 0x2800
 GL_NEAREST = 0x2600
 
 # The side of the square textures, in pixels, and the one mipmap level
@@ -65,6 +75,10 @@ COORDINATES_PER_VERTEX = 2
 
 # The texture unit the sampler reads, which the loop puts the target on.
 SAMPLER_UNIT = 0
+
+# The units of the type steps' float and integer samplers.
+FLOAT_UNIT = 0
+INTEGER_UNIT = 1
 
 VS = b"""#version 300 es
 in vec2 p;
@@ -88,9 +102,28 @@ void main() {
 """
 CLOSED = 0.0
 
+# A float and an integer sampler, read only in a closed branch too, so
+# no draw here samples a texture of the wrong type; it only leaves one
+# on the unit.
+FS_TYPES = b"""#version 300 es
+precision mediump float;
+uniform sampler2D f;
+uniform highp isampler2D i;
+uniform float never;
+uniform vec4 color;
+out vec4 o;
+void main() {
+  o = color;
+  if (never > 0.5) {
+    o = texture(f, vec2(0.5)) + vec4(texture(i, vec2(0.5)));
+  }
+}
+"""
+
 RED = (1.0, 0.0, 0.0, 1.0)
 GREEN = (0.0, 1.0, 0.0, 1.0)
 BLUE = (0.0, 0.0, 1.0, 1.0)
+WHITE = (1.0, 1.0, 1.0, 1.0)
 CHANNEL_MAX = 255
 
 PASS = "FEEDBACK-TEST PASS"
@@ -142,11 +175,13 @@ def compile_shader(gl, kind, text):
     return shader
 
 
-def program(gl):
-    """Link and use the program; returns the location of its colour."""
+def program(gl, fragment, units):
+    """Link a program of VS and `fragment` whose samplers read the units
+    `units` names; returns the program and the location of its
+    colour."""
     linked = gl.glCreateProgram()
     gl.glAttachShader(linked, compile_shader(gl, GL_VERTEX_SHADER, VS))
-    gl.glAttachShader(linked, compile_shader(gl, GL_FRAGMENT_SHADER, FS))
+    gl.glAttachShader(linked, compile_shader(gl, GL_FRAGMENT_SHADER, fragment))
     gl.glLinkProgram(linked)
     ok = ctypes.c_int()
     gl.glGetProgramiv(linked, GL_LINK_STATUS, ctypes.byref(ok))
@@ -154,12 +189,13 @@ def program(gl):
         raise SystemExit("program did not link")
     gl.glUseProgram(linked)
 
-    # The sampler reads SAMPLER_UNIT, in a branch that stays closed.
-    gl.glUniform1i(gl.glGetUniformLocation(linked, b"s"), SAMPLER_UNIT)
+    # Each sampler reads its unit, in a branch that stays closed.
+    for sampler, unit in units.items():
+        gl.glUniform1i(gl.glGetUniformLocation(linked, sampler), unit)
     gl.glUniform1f.argtypes = [ctypes.c_int, ctypes.c_float]
     gl.glUniform1f(gl.glGetUniformLocation(linked, b"never"), CLOSED)
     gl.glUniform4f.argtypes = [ctypes.c_int] + [ctypes.c_float] * 4
-    return gl.glGetUniformLocation(linked, b"color")
+    return linked, gl.glGetUniformLocation(linked, b"color")
 
 
 def quad(gl):
@@ -193,15 +229,31 @@ def textures(gl):
     return names[0], names[1]
 
 
-def draw(gl, color_location, target, bound, color):
-    """Draw `color` into `target` with `bound` on the sampler's unit and
+def integer_texture(gl):
+    """A complete RGBA8I texture, for the integer sampler; an integer
+    texture is complete only with NEAREST filters."""
+    name = ctypes.c_uint()
+    gl.glGenTextures(1, ctypes.byref(name))
+    gl.glBindTexture(GL_TEXTURE_2D, name)
+    gl.glTexStorage2D(GL_TEXTURE_2D, LEVELS, GL_RGBA8I, SIZE, SIZE)
+    gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    return name.value
+
+
+def draw(gl, linked, target, bound, color):
+    """Draw `color` with `linked`, a program and its colour's location,
+    into `target`, with each (unit, texture) of `bound` on its unit, and
     read the middle pixel back."""
     gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, 0)
     if gl.glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
         raise SystemExit("framebuffer incomplete")
 
-    gl.glActiveTexture(GL_TEXTURE0 + SAMPLER_UNIT)
-    gl.glBindTexture(GL_TEXTURE_2D, bound)
+    name, color_location = linked
+    gl.glUseProgram(name)
+    for unit, texture in bound:
+        gl.glActiveTexture(GL_TEXTURE0 + unit)
+        gl.glBindTexture(GL_TEXTURE_2D, texture)
     gl.glUniform4f(color_location, *color)
     gl.glDrawArrays(GL_TRIANGLES, 0, QUAD_VERTICES)
     gl.glFinish()
@@ -219,22 +271,37 @@ def main():
 
     context(egl)
     print("renderer:", gl.glGetString(GL_RENDERER).decode(), flush=True)
-    color_location = program(gl)
+    feedback = program(gl, FS, {b"s": SAMPLER_UNIT})
+    types = program(gl, FS_TYPES, {b"f": FLOAT_UNIT, b"i": INTEGER_UNIT})
     quad(gl)
     a, b = textures(gl)
+    integer = integer_texture(gl)
 
     # 1: into B with A on the sampler's unit (no loop); 2: into A with A
     # still on the unit (a loop WebGL refuses, never sampled); 3: into B
     # with no texture on the unit (no loop), which fails too when the
     # second draw put the context in error.
     steps = [
-        ("draw into B, A bound", b, a, RED),
-        ("draw into A, A bound", a, a, GREEN),
-        ("draw into B, nothing bound", b, 0, BLUE),
+        ("draw into B, A bound", feedback, b, [(SAMPLER_UNIT, a)], RED),
+        ("draw into A, A bound", feedback, a, [(SAMPLER_UNIT, a)], GREEN),
+        ("draw into B, nothing bound", feedback, b, [(SAMPLER_UNIT, 0)], BLUE),
+    ]
+
+    # 4: each sampler with a texture of its type; 5: the integer texture
+    # on the float sampler and A on the integer one (types WebGL refuses,
+    # never sampled); 6: nothing on the integer sampler's unit, where
+    # Mesa puts an RGBA8 texture; 7: each its type again, which fails
+    # too when an earlier draw put the context in error. Each draw has a
+    # colour none of the group's earlier draws left in B.
+    steps += [
+        ("draw into B, each sampler its type", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], RED),
+        ("draw into B, the types swapped", types, b, [(FLOAT_UNIT, integer), (INTEGER_UNIT, a)], GREEN),
+        ("draw into B, nothing on the integer sampler", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, 0)], BLUE),
+        ("draw into B, each its type again", types, b, [(FLOAT_UNIT, a), (INTEGER_UNIT, integer)], WHITE),
     ]
     failed = 0
-    for label, target, bound, color in steps:
-        got = draw(gl, color_location, target, bound, color)
+    for label, linked, target, bound, color in steps:
+        got = draw(gl, linked, target, bound, color)
         want = tuple(round(channel * CHANNEL_MAX) for channel in color)
         verdict = "ok" if got == want else "WRONG"
         if got != want:

@@ -1,0 +1,470 @@
+Subject: [PATCH] virgl: stand in for a sampler view of another type
+
+trynix carries this patch with 0001 for unkernel's GL renderer, and it
+can go with 0001 once unkernel's vrend stops passing such bindings to
+WebGL.
+
+A draw whose shader declares a float sampler where the view's texture
+has an integer format, or an integer sampler where it has a float or
+normalized one, samples undefined values in GL and GLES. WebGL 2 refuses
+the draw with INVALID_OPERATION ("Mismatch between texture format and
+sampler type"), even when the shader never samples that view. Firefox's
+WebRender makes such draws: one of its instanced draws had its RGBA32I
+texture on the units of a float sampler in each stage. Mesa makes them
+too, with the RGBA8 texture it puts on the unit of an integer sampler
+that has no complete texture. On unkernel the first such draw puts the
+guest's context in error and every later draw of it fails, so Firefox
+stops drawing.
+
+The graphics shader CSOs now keep the return type of each sampler view
+the shader declares. Before a draw, a view whose texture's format does
+not match its sampler's type is replaced on the host by a view of a
+1x1 texture of a matching format (RGBA8, RGBA8I or RGBA8UI) and the
+same target and swizzle, the way 0001 replaces a view in a feedback
+loop. The real view goes back at the first draw after the views, the
+framebuffer or a shader change. Only values GL leaves undefined change.
+
+The texture's format is compared, not the view's: a GLES 3.0 host has
+no texture views and samples the texture's own format.
+
+Not covered: a shadow sampler whose texture is not a depth texture, or
+whose sampler state does not compare, which WebGL 2 also refuses.
+
+---
+diff --git a/src/gallium/drivers/virgl/virgl_context.c b/src/gallium/drivers/virgl/virgl_context.c
+index 134870a..5e9b596 100644
+--- a/src/gallium/drivers/virgl/virgl_context.c
++++ b/src/gallium/drivers/virgl/virgl_context.c
+@@ -34,6 +34,7 @@
+ #include "pipe/p_screen.h"
+ #include "pipe/p_state.h"
+ #include "nir/nir_to_tgsi.h"
++#include "tgsi/tgsi_scan.h"
+ #include "util/format/u_format.h"
+ #include "indices/u_primconvert.h"
+ #include "util/u_draw.h"
+@@ -760,6 +761,25 @@ static void *virgl_shader_encoder(struct pipe_context *ctx,
+    if (!new_tokens)
+       return NULL;
+ 
++   struct virgl_shader_state *state = CALLOC_STRUCT(virgl_shader_state);
++   if (!state) {
++      FREE((void *)ntt_tokens);
++      FREE(new_tokens);
++      return NULL;
++   }
++
++   /* The type each sampler view returns, for virgl_hide_feedback_views.
++    * A view the shader samples without declaring it returns floats.
++    */
++   struct tgsi_shader_info info;
++   tgsi_scan_shader(new_tokens, &info);
++   for (unsigned i = 0; i < PIPE_MAX_SAMPLERS; i++) {
++      if (info.sampler_targets[i] == TGSI_TEXTURE_UNKNOWN)
++         continue;
++      state->sampler_views_declared |= 1u << i;
++      state->sampler_type[i] = info.sampler_type[i];
++   }
++
+    handle = virgl_object_assign_handle();
+    /* encode VS state */
+    ret = virgl_encode_shader_state(vctx, handle, type,
+@@ -767,12 +787,15 @@ static void *virgl_shader_encoder(struct pipe_context *ctx,
+                                    new_tokens);
+    if (ret) {
+       FREE((void *)ntt_tokens);
++      FREE(new_tokens);
++      FREE(state);
+       return NULL;
+    }
+ 
+    FREE((void *)ntt_tokens);
+    FREE(new_tokens);
+-   return (void *)(uintptr_t)handle;
++   state->handle = handle;
++   return state;
+ 
+ }
+ static void *virgl_create_vs_state(struct pipe_context *ctx,
+@@ -805,100 +828,96 @@ static void *virgl_create_fs_state(struct pipe_context *ctx,
+    return virgl_shader_encoder(ctx, shader, MESA_SHADER_FRAGMENT);
+ }
+ 
++/* Bind a graphics shader made by virgl_shader_encoder, or none, and have
++ * the next draw check the sampler views against its sampler types.
++ */
+ static void
+-virgl_delete_fs_state(struct pipe_context *ctx,
+-                     void *fs)
++virgl_bind_shader_state(struct virgl_context *vctx, void *shader,
++                        mesa_shader_stage stage)
+ {
+-   uint32_t handle = (uintptr_t)fs;
+-   struct virgl_context *vctx = virgl_context(ctx);
++   const struct virgl_shader_state *state = shader;
+ 
+-   virgl_encode_delete_object(vctx, handle, VIRGL_OBJECT_SHADER);
++   vctx->bound_shaders[stage] = state;
++   vctx->feedback_dirty = true;
++   virgl_encode_bind_shader(vctx, state ? state->handle : 0, stage);
+ }
+ 
+ static void
+-virgl_delete_gs_state(struct pipe_context *ctx,
+-                     void *gs)
++virgl_delete_shader_state(struct virgl_context *vctx, void *shader,
++                          mesa_shader_stage stage)
+ {
+-   uint32_t handle = (uintptr_t)gs;
+-   struct virgl_context *vctx = virgl_context(ctx);
++   struct virgl_shader_state *state = shader;
+ 
+-   virgl_encode_delete_object(vctx, handle, VIRGL_OBJECT_SHADER);
++   if (vctx->bound_shaders[stage] == state)
++      vctx->bound_shaders[stage] = NULL;
++   virgl_encode_delete_object(vctx, state->handle, VIRGL_OBJECT_SHADER);
++   FREE(state);
+ }
+ 
+ static void
+-virgl_delete_vs_state(struct pipe_context *ctx,
+-                     void *vs)
++virgl_delete_fs_state(struct pipe_context *ctx,
++                      void *fs)
+ {
+-   uint32_t handle = (uintptr_t)vs;
+-   struct virgl_context *vctx = virgl_context(ctx);
++   virgl_delete_shader_state(virgl_context(ctx), fs, MESA_SHADER_FRAGMENT);
++}
+ 
+-   virgl_encode_delete_object(vctx, handle, VIRGL_OBJECT_SHADER);
++static void
++virgl_delete_gs_state(struct pipe_context *ctx,
++                      void *gs)
++{
++   virgl_delete_shader_state(virgl_context(ctx), gs, MESA_SHADER_GEOMETRY);
++}
++
++static void
++virgl_delete_vs_state(struct pipe_context *ctx,
++                      void *vs)
++{
++   virgl_delete_shader_state(virgl_context(ctx), vs, MESA_SHADER_VERTEX);
+ }
+ 
+ static void
+ virgl_delete_tcs_state(struct pipe_context *ctx,
+                        void *tcs)
+ {
+-   uint32_t handle = (uintptr_t)tcs;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_delete_object(vctx, handle, VIRGL_OBJECT_SHADER);
++   virgl_delete_shader_state(virgl_context(ctx), tcs, MESA_SHADER_TESS_CTRL);
+ }
+ 
+ static void
+ virgl_delete_tes_state(struct pipe_context *ctx,
+-                      void *tes)
++                       void *tes)
+ {
+-   uint32_t handle = (uintptr_t)tes;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_delete_object(vctx, handle, VIRGL_OBJECT_SHADER);
++   virgl_delete_shader_state(virgl_context(ctx), tes, MESA_SHADER_TESS_EVAL);
+ }
+ 
+ static void virgl_bind_vs_state(struct pipe_context *ctx,
+-                                        void *vss)
++                                void *vss)
+ {
+-   uint32_t handle = (uintptr_t)vss;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_bind_shader(vctx, handle, MESA_SHADER_VERTEX);
++   virgl_bind_shader_state(virgl_context(ctx), vss, MESA_SHADER_VERTEX);
+ }
+ 
+ static void virgl_bind_tcs_state(struct pipe_context *ctx,
+-                               void *vss)
++                                 void *vss)
+ {
+-   uint32_t handle = (uintptr_t)vss;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_bind_shader(vctx, handle, MESA_SHADER_TESS_CTRL);
++   virgl_bind_shader_state(virgl_context(ctx), vss, MESA_SHADER_TESS_CTRL);
+ }
+ 
+ static void virgl_bind_tes_state(struct pipe_context *ctx,
+-                               void *vss)
++                                 void *vss)
+ {
+-   uint32_t handle = (uintptr_t)vss;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_bind_shader(vctx, handle, MESA_SHADER_TESS_EVAL);
++   virgl_bind_shader_state(virgl_context(ctx), vss, MESA_SHADER_TESS_EVAL);
+ }
+ 
+ static void virgl_bind_gs_state(struct pipe_context *ctx,
+-                               void *vss)
++                                void *vss)
+ {
+-   uint32_t handle = (uintptr_t)vss;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_bind_shader(vctx, handle, MESA_SHADER_GEOMETRY);
++   virgl_bind_shader_state(virgl_context(ctx), vss, MESA_SHADER_GEOMETRY);
+ }
+ 
+ 
+ static void virgl_bind_fs_state(struct pipe_context *ctx,
+-                                        void *vss)
++                                void *vss)
+ {
+-   uint32_t handle = (uintptr_t)vss;
+-   struct virgl_context *vctx = virgl_context(ctx);
+-
+-   virgl_encode_bind_shader(vctx, handle, MESA_SHADER_FRAGMENT);
++   virgl_bind_shader_state(virgl_context(ctx), vss, MESA_SHADER_FRAGMENT);
+ }
+ 
+ static void virgl_clear(struct pipe_context *ctx,
+@@ -1047,18 +1066,81 @@ virgl_view_in_framebuffer(const struct pipe_framebuffer_state *fb,
+    return virgl_surface_in_view(&fb->zsbuf, view);
+ }
+ 
+-/* A 1x1 texture with the target, format and sample count of `like`, kept
+- * by the context for stand-in views.
++/* The type a sampler has to return to sample a texture of `format` on a
++ * host that checks it, as WebGL 2 does: SINT or UINT for a pure integer
++ * format, FLOAT for any other.
++ */
++static enum tgsi_return_type
++virgl_format_return_type(enum pipe_format format)
++{
++   if (util_format_is_pure_sint(format))
++      return TGSI_RETURN_TYPE_SINT;
++   if (util_format_is_pure_uint(format))
++      return TGSI_RETURN_TYPE_UINT;
++   return TGSI_RETURN_TYPE_FLOAT;
++}
++
++/* A format a sampler returning `type` can sample on such a host. */
++static enum pipe_format
++virgl_return_type_format(enum tgsi_return_type type)
++{
++   switch (type) {
++   case TGSI_RETURN_TYPE_SINT:
++      return PIPE_FORMAT_R8G8B8A8_SINT;
++   case TGSI_RETURN_TYPE_UINT:
++      return PIPE_FORMAT_R8G8B8A8_UINT;
++   default:
++      return PIPE_FORMAT_R8G8B8A8_UNORM;
++   }
++}
++
++/* The format of a stand-in the host should sample in place of `view`, in
++ * slot `slot` of a stage running `shader`, or PIPE_FORMAT_NONE when the
++ * host can sample the view itself.
++ *
++ * A sampler whose texture has another type (an integer texture on a float
++ * sampler, or the other way round) gets a texture of the sampler's type.
++ * The texture's own format is compared rather than the view's: a host
++ * without texture views, as a GLES 3.0 one, samples the texture's format.
++ * A view in a feedback loop gets a texture like its own.
++ */
++static enum pipe_format
++virgl_standin_format(const struct virgl_context *vctx,
++                     const struct virgl_shader_state *shader,
++                     unsigned slot,
++                     const struct pipe_sampler_view *view)
++{
++   if (!view || !view->texture || view->target == PIPE_BUFFER)
++      return PIPE_FORMAT_NONE;
++
++   if (shader && (shader->sampler_views_declared & (1u << slot))) {
++      const enum tgsi_return_type type =
++         shader->sampler_type[slot] == TGSI_RETURN_TYPE_SINT ||
++         shader->sampler_type[slot] == TGSI_RETURN_TYPE_UINT ?
++            shader->sampler_type[slot] : TGSI_RETURN_TYPE_FLOAT;
++      if (virgl_format_return_type(view->texture->format) != type)
++         return virgl_return_type_format(type);
++   }
++
++   if (virgl_view_in_framebuffer(&vctx->framebuffer.base, view))
++      return view->texture->format;
++
++   return PIPE_FORMAT_NONE;
++}
++
++/* A 1x1 texture of `format` with the target and sample count of `like`,
++ * kept by the context for stand-in views.
+  */
+ static struct pipe_resource *
+ virgl_feedback_texture(struct virgl_context *vctx,
+-                       const struct pipe_resource *like)
++                       const struct pipe_resource *like,
++                       enum pipe_format format)
+ {
+    struct pipe_screen *screen = vctx->base.screen;
+ 
+    for (unsigned i = 0; i < VIRGL_FEEDBACK_TEXTURES; i++) {
+       struct pipe_resource *tex = vctx->feedback_textures[i];
+-      if (tex && tex->target == like->target && tex->format == like->format &&
++      if (tex && tex->target == like->target && tex->format == format &&
+           tex->nr_samples == like->nr_samples)
+          return tex;
+    }
+@@ -1067,7 +1149,7 @@ virgl_feedback_texture(struct virgl_context *vctx,
+                      like->target == PIPE_TEXTURE_CUBE_ARRAY;
+    const struct pipe_resource templ = {
+       .target = like->target,
+-      .format = like->format,
++      .format = format,
+       .width0 = 1,
+       .height0 = 1,
+       .depth0 = 1,
+@@ -1086,18 +1168,22 @@ virgl_feedback_texture(struct virgl_context *vctx,
+    return tex;
+ }
+ 
+-/* A view like `view` (target, formats, swizzle) of a 1x1 texture that no
+- * framebuffer holds.
++/* A view like `view` (target, swizzle, and format unless `format` is
++ * another texture format than the view's texture has) of a 1x1 texture
++ * of `format` that no framebuffer holds.
+  */
+ static struct pipe_sampler_view *
+ virgl_feedback_standin(struct virgl_context *vctx,
+-                       const struct pipe_sampler_view *view)
++                       const struct pipe_sampler_view *view,
++                       enum pipe_format format)
+ {
+-   struct pipe_resource *tex = virgl_feedback_texture(vctx, view->texture);
++   struct pipe_resource *tex = virgl_feedback_texture(vctx, view->texture, format);
+    if (!tex)
+       return NULL;
+ 
+    struct pipe_sampler_view templ = *view;
++   if (format != view->texture->format)
++      templ.format = format;
+    templ.u.tex.first_level = 0;
+    templ.u.tex.last_level = 0;
+    templ.u.tex.last_layer = MIN2(view->u.tex.last_layer - view->u.tex.first_layer,
+@@ -1107,22 +1193,23 @@ virgl_feedback_standin(struct virgl_context *vctx,
+ }
+ 
+ /* Give the host a stand-in for every sampler view of a graphics stage that
+- * forms a feedback loop with the framebuffer, and the real view back once
+- * it no longer does.
++ * forms a feedback loop with the framebuffer or has a type the stage's
++ * shader cannot sample it with, and the real view back once it no longer
++ * does (virgl_standin_format).
+  *
+  * GL leaves what such a draw samples undefined. WebGL 2 refuses the draw
+  * with INVALID_OPERATION, which a virglrenderer that replays GLES on WebGL
+  * (unkernel's) takes as a context error, after which it refuses every
+- * later draw of the context. A stand-in of the same target and formats
+- * keeps the shader's sampler types matched on the host and puts a texture
+- * that is not attached on that unit; an unbound slot would not, because
+- * the host leaves a texture unit with no view as it was.
++ * later draw of the context. A stand-in of the same target keeps the
++ * shader's sampler targets matched on the host and puts on that unit a
++ * texture that is not attached and that the sampler's type can sample; an
++ * unbound slot would not, because the host leaves a texture unit with no
++ * view as it was.
+  */
+ static void
+ virgl_hide_feedback_views(struct virgl_context *vctx)
+ {
+    struct virgl_winsys *vws = virgl_screen(vctx->base.screen)->vws;
+-   const struct pipe_framebuffer_state *fb = &vctx->framebuffer.base;
+ 
+    if (!vctx->feedback_dirty)
+       return;
+@@ -1130,20 +1217,27 @@ virgl_hide_feedback_views(struct virgl_context *vctx)
+ 
+    for (int stage = MESA_SHADER_VERTEX; stage <= MESA_SHADER_FRAGMENT; stage++) {
+       struct virgl_shader_binding_state *binding = &vctx->shader_bindings[stage];
++      const struct virgl_shader_state *shader = vctx->bound_shaders[stage];
+ 
+       for (unsigned i = 0; i < PIPE_MAX_SAMPLERS; i++) {
+          struct pipe_sampler_view *view = binding->views[i];
+-         const bool loop = virgl_view_in_framebuffer(fb, view);
+-
+-         /* The host already holds the stand-in or the real view as needed. */
+-         if (loop == (binding->feedback_standins[i] != NULL))
++         const struct pipe_sampler_view *held = binding->feedback_standins[i];
++         const enum pipe_format format = virgl_standin_format(vctx, shader, i, view);
++
++         /* The host already holds the real view, or a stand-in of the
++          * format needed.
++          */
++         if (format == PIPE_FORMAT_NONE ? !held :
++             held && held->texture->format == format)
+             continue;
+ 
+-         if (loop) {
+-            struct pipe_sampler_view *standin = virgl_feedback_standin(vctx, view);
++         if (format != PIPE_FORMAT_NONE) {
++            struct pipe_sampler_view *standin =
++               virgl_feedback_standin(vctx, view, format);
+             if (!standin)
+                continue;
+ 
++            pipe_sampler_view_reference(&binding->feedback_standins[i], NULL);
+             binding->feedback_standins[i] = standin;
+             vws->emit_res(vws, vctx->cbuf,
+                           virgl_resource(standin->texture)->hw_res, false);
+diff --git a/src/gallium/drivers/virgl/virgl_context.h b/src/gallium/drivers/virgl/virgl_context.h
+index 481cf0f..8663fc3 100644
+--- a/src/gallium/drivers/virgl/virgl_context.h
++++ b/src/gallium/drivers/virgl/virgl_context.h
+@@ -57,7 +57,8 @@ struct virgl_shader_binding_state {
+    struct pipe_sampler_view *views[PIPE_MAX_SHADER_SAMPLER_VIEWS];
+ 
+    /* Stand-ins the host holds in place of views[i] while views[i] forms a
+-    * feedback loop with the framebuffer (virgl_hide_feedback_views).
++    * feedback loop with the framebuffer, or has a type the bound shader's
++    * sampler cannot take (virgl_hide_feedback_views).
+     */
+    struct pipe_sampler_view *feedback_standins[PIPE_MAX_SAMPLERS];
+ 
+@@ -85,6 +86,17 @@ struct virgl_framebuffer_state
+ /* How many stand-in textures a context keeps for feedback loops. */
+ #define VIRGL_FEEDBACK_TEXTURES 8
+ 
++/* A graphics shader as the context keeps it: the host's handle, and the
++ * type (TGSI_RETURN_TYPE_*) each sampler view the shader declares
++ * returns, which virgl_hide_feedback_views compares with the view bound
++ * in that slot.
++ */
++struct virgl_shader_state {
++   uint32_t handle;
++   uint32_t sampler_views_declared;
++   uint8_t sampler_type[PIPE_MAX_SAMPLERS];
++};
++
+ struct virgl_context {
+    struct pipe_context base;
+    struct virgl_cmd_buf *cbuf;
+@@ -122,11 +134,14 @@ struct virgl_context {
+    /* The total size of staging resources used in queued copy transfers. */
+    uint64_t queued_staging_res_size;
+ 
+-   /* Set when the framebuffer or a sampler view changes, so that the next
+-    * draw looks for feedback loops again.
++   /* Set when the framebuffer, a sampler view or a graphics shader changes,
++    * so that the next draw looks for views to stand in for again.
+     */
+    bool feedback_dirty;
+ 
++   /* The graphics shaders bound, by stage. */
++   const struct virgl_shader_state *bound_shaders[MESA_SHADER_FRAGMENT + 1];
++
+    /* 1x1 textures the feedback stand-ins view, one per target, format and
+     * sample count, replaced in turn when all are taken.
+     */

@@ -205,9 +205,9 @@ libdrm's headers and test programs in the runtime closure. The build
 refuses to finish if LLVM, python3, hwdata, libpciaccess or libdrm's
 dev and bin outputs are in its closure.
 
-Mesa carries one patch,
+Mesa carries two patches for unkernel's renderer. In the first,
 [patches/mesa/0001](../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch),
-for unkernel's renderer. A draw that renders into a level of a texture
+a draw that renders into a level of a texture
 while a sampler view of the draw covers that level is a feedback loop:
 GL leaves what it samples undefined, and WebGL 2 refuses the draw even
 when the shader never reads the texture. unkernel's renderer takes the
@@ -218,6 +218,18 @@ Firefox's window stopped drawing about 100 s into a page of CSS
 effects and canvas copies. With the patch the virgl driver gives the
 renderer a view of a 1x1 texture in that slot for such a draw. It can
 go once unkernel's renderer stops passing the loop to WebGL.
+
+The second,
+[patches/mesa/0002](../patches/mesa/0002-virgl-stand-in-for-a-sampler-view-of-another-type.patch),
+does the same for a sampler whose unit holds a texture of another type:
+an integer texture on a float sampler, or a float or normalized one on
+an integer sampler. GL leaves those values undefined too, and WebGL 2
+refuses the draw. Firefox's WebRender makes such draws, and Mesa does
+when an integer sampler's unit has no complete texture, since it puts
+an RGBA8 one there. Firefox in the guest, opening a trynix page that
+ran es2gears in its own guest, stopped drawing the lower part of its
+window 4.5 minutes in. The virgl driver now gives the renderer a 1x1
+texture of the sampler's type in that slot.
 
 The result is Mesa 26.2.2 with `libgallium` holding the one driver:
 
@@ -772,6 +784,9 @@ compositor:
   destination are the same image, is refused by WebGL 2 too, and the
   site's Mesa does not route around it; no program run so far has done
   one.
+- **A shadow sampler** whose texture is not a depth texture, or whose
+  sampler does not compare, is refused by WebGL 2 as well, and the
+  site's Mesa leaves it as it is; no program run so far has made one.
 - **GLX programs** have not been run. Xwayland draws without glamor
   here, and the site's Mesa has no GLX.
 - **Downloads set to all** fetch the X server's whole closure before
@@ -817,11 +832,13 @@ page's GL renderer by GPU resource and not through llvmpipe, and types
 a line into xterm's window and checks that xterm's shell ran it.
 The feedback case runs
 [tools/gl-feedback.py](../tools/gl-feedback.py) with python3 in the
-guest: three draws, each read back, the second into a texture still
-bound to a sampler unit of its program. WebGL 2 refuses that draw, and
-unkernel's renderer then refuses every later draw of the program's
-context; the case fails on a wrong colour or a context error in the
-renderer's log.
+guest: seven draws, each read back. The second renders into a texture
+still bound to a sampler unit of its program, and the fifth and sixth
+leave a texture of another type than its sampler on a unit (an integer
+texture on a float sampler, a float one or none on an integer
+sampler). WebGL 2 refuses those draws, and unkernel's renderer then
+refuses every later draw of the program's context; the case fails on a
+wrong colour or a context error in the renderer's log.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
