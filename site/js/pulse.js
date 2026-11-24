@@ -49,11 +49,23 @@ const CARD_DEVICE = "hw:0";
 // program that writes to ALSA itself cannot open it.
 const IDLE_CLOSE_S = 1;
 
-// How often the page looks for the daemon's socket, and for how long,
-// in tenths of a second: the daemon's first start reads its libraries
-// over the share, downloading any not fetched yet.
-const SOCKET_POLL_S = "0.1";
+// How often the page looks for the daemon's socket, or for a stopped
+// daemon to have exited, in seconds.
+const POLL_S = "0.1";
+
+// How many times the page looks for the daemon's socket: the daemon's
+// first start reads its libraries over the share, downloading any not
+// fetched yet.
 const SOCKET_POLLS = 600;
+
+// The client that asks the daemon for its sinks, from the same package,
+// and how long it may take, in seconds: its first run may read
+// libraries the daemon did not.
+const CLIENT_NAME = "pactl";
+const SINKS_LIMIT_S = 60;
+
+// How many times the page looks for a stopped daemon to have exited.
+const STOP_POLLS = 50;
 
 // How many lines of the daemon's output a failure carries.
 const FAILURE_LINES = 5;
@@ -108,10 +120,23 @@ export function soundEnv(daemon) {
 // The daemon is not daemonized and never exits on its own; setsid
 // gives it a session of its own, as the Wayland relay has (gui.js).
 //
-// The command fails if the daemon logs an error (`E:`) or no socket
-// appears in time, printing the end of the daemon's output.
+// A daemon counts as up only once card 0 is its sink, which the
+// closure's pactl is asked. A daemon whose ALSA module failed, because
+// another program held the card as it started, logs an error and goes
+// on to open its socket, and every client of it fails with "No such
+// entity". A daemon already running is taken as it is only if it has
+// the sink; one without is stopped and a new one started.
+//
+// The command fails if the daemon logs an error (`E:`) before its
+// socket opens, if no socket appears in time, or if the daemon has no
+// sink once it does, printing the end of the daemon's output. A daemon
+// that failed is stopped, so the next start begins afresh.
 function daemonCommand(daemon) {
-  const binary = `${GUEST_STORE_DIR}/${daemon}/bin/${DAEMON_NAME}`;
+  const directory = `${GUEST_STORE_DIR}/${daemon}/bin`;
+  const binary = `${directory}/${DAEMON_NAME}`;
+  const hasSink =
+    `timeout ${SINKS_LIMIT_S} ${directory}/${CLIENT_NAME} -s unix:${PULSE_SOCKET}` +
+    ` list short sinks 2> /dev/null | grep -q .`;
   const modules = [
     `module-alsa-sink device=${CARD_DEVICE}`,
     `module-native-protocol-unix auth-anonymous=1 socket=${PULSE_SOCKET}`,
@@ -128,10 +153,22 @@ function daemonCommand(daemon) {
     "--no-cpu-limit",
     "--log-target=stderr",
   ];
-  const giveUp = `tail -n ${FAILURE_LINES} ${PULSE_LOG} >&2; exit 1`;
+  const giveUp = `tail -n ${FAILURE_LINES} ${PULSE_LOG} >&2; stop_daemon; exit 1`;
   return [
-    `pidof ${DAEMON_NAME} > /dev/null && exit 0`,
+    `stop_daemon() {`,
+    `  kill $(pidof ${DAEMON_NAME}) 2> /dev/null`,
+    `  stops=0`,
+    `  while pidof ${DAEMON_NAME} > /dev/null && [ $stops -lt ${STOP_POLLS} ]; do`,
+    `    stops=$((stops + 1))`,
+    `    sleep ${POLL_S}`,
+    `  done`,
+    `}`,
+    `if pidof ${DAEMON_NAME} > /dev/null; then`,
+    `  ${hasSink} && exit 0`,
+    `  stop_daemon`,
+    `fi`,
     `mkdir -p -m 700 ${PULSE_DIR}`,
+    `rm -f ${PULSE_SOCKET}`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${binary} ${flags.join(" ")} ${modules.join(" ")}` +
       ` < /dev/null > ${PULSE_LOG} 2>&1 &`,
     `polls=0`,
@@ -139,14 +176,19 @@ function daemonCommand(daemon) {
     `  grep -q '^E: ' ${PULSE_LOG} 2> /dev/null && { ${giveUp}; }`,
     `  polls=$((polls + 1))`,
     `  [ $polls -gt ${SOCKET_POLLS} ] && { echo 'no socket after ${SOCKET_POLLS} polls' >&2; ${giveUp}; }`,
-    `  sleep ${SOCKET_POLL_S}`,
+    `  sleep ${POLL_S}`,
     `done`,
+    `${hasSink} || { echo 'no sink on ${CARD_DEVICE}' >&2; ${giveUp}; }`,
   ].join("\n");
 }
 
 // The guest's server: start() runs the daemon of a closure, once per
-// guest however often it is called, and resolves when its socket is
-// open. `exec` runs a shell command in the guest.
+// guest however often it is called, and resolves once the daemon is up
+// with card 0 as its sink. A call after one that failed tries again:
+// the card a program held as the daemon started is free once the
+// program stops, and a failure kept would keep PulseAudio's clients
+// out for the life of the guest. `exec` runs a shell command in the
+// guest.
 export function soundServer({ exec }) {
   let started = null;
 
@@ -162,7 +204,10 @@ export function soundServer({ exec }) {
 
   return {
     start(daemon) {
-      started ??= run(daemon);
+      started ??= run(daemon).catch((err) => {
+        started = null;
+        throw err;
+      });
       return started;
     },
   };

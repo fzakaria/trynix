@@ -482,12 +482,15 @@ export async function startUnkernel({
     );
   }
 
-  // Start the PulseAudio daemon of `basenames`, if they hold one
-  // (pulse.js). Resolves once its socket is open, so a client typed at
-  // the prompt finds it. A failure is logged rather than thrown: the
-  // shell works without it, and ALSA programs still play.
-  async function soundSetup(basenames) {
-    const daemon = pulseDaemonIn(basenames);
+  // Start the PulseAudio daemon of the closure, if it holds one
+  // (pulse.js). Resolves once the daemon is up with card 0 as its sink,
+  // so a client typed at the prompt finds it. A failure is logged rather
+  // than thrown: the shell works without it, and ALSA programs still
+  // play. The whole closure is looked at, not one addition's paths, so
+  // a daemon that failed, as one does while another program holds the
+  // card, is tried again by the next addition.
+  async function soundSetup() {
+    const daemon = pulseDaemonIn(closure());
     if (daemon === null) {
       return;
     }
@@ -614,7 +617,7 @@ export async function startUnkernel({
       // session and the sound server come up meanwhile, and are waited
       // for as well.
       const gui = guiSetup(closure());
-      const soundServerUp = soundSetup(closure());
+      const soundServerUp = soundSetup();
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
       await gui;
@@ -641,7 +644,7 @@ export async function startUnkernel({
       share.linkAll(basenames, roots, Precedence.REPLACE);
       const told = x11Server;
       await guiSetup(lazyStore === null ? basenames : closure());
-      await soundSetup(lazyStore === null ? basenames : closure());
+      await soundSetup();
       if (x11Server !== told) {
         await writeManifest();
       }

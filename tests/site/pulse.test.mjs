@@ -18,15 +18,16 @@ const DIGEST = "0123456789abcdfghijklmnpqrsvwxyz";
 const OTHER_DIGEST = "abcdfghijklmnpqrsvwxyz0123456789";
 const path = (name, digest = DIGEST) => `${digest}-${name}`;
 
-// A guest shell that answers every command with `exitCode` and keeps
-// what it was asked.
-function fakeShell(exitCode = 0, stderr = "") {
+// A guest shell that answers every command with `exitCode`, or with
+// the next of `exitCodes` while any are left, and keeps what it was
+// asked.
+function fakeShell(exitCode = 0, stderr = "", exitCodes = []) {
   const commands = [];
   return {
     commands,
     exec: async (command) => {
       commands.push(command);
-      return { exitCode, stderr };
+      return { exitCode: exitCodes.shift() ?? exitCode, stderr };
     },
   };
 }
@@ -114,4 +115,45 @@ test("a daemon that fails says why", async () => {
     server.start(path("pulseaudio-17.0")),
     /Failed to open PCM device hw:0/,
   );
+});
+
+// Checks that the daemon counts as started only once card 0 is its
+// sink. A daemon whose ALSA module failed, because another program held
+// the card as it started, still opens its socket, and every client then
+// failed with "No such entity". So the command asks the daemon for its
+// sinks, with the closure's own pactl, once the socket is open, and
+// before it takes a daemon already running as the server; a daemon with
+// no sink is stopped.
+test("the daemon counts as started only with the card's sink", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell();
+  await soundServer({ exec: shell.exec }).start(daemon);
+
+  const [command] = shell.commands;
+  const sinks = `/nix/store/${daemon}/bin/pactl -s unix:${PULSE_SOCKET} list short sinks`;
+  const lines = command.split("\n");
+  const asked = lines.flatMap((line, at) => (line.includes(sinks) ? [at] : []));
+  const started = lines.findIndex((line) => line.includes("setsid"));
+  assert.ok(
+    asked.some((at) => at < started),
+    "a daemon already running is taken without asking for its sinks",
+  );
+  assert.ok(
+    asked.some((at) => at > started),
+    "a new daemon is taken without asking for its sinks",
+  );
+  assert.match(command, /kill \$\(pidof pulseaudio\)/);
+});
+
+// Checks that a start that failed is not kept: the next one runs the
+// command again, so the daemon can come up once the card is free.
+test("a daemon that failed to start is tried again", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell(0, "no sink on hw:0", [1]);
+  const server = soundServer({ exec: shell.exec });
+
+  await assert.rejects(server.start(daemon), /no sink on hw:0/);
+  await server.start(daemon);
+  await server.start(daemon);
+  assert.equal(shell.commands.length, 2);
 });

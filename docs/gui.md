@@ -608,6 +608,14 @@ next client plays. With the daemon up, programs that try PulseAudio
 first go through it, so this takes a program that writes only to ALSA,
 such as `aplay`, playing at the same moment.
 
+A daemon started while such a program holds the card cannot open it.
+It logs the error and opens its socket anyway, with no sink, and every
+client then fails with "No such entity". So the page asks the daemon
+for its sinks with the closure's `pactl` once the socket is open, and
+counts it as up only with card 0's. One without is stopped and the
+failure goes to the page's log; the next addition to the guest starts
+the daemon again, which succeeds once the card is free.
+
 The daemon opens the card as it starts and plays zeros until it
 closes it. The page shows the sound control only once a chunk holds a
 sample that is not zero, and the clip it holds for the first click
