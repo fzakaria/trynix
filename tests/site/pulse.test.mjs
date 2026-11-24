@@ -87,14 +87,13 @@ test("the shell's environment follows whether a daemon runs", () => {
 // card 0 as its one sink, its socket open to any client of the guest,
 // no shared memory, the card let go of when nothing plays, and no
 // realtime thread or CPU limit, either of which gets the daemon killed
-// under the guest's emulated CPU. It runs once per guest however often
-// it is asked for.
-test("the daemon starts once, on card 0, from the closure", async () => {
+// under the guest's emulated CPU. Two starts asked for together run it
+// once.
+test("the daemon starts on card 0, from the closure", async () => {
   const daemon = path("pulseaudio-17.0");
   const shell = fakeShell();
   const server = soundServer({ exec: shell.exec });
   await Promise.all([server.start(daemon), server.start(daemon)]);
-  await server.start(path("pulseaudio-16.1", OTHER_DIGEST));
 
   assert.equal(shell.commands.length, 1);
   const [command] = shell.commands;
@@ -158,8 +157,31 @@ test("a daemon that failed to start is tried again", async () => {
 
   await assert.rejects(server.start(daemon), /no sink on hw:0/);
   await server.start(daemon);
-  await server.start(daemon);
   assert.equal(shell.commands.length, 2);
+});
+
+// Checks that a daemon that came up is checked again by the next start,
+// once the one before has settled, and is named to the shells only
+// while it passes. A daemon stopped in the guest (`pactl exit`) stayed
+// named to every shell started after the next addition, which then had
+// PULSE_SERVER at a socket nothing listened on. The fake shell lets the
+// first start through, fails the second, as a stopped daemon that
+// cannot come back does, and lets the third through.
+test("a daemon that came up is checked again by the next start", async () => {
+  const daemon = path("pulseaudio-17.0");
+  const shell = fakeShell(0, "no sink on hw:0", [0, 1]);
+  const server = soundServer({ exec: shell.exec });
+
+  await server.start(daemon);
+  assert.equal(server.running, daemon);
+
+  await assert.rejects(server.start(daemon), /no sink on hw:0/);
+  assert.equal(shell.commands.length, 2);
+  assert.equal(server.running, null);
+
+  await server.start(daemon);
+  assert.equal(shell.commands.length, 3);
+  assert.equal(server.running, daemon);
 });
 
 // Checks what the shells are told once a start has been tried: the

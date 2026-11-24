@@ -626,14 +626,16 @@ counts it as up only with card 0's: the row `module-alsa-sink.c` makes
 for hw:0, named `alsa_output.hw_0`. A daemon already running with any
 other sink, such as a null sink that takes every client's audio and
 plays none of it on the card, is stopped and the page's started in its
-place. One without is stopped and the
-failure goes to the page's log; the next addition to the guest starts
-the daemon again, which succeeds once the card is free. Until then,
-shells started after the failure get `CANBERRA_DRIVER=alsa` and no
-`PULSE_SERVER`, as they would without a daemon in the closure. The
-page's shell at the boot sources its environment before the daemon is
-up, so a daemon that fails there leaves that one shell with
-`PULSE_SERVER` set.
+place. One without is stopped and the failure goes to the page's log;
+the next addition to the guest starts the daemon again, which succeeds
+once the card is free. Until then, shells started after the failure
+get `CANBERRA_DRIVER=alsa` and no `PULSE_SERVER`, as they would without
+a daemon in the closure. The page's shell at the boot sources its
+environment before the daemon is up, so a daemon that fails there
+leaves that one shell with `PULSE_SERVER` set. Every addition asks the
+daemon for its sinks again: one stopped in the guest, with `pactl exit`
+say, is started again by the next addition, and one that cannot be is
+no longer named to new shells.
 
 The daemon opens the card as it starts and plays zeros until it
 closes it. The page shows the sound control only once a chunk holds a
@@ -747,6 +749,9 @@ compositor:
 - **A PulseAudio daemon that could not start**, because a program held
   the sound card, is tried again only by an addition that brings new
   paths, not when the card is let go.
+- **A PulseAudio daemon stopped in the guest**, with `pactl exit` say,
+  is started again only by the next addition. Shells started before
+  then are still given its socket, where nothing answers.
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
   60 FPS. Its xterm case, which takes keys through Xwayland, passed in

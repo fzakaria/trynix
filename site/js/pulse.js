@@ -206,39 +206,46 @@ function daemonCommand(daemon) {
   ].join("\n");
 }
 
-// The guest's server: start() runs the daemon of a closure, once per
-// guest however often it is called, and resolves once the daemon is up
-// with card 0 as its sink. A call after one that failed tries again:
-// the card a program held as the daemon started is free once the
-// program stops, and a failure kept would keep PulseAudio's clients
-// out for the life of the guest. `exec` runs a shell command in the
-// guest.
+// The guest's server: start() runs the daemon of a closure unless it
+// is up, and resolves once the daemon is up with card 0 as its sink.
+// Calls made while a start is in flight share it. A call after it has
+// settled runs the command again, which takes a daemon still up as it
+// is: a daemon stopped in the guest (`pactl exit`) is started again,
+// and one that failed is tried again, since the card a program held as
+// the daemon started is free once the program stops. A start kept
+// would keep naming a stopped daemon's socket to new shells, and a
+// failure kept would keep PulseAudio's clients out for the life of the
+// guest. `exec` runs a shell command in the guest.
 //
-// `running` is the daemon a start brought up (a store basename), or
-// null before one has and after one failed: what the shells started
+// `running` is the daemon the last start found up (a store basename),
+// or null before one has and after one failed: what the shells started
 // from then on are told of (soundEnv).
 export function soundServer({ exec }) {
-  let started = null;
+  let starting = null;
   let running = null;
 
   async function run(daemon) {
     const result = await exec(daemonCommand(daemon));
     if (result.exitCode !== 0) {
+      running = null;
       throw new Error(
         `the PulseAudio daemon did not start: ${result.stderr.trim()}`,
       );
     }
+
+    // The page's log names a daemon as it comes up, not at every check.
+    if (running !== daemon) {
+      log(`sound: the PulseAudio daemon of ${daemon} is running in the guest`);
+    }
     running = daemon;
-    log(`sound: the PulseAudio daemon of ${daemon} is running in the guest`);
   }
 
   return {
     start(daemon) {
-      started ??= run(daemon).catch((err) => {
-        started = null;
-        throw err;
+      starting ??= run(daemon).finally(() => {
+        starting = null;
       });
-      return started;
+      return starting;
     },
 
     get running() {
