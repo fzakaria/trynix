@@ -176,6 +176,21 @@
               pkgs.firefox
             ];
 
+          # stall a store path's download partway in a real browser and
+          # check that the guest's read of it ends: after a retry, or in
+          # an I/O error once every attempt has stalled, with the strip
+          # under the terminal saying which. The tools directory as a
+          # whole, since this imports link-test.py, gui-test.py and
+          # cpu-test.py
+          stall-test =
+            let
+              python = pkgs.python3.withPackages (ps: [ ps.websocket-client ]);
+            in
+            tool "stall-test" "${python}/bin/python3 ${./tools}/stall-test.py" [
+              pkgs.chromium
+              pkgs.firefox
+            ];
+
           # call the page's WebMCP tools the way an agent would, through a
           # polyfill, since no headless browser ships the API yet.
           # The tools directory as a whole, since this imports cpu-test.py

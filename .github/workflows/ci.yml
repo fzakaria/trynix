@@ -110,6 +110,15 @@ jobs:
       - name: Shows GUI programs' windows
         run: nix run .#gui-test -- --site "$(nix build .#site --no-link --print-out-paths)" --gpu software
 
+      # A store path's download that stops sending bytes partway, served
+      # lazily, so the guest's read waits on it. The page has to give it
+      # up and fetch it again, and the read has to end: in the program's
+      # output after one stall, in an I/O error once every attempt has
+      # stalled. Nothing else here ever sees a download stall. Needs the
+      # network, as above.
+      - name: Ends a guest's read whose download stalls
+        run: nix run .#stall-test -- --site "$(nix build .#site --no-link --print-out-paths)"
+
       # Missing names must become visible when a package joins a running VM.
       - name: Adds packages after boot through WebMCP
         run: nix run .#webmcp-test -- --site "$(nix build .#site --no-link --print-out-paths)"

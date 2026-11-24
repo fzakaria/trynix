@@ -146,3 +146,40 @@ test(
     assert.equal(calls.count, 1);
   },
 );
+
+// The delay between attempts the tests ask for, so a test of every
+// attempt failing does not wait out the page's own backoff.
+const BACKOFF_MS = 1;
+
+// Checks that a download that stalls on every attempt is given up after
+// the last one, with the stall as the reason, and that each failed
+// attempt is reported as it fails, numbered against the attempts there
+// are: what the page's strip says while the guest waits.
+test(
+  "a download that stalls every time fails, and each attempt is reported",
+  { timeout: TEST_LIMIT_MS },
+  async () => {
+    const stalled = { chunks: [{ after: 0, bytes: [1] }], stalls: true };
+    const calls = fakeFetch([stalled, stalled, stalled, stalled]);
+    const failures = [];
+
+    await assert.rejects(
+      fetchWithProgress("https://cache.example/stalled", {
+        idleMs: IDLE_MS,
+        backoffMs: BACKOFF_MS,
+        onAttemptFailed: (failure) => failures.push(failure),
+      }),
+      /no bytes for/,
+    );
+
+    assert.equal(failures.length, calls.count);
+    assert.deepEqual(
+      failures.map(({ attempt }) => attempt),
+      Array.from({ length: calls.count }, (_, i) => i + 1),
+    );
+    for (const { attempts, reason } of failures) {
+      assert.equal(attempts, calls.count);
+      assert.match(reason, /^no bytes for /);
+    }
+  },
+);

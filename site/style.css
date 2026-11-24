@@ -735,6 +735,15 @@ code {
     opacity: 0.3;
   }
 }
+/* A download the page gave up on: the dot in the failed progress row's
+   red, holding still, and no line along the top. */
+#console-activity[data-failed="true"] .activity-dot {
+  background: #c94f4f;
+  animation: none;
+}
+#console-activity[data-failed="true"] .activity-track {
+  display: none;
+}
 .activity-primary {
   flex: none;
 }

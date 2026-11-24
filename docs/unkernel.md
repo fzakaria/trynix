@@ -344,7 +344,11 @@ finishes. Time the page itself was held up, as a tab in the background
 or a page in a guest nested inside another guest is, does not count
 toward the 30 s: a timer that fires late gets one more look before the
 download is called stalled, so bytes that arrived meanwhile are read
-first.
+first. The strip under the terminal says when a download is tried
+again and when the page gave up on it, and
+`nix run .#stall-test -- --site "$site"` stalls glibc's download under
+hello in a real browser and checks that hello's read ends either way:
+in its greeting after one stall, in `I/O error` after four.
 
 ### NAR listings
 

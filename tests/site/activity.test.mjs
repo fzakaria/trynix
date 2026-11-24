@@ -83,6 +83,7 @@ test("the strip says what is going on", () => {
   const starting = { program: "firefox", since: 0 };
   assert.deepEqual(activityLine({ starting, downloads: [], now: 12_400 }), {
     visible: true,
+    failed: false,
     primary: "starting firefox",
     secondary: "",
     progress: null,
@@ -94,6 +95,7 @@ test("the strip says what is going on", () => {
   ];
   assert.deepEqual(activityLine({ starting: null, downloads: one, now: 0 }), {
     visible: true,
+    failed: false,
     primary: "downloading firefox-unwrapped-160.0.1",
     secondary: "50 B / 200 B",
     progress: 0.25,
@@ -109,6 +111,77 @@ test("the strip says what is going on", () => {
   assert.equal(both.secondary, "downloading 2 paths · 100 B / 400 B");
   assert.equal(both.progress, 0.25);
   assert.equal(both.elapsed, "1:05");
+});
+
+// Checks what the strip says of a download being tried again: its
+// bytes, then which attempt it is on and why the one before failed;
+// for several downloads, how many are being tried again; and beside a
+// program starting, the attempt after the download's bytes.
+test("the strip says a download is being tried again, and why", () => {
+  const retry = { attempt: 2, attempts: 4, reason: "no bytes for 30 s" };
+  const one = [
+    { basename: `${DIGEST}-glibc-2.44-57`, bytes: 0, total: 200, retry },
+  ];
+  assert.deepEqual(activityLine({ starting: null, downloads: one, now: 0 }), {
+    visible: true,
+    failed: false,
+    primary: "downloading glibc-2.44-57",
+    secondary: "0 B / 200 B · attempt 2 of 4 (no bytes for 30 s)",
+    progress: 0,
+    elapsed: "",
+  });
+
+  const two = [
+    ...one,
+    { basename: `${DIGEST}-gtk+3-3.24.49`, bytes: 50, total: 200 },
+  ];
+  assert.equal(
+    activityLine({ starting: null, downloads: two, now: 0 }).secondary,
+    "50 B / 400 B · 1 retrying",
+  );
+
+  const starting = { program: "firefox", since: 0 };
+  assert.equal(
+    activityLine({ starting, downloads: one, now: 0 }).secondary,
+    "downloading glibc-2.44-57 · 0 B / 200 B · attempt 2 of 4",
+  );
+});
+
+// Checks what the strip says once a download has failed for good: which
+// path and why, marked as a failure, with no fill; several failures by
+// count; and beside a program starting, the failure in place of the
+// downloads, still marked.
+test("the strip says a download failed", () => {
+  const failures = [
+    { basename: `${DIGEST}-glibc-2.44-57`, reason: "no bytes for 30 s" },
+  ];
+  assert.deepEqual(
+    activityLine({ starting: null, downloads: [], failures, now: 0 }),
+    {
+      visible: true,
+      failed: true,
+      primary: "could not download glibc-2.44-57",
+      secondary: "no bytes for 30 s",
+      progress: null,
+      elapsed: "",
+    },
+  );
+
+  const two = [
+    ...failures,
+    { basename: `${DIGEST}-gtk+3-3.24.49`, reason: "HTTP 503" },
+  ];
+  assert.equal(
+    activityLine({ starting: null, downloads: [], failures: two, now: 0 })
+      .primary,
+    "could not download 2 paths",
+  );
+
+  const starting = { program: "firefox", since: 0 };
+  const line = activityLine({ starting, downloads: [], failures, now: 5_000 });
+  assert.equal(line.primary, "starting firefox");
+  assert.equal(line.secondary, "could not download glibc-2.44-57");
+  assert.equal(line.failed, true);
 });
 
 // Checks when the strip stops waiting for a program: once a window more
