@@ -734,8 +734,11 @@ has is from SwiftShader but one, an Apple M4 Pro in Chrome.
 
 The Try link "an LLM on your GPU" opens llama.cpp's chat, `llama-cli`
 from `llama-cpp-vulkan@1.0.0` (build 12359), on Qwen2.5-0.5B-Instruct
-at Q4_K_M, Apache 2.0: a 398 MB file the link names by its Hugging Face
-URL at a commit (`file=`). The version is pinned because the index
+at Q4_K_M, Apache 2.0: a 398 MB file. The link names it as a store
+path in trynix.cachix.org (`path=` and `cache=`): the path
+`nix store add-file` gives Hugging Face's file, pushed and pinned
+there. Hugging Face's CDN sent it at 1.7 to 10 MB/s on one connection,
+cachix's Cloudflare CDN at 13.7 MB/s. The version is pinned because the index
 sorts the build numbers nixpkgs used before 0.2.0 (up to 10408) above
 1.0.0. ggml-vulkan takes kwvk's device and `-ngl 99` puts every layer
 on it. `-c 2048` keeps the context buffers small: at Llama 3.2 1B's
@@ -755,7 +758,8 @@ of the answer to a question typed at the chat's prompt:
 
 Each visit also fetched the site's own files, 17 to 28 MB, which the
 local server sent uncached. A first visit is the model's download,
-which Hugging Face's CDN served at 2.6 to 10 MB/s in three visits here;
+which Hugging Face's CDN served at 2.6 to 10 MB/s in the three visits
+measured above, before the link moved to cachix;
 a reload reads the model from the Cache API, and most of its 15 s is
 llama-cli loading it through the share and onto the GPU. The renderer process peaked at 1.9 to 2.0 GiB,
 the GPU process at 150 to 225 MiB. The guest needs little: the chat
