@@ -132,7 +132,7 @@ the terminal, and the bar's buttons. `#desktop` covers the console's
 body and takes no pointer itself, so a press outside every window
 reaches the terminal; wland gives each window's canvases their own.
 
-The guest half is wland's relay, `wlandr`, a 353 KB static aarch64
+The guest half is wland's relay, `wlandr`, a 359 KB static aarch64
 binary built from source ([nix/wlandr.nix](../nix/wlandr.nix)).
 unkernel's base system has no relay (only its Debian image ships one),
 so the site serves it. Every unkernel boot fetches the relay and the
@@ -1043,8 +1043,8 @@ What the site adds, fetched only when used:
 
 | file                         | raw     | gzip   | fetched                         |
 | ---------------------------- | ------- | ------ | ------------------------------- |
-| wland modules and wasm       | 383 KB  | 109 KB | on the relay's first dial       |
-| relay (`wlandr`)             | 353 KB  | 149 KB | while the shell starts          |
+| wland modules and wasm       | 419 KB  | 120 KB | on the relay's first dial       |
+| relay (`wlandr`)             | 359 KB  | 150 KB | while the shell starts          |
 | DejaVu Sans and Sans Mono    | 1.10 MB | 587 KB | while the shell starts          |
 | `virgl.mjs` and `virgl.wasm` | 597 KB  | 216 KB | on the guest's first GL use     |
 | `kwvk-naga.wasm` and chunks  | 1.39 MB | 442 KB | on the guest's first VkInstance |
@@ -1272,8 +1272,9 @@ The pieces the site ships for this, and their terms, travel in the
 site next to the files:
 
 - wland's relay and compositor wasm are MPL-2.0, its JavaScript MIT
-  (`gui.<hash>/LICENSE-wland`). The relay is built from the upstream
-  commit named in `nix/wlandr.nix`, unmodified.
+  (`gui.<hash>/LICENSE-wland`). The relay and the wasm are built from
+  the upstream commit named in `nix/wlandr.nix`, with
+  `patches/wland/`.
 - unkernel's SDK is MIT and its kernel GPL-2.0
   (`vendor/unkernel/LICENSE`, `LICENSE-MIT`). kwvk, the Vulkan driver
   the site serves, is GPL-2.0-or-later, built from the upstream commit

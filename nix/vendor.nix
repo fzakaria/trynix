@@ -47,7 +47,7 @@ let
   # protocol, so the two move together.
   unkernelVersion = (import ./kwvk.nix { inherit pkgs; }).version;
   unkernel = npm "unkernel" unkernelVersion "1x5zf9a30ajvg0kd93andxs7kngyx0ir2la39rhsihfm1w2i64qv";
-  wland = npm "wland" "0.1.0-261122-6617578" "118n8wgcp6wgxp6wvvsyf834048d6qzy6zs5h5jb438jvy61ns5y";
+  wland = npm "wland" "0.1.0-261124-3c987e5" "04baraili99mgag86icmzvrcdn413yl4gpps96d5v704wg7yp767";
 
   # The modules the compositor's browser entry (client.mjs) imports,
   # directly or through each other. The package's Node entry, its CLI
@@ -63,6 +63,7 @@ let
     "link-stream"
     "remote-core"
     "present"
+    "dnd"
   ];
 in
 pkgs.runCommand "trynix-js-vendor" { } ''

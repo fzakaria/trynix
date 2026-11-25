@@ -18,8 +18,8 @@ let
   # The npm release the page's compositor comes from (nix/vendor.nix):
   # the relay and the compositor speak one stream protocol, so the two
   # are pinned to the same commit.
-  version = "0.1.0-261122-6617578";
-  rev = "6617578ad39c1eee00fc933c5df6741c11cc539c";
+  version = "0.1.0-261124-3c987e5";
+  rev = "3c987e50b1c08aeb5a1cbad1e88854129fba0c31";
 
   # The guest's CPU: aarch64 at the architecture's baseline, which is
   # what unkernel's emulator implements and what wland's own release
@@ -35,7 +35,7 @@ pkgs.stdenvNoCC.mkDerivation {
     owner = "pithings";
     repo = "wland";
     inherit rev;
-    sha256 = "17lmf872z2wdrqd9akv72pjbfbfbm9gmxa7h2m4zs1f5p3a9919w";
+    sha256 = "1i0j90zaxwv4vwqpjw2n7qn6xk4vlvscrja9ihnpfwi05njdk560";
   };
 
   # The relay queued 16 of the file descriptors a client sends, and
