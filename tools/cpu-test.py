@@ -72,6 +72,30 @@ class Gpu(enum.Enum):
     HARDWARE = ("--use-angle=gl", "--ignore-gpu-blocklist")
 
 
+class WebGpu(enum.Enum):
+    """Whether the browser has a WebGPU adapter, as its switches and the
+    Chromium features it enables. OFF is Chromium's default on Linux,
+    which has navigator.gpu and no adapter; SOFTWARE is Dawn on
+    SwiftShader's Vulkan, which gives a headless browser on any host an
+    adapter, for tests of the guest's Vulkan (gui-test.py). The switches
+    are the ones unkernel's own tests pass (its .agents/vk.md)."""
+
+    OFF = ((), ())
+    SOFTWARE = (
+        (
+            "--enable-unsafe-webgpu",
+            "--use-vulkan=swiftshader",
+            "--use-webgpu-adapter=swiftshader",
+        ),
+        ("Vulkan", "WebGPU"),
+    )
+
+
+# The Chromium features every browser here runs with, whatever its
+# WebGPU: one --enable-features carries them all.
+FEATURES = ("SharedArrayBuffer",)
+
+
 BOOT_LIMIT_SECONDS = 180
 PROBE_LIMIT_SECONDS = 300
 POLL_SECONDS = 0.25
@@ -118,8 +142,9 @@ class Browser:
     guest.
     """
 
-    def __init__(self, binary, profile, gpu=Gpu.OFF):
+    def __init__(self, binary, profile, gpu=Gpu.OFF, webgpu=WebGpu.OFF):
         self.profile = profile
+        webgpu_switches, webgpu_features = webgpu.value
         self.port = free_port()
         self.stderr = tempfile.NamedTemporaryFile(prefix="chromium-", suffix=".log")
         self.process = subprocess.Popen(
@@ -133,7 +158,8 @@ class Browser:
                 "--no-default-browser-check",
                 f"--user-data-dir={profile}",
                 *gpu.value,
-                "--enable-features=SharedArrayBuffer",
+                *webgpu_switches,
+                "--enable-features=" + ",".join(FEATURES + webgpu_features),
                 "--remote-allow-origins=*",
                 "about:blank",
             ],

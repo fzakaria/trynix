@@ -6,16 +6,18 @@ A GUI program crosses more pieces than anything else the page runs:
 the relay the page writes into the guest, the vsock link, wland's
 compositor on the page, kwshm for a program's pixels and, for GL,
 Mesa's virgl driver, the guest's virtio-gpu device and the wasm GL
-renderer. boot-test only asks whether a shell appears, which it does
-with every one of those broken. This boots a link, starts the program
-at the shell the way a reader would, and waits for the compositor to
-take a frame from it.
+renderer, and for Vulkan, unkernel's kwvk driver and its renderer on
+the page's WebGPU. boot-test only asks whether a shell appears, which
+it does with every one of those broken. This boots a link, starts the
+program at the shell the way a reader would, and waits for the
+compositor to take a frame from it.
 
     nix run .#gui-test -- --site <a built site directory>
     nix run .#gui-test -- --site <site> --case foot --screenshots /tmp/gui
     nix run .#gui-test -- --site <site> --with firefox
     nix run .#gui-test -- --site <site> --fetch all
     nix run .#gui-test -- --site <site> --viewport phone
+    nix run .#gui-test -- --site <site> --case vulkan --webgpu off
 
 The cases:
 
@@ -60,6 +62,13 @@ The cases:
            back 35 s from when the guest first asks for them. Checks
            that xterm waits for its server and opens its window after
            the hold.
+    vulkan vulkan-tools alone: `vulkaninfo --summary` typed at the
+           page's shell, then `vkcube --wsi wayland`. With a WebGPU
+           adapter, vulkaninfo must name kwvk's device and vkcube's
+           window must draw through kwvk: frames presented by the
+           renderer and taken by the compositor, in the LunarG cube's
+           colours. Without one, vulkaninfo must fail with
+           VK_ERROR_INCOMPATIBLE_DRIVER and the guest go on answering.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -79,6 +88,12 @@ BiDi, which is the protocol Firefox speaks now that it has dropped the
 DevTools one. The cases are written against the few operations both
 offer (Chromium and Firefox below).
 
+--webgpu is Chromium's WebGPU: SwiftShader's, which gives the page an
+adapter on any host, or none, which is what Chromium on Linux gives
+without flags. Every case runs with it, so the GL cases run with guest
+Vulkan there as a reader's browser with an adapter has it. Firefox has
+its own WebGPU, and the vulkan case takes either outcome there.
+
 A boot needs the network: the closures come from cache.nixos.org, and
 the driver from the site's own cache (gl/), which a site with no
 published driver lacks; the gl case fails there.
@@ -87,16 +102,19 @@ published driver lacks; the gl case fails there.
 import argparse
 import base64
 import collections
+import enum
 import importlib.util
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.parse
+import zlib
 
 import websocket
 
@@ -244,12 +262,23 @@ FIREFOX_PREFS = {
 WEBDRIVER_ENTER = "\ue007"
 
 
+class Adapter(enum.Enum):
+    """What a driver's browser says about a WebGPU adapter: it gives
+    the page one, it gives none, or the browser decides for itself and
+    the vulkan case takes either."""
+
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNKNOWN = "unknown"
+
+
 class Chromium:
     """Chromium over the DevTools protocol: cpu-test.py's Browser, with
     the operations the cases use."""
 
-    def __init__(self, binary, profile, gpu):
-        self.browser = cpu.Browser(binary, profile, gpu=gpu)
+    def __init__(self, binary, profile, gpu, webgpu):
+        self.browser = cpu.Browser(binary, profile, gpu=gpu, webgpu=webgpu)
+        self.adapter = Adapter.PRESENT if webgpu is cpu.WebGpu.SOFTWARE else Adapter.ABSENT
 
     def set_viewport(self, viewport):
         self.browser.send(
@@ -341,8 +370,9 @@ class Firefox:
     wrapped in JSON.stringify and parsed here, which gives the same
     plain values the DevTools protocol's returnByValue does."""
 
-    def __init__(self, binary, profile, gpu):
-        del gpu  # Firefox picks its WebGL backend itself.
+    def __init__(self, binary, profile, gpu, webgpu):
+        del gpu, webgpu  # Firefox picks its WebGL and WebGPU backends itself.
+        self.adapter = Adapter.UNKNOWN
         os.makedirs(profile, exist_ok=True)
         with open(os.path.join(profile, "user.js"), "w") as f:
             for name, value in FIREFOX_PREFS.items():
@@ -671,12 +701,74 @@ HOLD_CHECK_SECONDS = 10
 XTERM_RUNNING = "pidof xterm > /dev/null"
 
 
-CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx"]
+# The vulkan case: vulkan-tools alone. vulkaninfo is typed at the page's
+# shell, which sourced the manifest that names kwvk to the Vulkan loader
+# (site/js/gui.js, sessionEnv), so it runs as a reader's would; its
+# output and status go to files the case reads through the page's exec.
+VULKAN_PACKAGES = ["vulkan-tools"]
+VULKANINFO_OUT = "/tmp/vulkaninfo.out"
+VULKANINFO_STATUS = "/tmp/vulkaninfo.status"
+VULKANINFO_COMMAND = (
+    f"vulkaninfo --summary > {VULKANINFO_OUT} 2>&1; echo $? > {VULKANINFO_STATUS}\n"
+)
+VULKANINFO_LIMIT_SECONDS = 60
+
+# What vulkaninfo prints for kwvk's device, and how it fails when the
+# browser gives the renderer no WebGPU adapter: kwvk's driver answers
+# the loader VK_ERROR_INCOMPATIBLE_DRIVER and no other driver is there.
+KWVK_DEVICE = "kwvk (WebGPU)"
+INCOMPATIBLE_DRIVER = "ERROR_INCOMPATIBLE_DRIVER"
+
+# The renderer's state once it is loaded on a WebGPU device
+# (vm.vk.status.state in unkernel's SDK). Without an adapter it is
+# "failed", with the reason in vm.vk.status.error.
+VK_READY = "ready"
+
+# vkcube on Wayland, left running. nixpkgs' vkcube (vulkan-tools 1.4.304
+# on) loads libwayland-client with dlopen, and its RUNPATH names only the
+# Vulkan loader, so the library is found only when the process already
+# holds it. On NixOS Mesa's Vulkan driver links it and the dlopen finds
+# that copy; kwvk's driver opens Wayland with dlopen as well, so in the
+# guest vkcube says "Cannot load wayland dynamic library" and exits.
+# The command names the store's libwayland directories for it, joined
+# by colons: the store holds more than one libwayland once the GL
+# driver's and the X server's closures are in it, and any of them
+# serves.
+VKCUBE_COMMAND = (
+    "LD_LIBRARY_PATH=$(ls -d /nix/store/*-wayland-[0-9]*/lib | tr '\\n' :)"
+    " vkcube --wsi wayland &\n"
+)
+VKCUBE_TITLE = "vkcube"
+
+# How many frames the renderer must have presented, and the compositor
+# taken, before the window's picture is judged, and how long they may
+# take.
+VKCUBE_FRAMES = 30
+FRAMES_LIMIT_SECONDS = 60
+
+# The judgement of vkcube's picture, after unkernel's own check: many
+# colours, and the LunarG logo's teal rather than the olive a swap of
+# red and blue makes of it. A pixel is teal when its green and blue
+# both exceed its red by TINT_MARGIN, olive when its red and green both
+# exceed its blue by as much. Measured on a right frame, 2026-11-24: 7.6%
+# teal, no olive, 2981 colours over a 500x500 window.
+TINT_MARGIN = 30
+MIN_TEAL_FRACTION = 0.01
+MIN_COLOURS = 256
+
+
+CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx", "vulkan"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
 GPU_HARDWARE = "hardware"
 GPUS = {GPU_SOFTWARE: cpu.Gpu.SOFTWARE, GPU_HARDWARE: cpu.Gpu.HARDWARE}
+
+# --webgpu's choices, and Chromium's WebGPU for each. Firefox has its
+# own and takes none.
+WEBGPU_SOFTWARE = "software"
+WEBGPU_OFF = "off"
+WEBGPUS = {WEBGPU_SOFTWARE: cpu.WebGpu.SOFTWARE, WEBGPU_OFF: cpu.WebGpu.OFF}
 
 
 # When the closure downloads, by the name a link carries
@@ -756,6 +848,111 @@ def screenshot(browser, directory, name, viewport):
     with open(path, "wb") as f:
         f.write(browser.screenshot(clip))
     print(f"  screenshot: {path}")
+
+
+# PNG's signature, and the colour types a browser's screenshot comes
+# in, by the bytes each pixel takes: RGB and RGBA, 8 bits a channel.
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_CHANNELS = {2: 3, 6: 4}
+PNG_DEPTH = 8
+
+# PNG's row filters (the PNG specification, section 9).
+PNG_FILTER_NONE = 0
+PNG_FILTER_SUB = 1
+PNG_FILTER_UP = 2
+PNG_FILTER_AVERAGE = 3
+PNG_FILTER_PAETH = 4
+
+
+def paeth(left, up, corner):
+    """PNG's Paeth predictor: whichever neighbour is nearest to
+    left + up - corner."""
+    guess = left + up - corner
+    to_left, to_up, to_corner = abs(guess - left), abs(guess - up), abs(guess - corner)
+    if to_left <= to_up and to_left <= to_corner:
+        return left
+    if to_up <= to_corner:
+        return up
+    return corner
+
+
+def png_pixels(data):
+    """The pixels of a browser screenshot's PNG, as (channels, rows):
+    each row a bytes of RGB or RGBA. Only what screenshots use: 8 bits a
+    channel, not interlaced."""
+    if data[: len(PNG_SIGNATURE)] != PNG_SIGNATURE:
+        raise SystemExit("FAIL the screenshot is not a PNG")
+
+    # The header and the image data, from the chunks.
+    pos = len(PNG_SIGNATURE)
+    compressed = []
+    while pos < len(data):
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        kind = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if kind == b"IHDR":
+            width, height, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", body)
+        if kind == b"IDAT":
+            compressed.append(body)
+    if depth != PNG_DEPTH or colour not in PNG_CHANNELS or interlace != 0:
+        raise SystemExit(f"FAIL the screenshot's PNG is of a kind not read here: {depth}, {colour}")
+
+    # Each row starts with its filter, which says how to predict each
+    # byte from the one to its left, the one above, or both.
+    channels = PNG_CHANNELS[colour]
+    stride = width * channels
+    raw = zlib.decompress(b"".join(compressed))
+    rows = []
+    above = bytearray(stride)
+    for y in range(height):
+        start = y * (stride + 1)
+        kind = raw[start]
+        row = bytearray(raw[start + 1 : start + 1 + stride])
+        for x in range(stride):
+            left = row[x - channels] if x >= channels else 0
+            corner = above[x - channels] if x >= channels else 0
+            if kind == PNG_FILTER_SUB:
+                row[x] = (row[x] + left) & 0xFF
+            elif kind == PNG_FILTER_UP:
+                row[x] = (row[x] + above[x]) & 0xFF
+            elif kind == PNG_FILTER_AVERAGE:
+                row[x] = (row[x] + (left + above[x]) // 2) & 0xFF
+            elif kind == PNG_FILTER_PAETH:
+                row[x] = (row[x] + paeth(left, above[x], corner)) & 0xFF
+        rows.append(bytes(row))
+        above = row
+    return channels, rows
+
+
+def tints(png):
+    """What vkcube's picture holds: the fraction of its pixels that are
+    teal, the fraction that are olive (see TINT_MARGIN), and how many
+    colours it has."""
+    channels, rows = png_pixels(png)
+    teal = olive = total = 0
+    colours = set()
+    for row in rows:
+        for x in range(0, len(row), channels):
+            red, green, blue = row[x], row[x + 1], row[x + 2]
+            total += 1
+            colours.add((red, green, blue))
+            if green - red >= TINT_MARGIN and blue - red >= TINT_MARGIN:
+                teal += 1
+            if red - blue >= TINT_MARGIN and green - blue >= TINT_MARGIN:
+                olive += 1
+    return teal / total, olive / total, len(colours)
+
+
+def window_clip(browser):
+    """The newest window's content, as a screenshot's clip in the
+    document's coordinates."""
+    return browser.evaluate(
+        "(() => { const c = [...document.querySelectorAll('#desktop canvas')].at(-1);"
+        " c.scrollIntoView({ block: 'nearest' });"
+        " const r = c.getBoundingClientRect();"
+        " return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height }; })()"
+    )
 
 
 def type_into_window(browser, text):
@@ -1131,6 +1328,108 @@ def run_slowx(browser, base, screenshots, fetch, viewport):
         raise SystemExit("FAIL the window came before the hold ended")
 
 
+def read_when_written(browser, path, limit, label):
+    """The contents of `path` in the guest once it holds something, read
+    through the page's exec; fails the run after `limit` seconds."""
+    started = time.monotonic()
+    while time.monotonic() - started < limit:
+        contents = guest_shell(browser, f"cat {path} 2>/dev/null")["stdout"]
+        if contents.strip():
+            return contents
+        time.sleep(POLL_SECONDS * 5)
+    raise SystemExit(f"FAIL {label}: nothing in {path} after {limit} s")
+
+
+def vk_value(browser, name):
+    """The SDK's guest Vulkan renderer's `name` (vm.vk: status or
+    stats), as plain values, or None when the SDK took no Vulkan, as it
+    does in a browser without navigator.gpu."""
+    return browser.evaluate(
+        f"(() => {{ const vk = window.trynix.kernel.vk;"
+        f" return vk ? JSON.parse(JSON.stringify(vk.{name})) : null; }})()"
+    )
+
+
+def run_vulkan(browser, base, screenshots, fetch, viewport):
+    """vulkan: boot vulkan-tools and run vulkaninfo at the page's shell.
+    With a WebGPU adapter, vulkaninfo must name kwvk's device, and
+    vkcube's window must draw through kwvk: frames the renderer
+    presented, the compositor took, and a picture of the right colours.
+    Without one, vulkaninfo must fail with VK_ERROR_INCOMPATIBLE_DRIVER
+    and the page must go on running the guest."""
+    print("vulkan")
+    seconds = boot(browser, base, VULKAN_PACKAGES, fetch, viewport)
+    print(f"  shell after {seconds:.1f} s")
+
+    # vulkaninfo, typed at the page's shell. Its status is written
+    # last, so a status means its output is all there.
+    started = time.monotonic()
+    browser.type(VULKANINFO_COMMAND)
+    status = int(
+        read_when_written(browser, VULKANINFO_STATUS, VULKANINFO_LIMIT_SECONDS, "vulkaninfo")
+    )
+    seconds = time.monotonic() - started
+    output = guest_shell(browser, f"cat {VULKANINFO_OUT}")["stdout"]
+
+    # Whether the renderer got an adapter, against what the browser was
+    # launched to give it.
+    renderer = vk_value(browser, "status")
+    has_adapter = renderer is not None and renderer["state"] == VK_READY
+    why = "no navigator.gpu" if renderer is None else renderer["error"]
+    if browser.adapter is Adapter.PRESENT and not has_adapter:
+        raise SystemExit(f"FAIL the browser was to give WebGPU an adapter and gave none: {why}")
+    if browser.adapter is Adapter.ABSENT and has_adapter:
+        raise SystemExit(f"FAIL the browser was to give WebGPU no adapter and gave {renderer['adapter']}")
+
+    # No adapter: vulkaninfo fails as it does with no driver, and the
+    # guest still answers the page.
+    if not has_adapter:
+        print(f"  no WebGPU adapter ({why}); vulkaninfo exited {status} after {seconds:.2f} s")
+        if status == 0 or INCOMPATIBLE_DRIVER not in output:
+            raise SystemExit(f"FAIL vulkaninfo did not fail with {INCOMPATIBLE_DRIVER}:\n{output}")
+        if guest_shell(browser, "true")["exitCode"] != 0:
+            raise SystemExit("FAIL the guest stopped answering after vulkaninfo")
+        print(f"  vulkaninfo failed with {INCOMPATIBLE_DRIVER}; the guest still answers")
+        return
+
+    print(
+        f"  renderer on {renderer['adapter']}, loaded in {renderer['loadMs']:.0f} ms;"
+        f" vulkaninfo exited {status} after {seconds:.2f} s"
+    )
+    if status != 0 or KWVK_DEVICE not in output:
+        raise SystemExit(f"FAIL vulkaninfo did not name {KWVK_DEVICE}:\n{output}")
+
+    # vkcube's window: its first frame, then frames until the renderer
+    # has presented VKCUBE_FRAMES of them.
+    browser.type(VKCUBE_COMMAND)
+    seconds = first_frame(browser)
+    print(f"  first frame {seconds:.2f} s after the command")
+    _, seconds = wait_for(
+        browser,
+        f"(window.trynix.kernel.vk.stats.renderer?.presents ?? 0) >= {VKCUBE_FRAMES}"
+        f" && window.trynix.desktopStats.commits >= {VKCUBE_FRAMES}",
+        FRAMES_LIMIT_SECONDS,
+        f"{VKCUBE_FRAMES} vkcube frames",
+    )
+    stats = vk_value(browser, "stats")
+    print(
+        f"  {VKCUBE_FRAMES} frames {seconds:.2f} s later; renderer: {stats['renderer']['presents']}"
+        f" presents, {stats['renderer']['errors']} errors"
+    )
+    titles = browser.evaluate("window.trynix.desktop.windows().map((w) => w.title)")
+    if VKCUBE_TITLE not in titles:
+        raise SystemExit(f"FAIL no window titled {VKCUBE_TITLE!r}: {titles}")
+    if stats["renderer"]["errors"] != 0:
+        raise SystemExit("FAIL the renderer reported errors for vkcube")
+
+    # The picture: the window's content as the page shows it.
+    teal, olive, colours = tints(browser.screenshot(window_clip(browser)))
+    screenshot(browser, screenshots, "vkcube", viewport)
+    print(f"  picture: {teal:.1%} teal, {olive:.1%} olive, {colours} colours")
+    if teal < MIN_TEAL_FRACTION or olive >= teal or colours < MIN_COLOURS:
+        raise SystemExit("FAIL vkcube's picture is not the LunarG cube's")
+
+
 RUNNERS = {
     "foot": run_foot,
     "gl": run_gl,
@@ -1139,6 +1438,7 @@ RUNNERS = {
     "glx": run_glx,
     "oldgl": run_oldgl,
     "slowx": run_slowx,
+    "vulkan": run_vulkan,
 }
 
 
@@ -1176,6 +1476,12 @@ def main():
         default=GPU_SOFTWARE,
         help="draw WebGL with SwiftShader (the default, any host) or the host's GPU",
     )
+    parser.add_argument(
+        "--webgpu",
+        choices=list(WEBGPUS),
+        default=WEBGPU_SOFTWARE,
+        help="Chromium's WebGPU: SwiftShader's (the default, any host) or none, as Chromium on Linux has",
+    )
     args = parser.parse_args()
     if (args.site is None) == (args.url is None):
         parser.error("pass one of --site or --url")
@@ -1191,7 +1497,7 @@ def main():
     try:
         for case in args.case or CASES:
             browser = DRIVERS[args.kind](
-                binary, os.path.join(workdir, case), GPUS[args.gpu]
+                binary, os.path.join(workdir, case), GPUS[args.gpu], WEBGPUS[args.webgpu]
             )
             try:
                 RUNNERS[case](
