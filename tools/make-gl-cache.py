@@ -10,7 +10,12 @@ is where the driver is built, by hand.
 
 Only the paths cache.nixos.org does not hold are kept: Mesa itself.
 The page asks cache.nixos.org first, so the rest of Mesa's closure
-comes from there.
+comes from there. Each kept path has its NAR listing beside its
+narinfo, as cache.nixos.org's do: every guest is linked to the
+driver, and the dynamic loader of any program that links libglvnd
+looks for its libraries in /run/opengl-driver/lib first, which the
+page answers from the listing (site/js/lazy.js) rather than by
+downloading the driver.
 
 The narinfos are not signed. The site serves them from the page's own
 origin, which the page trusts as it trusts its own JavaScript
@@ -186,12 +191,18 @@ def upstream_has(path):
 
 
 def write_cache(mesa, closure, cache):
-    """nix copy the closure into a scratch cache, keep what upstream
-    lacks, and check the sizes before anything reaches the tree.
-    Returns the kept files, relative to the cache, with their sizes, and
-    the store paths they serve."""
+    """nix copy the closure into a scratch cache, with listings, keep
+    what upstream lacks, and check the sizes before anything reaches the
+    tree. Returns the kept files, relative to the cache, with their
+    sizes, and the store paths they serve."""
     scratch = tempfile.mkdtemp(prefix="trynix-gl-")
-    run("nix", "copy", "--to", f"file://{scratch}?compression=xz", mesa)
+    run(
+        "nix",
+        "copy",
+        "--to",
+        f"file://{scratch}?compression=xz&write-nar-listing=true",
+        mesa,
+    )
 
     kept = {}
     served = []
@@ -201,9 +212,10 @@ def write_cache(mesa, closure, cache):
         served.append(path)
         digest = os.path.basename(path)[:DIGEST_LENGTH]
         narinfo = f"{digest}.narinfo"
+        listing = f"{digest}.ls"
         with open(os.path.join(scratch, narinfo)) as f:
             url = next(line.split(": ", 1)[1].strip() for line in f if line.startswith("URL: "))
-        for relative in (narinfo, url):
+        for relative in (narinfo, listing, url):
             kept[relative] = os.path.getsize(os.path.join(scratch, relative))
 
     too_big = {name: size for name, size in kept.items() if size > FILE_LIMIT_BYTES}
@@ -239,7 +251,7 @@ def main():
         json.dump(manifest, f, indent=2)
         f.write("\n")
 
-    print(f"{len(kept) // 2} of {len(closure)} paths are not on {UPSTREAM}; wrote {CACHE_IN_TREE}:")
+    print(f"{len(served)} of {len(closure)} paths are not on {UPSTREAM}; wrote {CACHE_IN_TREE}:")
     for relative, size in sorted(kept.items()):
         print(f"  {size:>12}  {relative}")
     print(f"  {sum(kept.values()):>12}  in all")

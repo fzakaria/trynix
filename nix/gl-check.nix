@@ -15,6 +15,10 @@
 # the cache has narinfos for. The page asks the site for those paths and
 # no others (site/js/substituters.js), so a path missing from the list
 # is fetched from nowhere, and a listed path with no narinfo is a 404.
+# Each one needs its NAR listing beside it too: every guest is linked to
+# the driver, and without a listing a lookup of a name in it, as any
+# libglvnd program's loader makes in /run/opengl-driver/lib, downloads
+# the whole NAR (site/js/lazy.js).
 #
 # And that the site serves the driver nix/mesa-virgl.nix builds today:
 # `mesa` is packages.aarch64-linux.mesa-virgl, and a change to its
@@ -67,6 +71,14 @@ pkgs.runCommand "trynix-gl-check"
       diff <(echo "$listed") <(echo "$served") >&2 || true
       exit 1
     fi
+
+    for narinfo in ${gl}/cache/*.narinfo; do
+      if [ ! -f "''${narinfo%.narinfo}.ls" ]; then
+        echo "$(basename "$narinfo") has no NAR listing beside it:" >&2
+        echo "publish the driver with nix run .#make-gl-cache" >&2
+        exit 1
+      fi
+    done
 
     ${pkgs.lib.optionalString (!builtins.elem built pinned) ''
       echo "nix/mesa-virgl.nix builds ${built}, which site/gl does not serve:" >&2
