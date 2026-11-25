@@ -122,7 +122,8 @@ https://trynix.dev/?pkg=xeyes&boot=1&run=xeyes+%26
  xterm ──X11──> Xwayland ──> xwayland-satellite ──wayland──> wlandr
  (wlandr holds :0 and starts the satellite, which starts Xwayland)
  etr ──GLX──> Mesa virgl ──DRI3──> Xwayland, drawing with glamor through Mesa virgl
- vkcube ── kwvk ──vsock 1018──> kwvk renderer on WebGPU, frames read back into wl_shm buffers
+ vkcube ── kwvk ──vsock 1018──────> kwvk renderer on WebGPU
+   └─ wl_buffer named by id ──> wlandr   └─> frame by external buffer to the compositor
 ```
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
@@ -159,7 +160,11 @@ virgl driver on the guest's virtio-gpu device, which unkernel backs
 with virglrenderer compiled to wasm on a WebGL2 context of the page.
 The relay names such a buffer by its GPU resource
 (`--dmabuf virtgpu`), and the compositor takes the resource's picture
-from the renderer as an ImageBitmap, with no readback.
+from the renderer as an ImageBitmap, with no readback. A Vulkan
+program's frames stay on the page's GPU the same way: kwvk names each
+swapchain image by an id (`--external-buffers`), and the compositor
+takes the image's picture from the Vulkan renderer (see [Frames
+without readback](#frames-without-readback)).
 
 The kernel always boots with kwshm and the virtio-gpu device, since
 which programs a reader will run is not known at boot. Neither costs
@@ -727,6 +732,33 @@ built site names the driver, lists it among its cache's paths, has a
 listing beside its narinfo, and that its NAR matches the narinfo's
 `NarHash` and unpacks to the driver.
 
+### Frames without readback
+
+kwvk presents a Wayland swapchain in one of two ways (unkernel's
+`vk/PROTOCOL.md`, Amendments, "External present"). By readback, each
+present copies the image's pixels from its GPUTexture into a mapped
+buffer, sends them over vsock to the guest, and kwvk copies them into
+a `wl_shm` buffer, which the compositor reads through kwshm and uploads
+to the GPU again. By external buffer, kwvk makes one `wl_buffer` per
+swapchain image with wland's `wland_external_buffer_manager_v1`, named
+by the renderer's token and the image's export id, and a present
+carries no pixels: at each commit the compositor asks guest Vulkan's
+renderer for the image's picture (`kernel.vk.externalImage`), a copy
+into a WebGPU OffscreenCanvas on the renderer's device handed over as
+an ImageBitmap.
+
+kwvk takes the second way when three things hold: the SDK's probe of
+a WebGPU canvas passed, so the renderer's hello carries a token; the
+relay runs with `--external-buffers`, which wland has since
+0.1.0-261124-3c987e5; and the page gives the compositor a
+`resolveExternal` (`gpuSource` in [site/js/gui.js](../site/js/gui.js)).
+wland offers the global only with the last two, and kwvk uses it only
+with the first. The probe fails in headless Chromium without a GL
+backend for canvases (no `--use-angle`), where the canvas path would
+destroy the device; kwvk then reads frames back as before. Without
+`vk=1` the page has no Vulkan renderer and gives no `resolveExternal`,
+so no program is offered the global.
+
 ### Which browsers have an adapter
 
 The renderer needs a WebGPU adapter. Chrome has one on macOS, Windows,
@@ -765,10 +797,10 @@ Run in trynix, 2026-11-24, headless Chromium with SwiftShader's WebGPU:
   so it also asks the X display about surfaces, and its first run
   starts the X server: 3.0 s, against 0.5 s when shells had no
   `DISPLAY`.
-- `vkcube --wsi wayland`, 58 frames a second at 500x500. The frames
-  reach the compositor as wl_shm buffers, each read back from the GPU
-  at present: wland on the page does not offer the external buffers
-  kwvk can present by instead. nixpkgs' vkcube (vulkan-tools 1.4.304
+- `vkcube --wsi wayland`, 58 frames a second at 500x500, when its
+  frames were read back (see [Frames without
+  readback](#frames-without-readback) for how they reach the
+  compositor now). nixpkgs' vkcube (vulkan-tools 1.4.304
   on) needs a hand: it loads libwayland-client and libxcb with
   `dlopen`, and its RUNPATH names only the Vulkan loader. On NixOS
   Mesa's Vulkan driver links libwayland-client, so the library is
@@ -1213,7 +1245,8 @@ llm case set, types `vulkaninfo --summary` at the page's shell and then
 starts `vkcube --wsi wayland`. With a WebGPU
 adapter vulkaninfo must name kwvk's device, and vkcube's window must
 draw through kwvk: 30 frames presented by the renderer and taken by
-the compositor, with no renderer error, and a picture with the LunarG
+the compositor, every one by external buffer with no byte read back,
+with no renderer error, and a picture with the LunarG
 logo's teal, no olive (red and blue swapped) and many colours. Without
 one, vulkaninfo must fail with `VK_ERROR_INCOMPATIBLE_DRIVER` and the
 guest must go on answering. The llm case boots `llama-cpp-vulkan@1.0.0`,
@@ -1238,7 +1271,8 @@ the console, terminal and windows, at each step.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline, the
-environment every shell gets among it,
+environment every shell gets among it, and which of the GL and Vulkan
+renderers' pictures the compositor is given,
 [tests/site/unkernel.test.mjs](../tests/site/unkernel.test.mjs) that
 a shell that sources it has the site's kwvk named as its one Vulkan
 driver, or the kernel's own when the site names none, and zink kept

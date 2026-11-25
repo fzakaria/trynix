@@ -1,8 +1,9 @@
 // Tests the guest half of a GUI session (site/js/gui.js): the
 // environment every shell gets, which store path is taken for a
 // selected GL driver, how the guest's fixed names are linked to the X
-// server and the GL driver, and what the page writes into the share
-// and runs in the guest. The share
+// server and the GL driver, what the page writes into the share and
+// runs in the guest, and how the compositor is given GL and Vulkan
+// programs' pictures without reading them back. The share
 // is a Map behind the few file calls gui.js makes, the site's files come
 // from a stubbed fetch, and the guest's shell is a function that records
 // what it was asked to run.
@@ -12,6 +13,7 @@ import assert from "node:assert/strict";
 import {
   capabilityLinks,
   enableGlamor,
+  gpuSource,
   guestSession,
   isGlDriver,
   sessionEnv,
@@ -127,6 +129,27 @@ test("a session starts the relay once", async () => {
   assert.match(command, /--buffers kwshm/);
   assert.match(command, new RegExp(`--display ${env.WAYLAND_DISPLAY}`));
   assert.match(command, new RegExp(`XDG_RUNTIME_DIR=${env.XDG_RUNTIME_DIR}`));
+});
+
+// Checks that the relay is started with external buffers, so a Vulkan
+// program's swapchain images can reach the compositor by an id the page
+// resolves instead of as pixels read back into shared memory. The relay
+// tracks the buffers only with the flag, and wland offers them only
+// when the relay says it does and the page resolves them (gpuSource).
+test("a session starts the relay with external buffers", async () => {
+  stubFetch();
+  const commands = [];
+  const session = guestSession({
+    FS: fakeShare(),
+    exec: async (command) => {
+      commands.push(command);
+      return RELAY_STARTED;
+    },
+  });
+  await session.start();
+
+  const [start] = commands.filter((command) => command.includes("--link"));
+  assert.match(start, / --external-buffers /);
 });
 
 // Checks that a session gives the guest a machine id, which D-Bus and
@@ -402,4 +425,107 @@ test("a session writes X resources that give xterm a font", async () => {
   );
   assert.match(resources, /^XTerm\*faceName: monospace$/m);
   assert.match(resources, /^XTerm\*faceSize: \d+$/m);
+});
+
+// An external buffer as wland hands one over: kwvk's swapchain image,
+// named by the renderer's token and the image's export id.
+const EXTERNAL_REF = Object.freeze({
+  id: (7n << 32n) | 3n,
+  width: 640,
+  height: 480,
+  format: 0x34325241,
+  flags: 0,
+});
+
+// A GPU buffer as wland hands one over: a GL program's virtio-gpu
+// resource.
+const GPU_REF = Object.freeze({
+  resource: 12,
+  offset: 0,
+  width: 640,
+  height: 480,
+  format: 0x34325258,
+  flags: 0,
+});
+
+// A picture the compositor draws and then gives back to be closed.
+function fakeImage(name) {
+  return {
+    name,
+    closed: false,
+    close() {
+      this.closed = true;
+    },
+  };
+}
+
+// Checks which resolvers the compositor gets, since each one's presence
+// is what wland offers programs: a GL renderer gives resolve (GL
+// programs' buffers by virtio-gpu resource), guest Vulkan gives
+// resolveExternal (kwvk's swapchain images by id), and a kernel with
+// neither gets no source at all.
+test("the compositor resolves what the kernel can show", () => {
+  const gl = { image: () => fakeImage("gl") };
+  const vk = { externalImage: () => fakeImage("vk") };
+
+  const both = gpuSource(gl, vk);
+  assert.equal(typeof both.resolve, "function");
+  assert.equal(typeof both.resolveExternal, "function");
+
+  const glOnly = gpuSource(gl, undefined);
+  assert.equal(typeof glOnly.resolve, "function");
+  assert.equal(glOnly.resolveExternal, undefined);
+
+  const vkOnly = gpuSource(undefined, vk);
+  assert.equal(vkOnly.resolve, undefined);
+  assert.equal(typeof vkOnly.resolveExternal, "function");
+
+  assert.equal(gpuSource(undefined, undefined), undefined);
+});
+
+// Checks that an external buffer is resolved by guest Vulkan's renderer
+// with the ref as wland gives it, synchronously, that a null from the
+// renderer (an id no running program made) keeps the window's last
+// picture, and that the compositor closes each picture it was given.
+test("an external buffer is the Vulkan renderer's picture of it", () => {
+  const asked = [];
+  const image = fakeImage("frame");
+  let next = image;
+  const vk = {
+    externalImage(ref) {
+      asked.push(ref);
+      return next;
+    },
+  };
+  const source = gpuSource(undefined, vk);
+
+  assert.equal(source.resolveExternal(EXTERNAL_REF), image);
+  assert.deepEqual(asked, [EXTERNAL_REF]);
+  source.release(image);
+  assert.equal(image.closed, true);
+
+  next = null;
+  assert.equal(source.resolveExternal(EXTERNAL_REF), null);
+});
+
+// Checks that a GL program's buffer is still the GL renderer's picture
+// of its resource, with the size, opacity and orientation the relay
+// gives, beside guest Vulkan's resolver.
+test("a GPU buffer is the GL renderer's picture of its resource", () => {
+  const asked = [];
+  const gl = {
+    image(resource, options) {
+      asked.push({ resource, options });
+      return fakeImage("gl");
+    },
+  };
+  const source = gpuSource(gl, { externalImage: () => null });
+
+  assert.equal(source.resolve(GPU_REF).name, "gl");
+  assert.deepEqual(asked, [
+    {
+      resource: 12,
+      options: { width: 640, height: 480, opaque: true, flipY: false },
+    },
+  ]);
 });

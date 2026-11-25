@@ -80,8 +80,9 @@ The cases:
            page's shell, then `vkcube --wsi wayland`. With a WebGPU
            adapter, vulkaninfo must name kwvk's device and vkcube's
            window must draw through kwvk: frames presented by the
-           renderer and taken by the compositor, in the LunarG cube's
-           colours. Without one, vulkaninfo must fail with
+           renderer and taken by the compositor by external buffer,
+           with nothing read back, in the LunarG cube's colours.
+           Without one, vulkaninfo must fail with
            VK_ERROR_INCOMPATIBLE_DRIVER and the guest go on answering.
     llm    llama.cpp's Vulkan build with vk=1 and a 1 MB model the link
            names by URL and hash (file=), as the page's LLM Try link
@@ -1494,7 +1495,8 @@ def run_vulkan(browser, base, screenshots, fetch, viewport):
     """vulkan: boot vulkan-tools and run vulkaninfo at the page's shell.
     With a WebGPU adapter, vulkaninfo must name kwvk's device, and
     vkcube's window must draw through kwvk: frames the renderer
-    presented, the compositor took, and a picture of the right colours.
+    presented, the compositor took by external buffer with nothing read
+    back, and a picture of the right colours.
     Without one, vulkaninfo must fail with VK_ERROR_INCOMPATIBLE_DRIVER
     and the page must go on running the guest."""
     print("vulkan")
@@ -1561,6 +1563,19 @@ def run_vulkan(browser, base, screenshots, fetch, viewport):
         raise SystemExit(f"FAIL no window titled {VKCUBE_TITLE!r}: {titles}")
     if stats["renderer"]["errors"] != 0:
         raise SystemExit("FAIL the renderer reported errors for vkcube")
+
+    # The frames reached the compositor by external buffer: each one a
+    # picture the renderer copied on the GPU, none read back into shared
+    # memory. kwvk presents this way when the relay offers external
+    # buffers and the SDK's probe of a WebGPU canvas passed, which it
+    # does in Chromium given a GL backend for canvases, as every --gpu
+    # here gives it.
+    presents = stats["renderer"]["presents"]
+    external = stats["renderer"]["externalPresents"]
+    read_back = stats["renderer"]["bytesRead"]
+    print(f"  {external} of {presents} presents by external buffer, {read_back} bytes read back")
+    if external != presents or read_back != 0:
+        raise SystemExit("FAIL vkcube's frames were read back rather than presented by external buffer")
 
     # The picture: the window's content as the page shows it.
     teal, olive, colours = tints(browser.screenshot(window_clip(browser)))

@@ -16,7 +16,10 @@
 // virtio-gpu device, which unkernel backs with virglrenderer compiled
 // to wasm on a WebGL2 context of the page; the relay names such a
 // buffer by its GPU resource and the compositor asks the renderer for
-// the resource's picture (gpuSource).
+// the resource's picture (gpuSource). A Vulkan program renders through
+// kwvk on the page's WebGPU, and kwvk names each swapchain image by an
+// id the relay passes on as an external buffer; the compositor asks
+// guest Vulkan's renderer for the image's picture (gpuSource too).
 //
 // The relay starts in every guest, once the shell is at its prompt, and
 // the page loads wland only when the relay first dials, which it does
@@ -319,7 +322,13 @@ async function fetchGuiFile(name) {
 // one, and starts the relay unless it runs, ready for X clients
 // (X11_LAUNCHER). With the render node the relay takes GL programs'
 // buffers by GPU resource; without one they render in software into
-// shared memory like any other program. setsid gives the relay a
+// shared memory like any other program. With external buffers it takes
+// buffers a program names by an id the page resolves: kwvk's swapchain
+// images, which otherwise are read back from the GPU at every present
+// and copied into shared memory. The relay tracks them only with the
+// flag, and wland offers them to programs only where the page resolves
+// them too (gpuSource), so the flag alone changes nothing for a guest
+// without Vulkan. setsid gives the relay a
 // session of its own, so no shell's hangup reaches it. The command
 // prints the relay's PID, the running one's or the new one's. A
 // background job keeps its PID through setsid: setsid forks only when
@@ -334,7 +343,8 @@ function relayCommand() {
     `flags=--link-on-demand`,
     `[ -c ${RENDER_NODE} ] && flags="$flags --dmabuf virtgpu:${RENDER_NODE} --no-fence-wait"`,
     `XDG_RUNTIME_DIR=${RUNTIME_DIR} setsid ${RELAY_PATH} --link ${link}` +
-      ` --buffers kwshm --display ${DISPLAY_NAME} --xwayland ${X11_LAUNCHER} $flags` +
+      ` --buffers kwshm --external-buffers --display ${DISPLAY_NAME}` +
+      ` --xwayland ${X11_LAUNCHER} $flags` +
       ` < /dev/null > ${RELAY_LOG} 2>&1 &`,
     `echo $!`,
   ].join("\n");
@@ -549,30 +559,55 @@ function handleSource(shm) {
   };
 }
 
-// The compositor's access to GL programs' buffers: each is a virtio-gpu
-// resource, and the renderer blits its current picture into an
-// ImageBitmap without reading it back to the CPU. Mesa's virgl driver
-// puts a buffer at offset 0 of its resource; any other offset is not
-// supported and the window keeps its last picture.
-function gpuSource(gpu) {
+// The compositor's access to the buffers that live on the page's GPU,
+// with nothing read back to the CPU. Each resolver is there only with
+// the renderer behind it, since its presence is what wland offers
+// programs: resolve, linux-dmabuf; resolveExternal,
+// wland_external_buffer_manager_v1. Undefined with neither.
+//
+// `gpu` is the GL renderer (kernel.gl.gpu). A GL program's buffer is a
+// virtio-gpu resource, and the renderer blits its current picture into
+// an ImageBitmap. Mesa's virgl driver puts a buffer at offset 0 of its
+// resource; any other offset is not supported and the window keeps its
+// last picture.
+//
+// `vk` is guest Vulkan's renderer (kernel.vk). A Vulkan program's
+// buffer is a swapchain image kwvk named by an id, and the renderer
+// copies the image's texture into an ImageBitmap on its own WebGPU
+// device, synchronously. A null (no renderer yet, a lost device, an id
+// no running program made) keeps the window's last picture. kwvk names
+// images this way only where the renderer could make such pictures:
+// where the SDK's probe of a WebGPU canvas failed, its hello carries no
+// token and kwvk reads every frame back into shared memory as before.
+export function gpuSource(gpu, vk) {
+  if (gpu === undefined && vk === undefined) {
+    return undefined;
+  }
   let offsetSaid = false;
 
-  return {
-    resolve(ref) {
-      if (ref.offset !== 0) {
-        if (!offsetSaid) {
-          log(`gui: a GPU buffer at offset ${ref.offset}: not shown`);
-          offsetSaid = true;
-        }
-        return null;
+  // GL programs' buffers, by virtio-gpu resource.
+  function resolve(ref) {
+    if (ref.offset !== 0) {
+      if (!offsetSaid) {
+        log(`gui: a GPU buffer at offset ${ref.offset}: not shown`);
+        offsetSaid = true;
       }
-      return gpu.image(ref.resource, {
-        width: ref.width,
-        height: ref.height,
-        opaque: ref.format === XRGB8888 || ref.format === XBGR8888,
-        flipY: (ref.flags & Y_INVERT) !== 0,
-      });
-    },
+      return null;
+    }
+    return gpu.image(ref.resource, {
+      width: ref.width,
+      height: ref.height,
+      opaque: ref.format === XRGB8888 || ref.format === XBGR8888,
+      flipY: (ref.flags & Y_INVERT) !== 0,
+    });
+  }
+
+  // Vulkan programs' swapchain images, by id.
+  const resolveExternal = (ref) => vk.externalImage(ref);
+
+  return {
+    ...(gpu === undefined ? {} : { resolve }),
+    ...(vk === undefined ? {} : { resolveExternal }),
     release: (image) => image.close(),
   };
 }
@@ -617,7 +652,7 @@ export function attachDesktop({ kernel, frame }) {
     log("gui: the relay dialed; loading the compositor");
 
     const wland = await import(`../${GUI_DIR}/${GUI_WLAND}`);
-    const gpu = kernel.gl?.gpu;
+    const gpu = gpuSource(kernel.gl?.gpu, kernel.vk);
     const link = connections(first);
     link.close = () => listener.close();
 
@@ -628,7 +663,7 @@ export function attachDesktop({ kernel, frame }) {
       container: frame.container,
       link: wland.createStreamLink(link),
       buffers: handleSource(kernel.shm),
-      ...(gpu ? { gpu: gpuSource(gpu) } : {}),
+      ...(gpu === undefined ? {} : { gpu }),
       // Window changes and keyboard focus changes alike: wland calls
       // this for both when no focus callback of its own is given.
       onWindowsChange: frame.changed,
@@ -643,7 +678,11 @@ export function attachDesktop({ kernel, frame }) {
         }
       },
     });
-    log(`gui: compositor started${gpu ? ", GL buffers by GPU resource" : ""}`);
+    const sources = [
+      ...(gpu?.resolve ? ["GL buffers by GPU resource"] : []),
+      ...(gpu?.resolveExternal ? ["Vulkan frames by external buffer"] : []),
+    ];
+    log(`gui: compositor started${sources.map((s) => `, ${s}`).join("")}`);
 
     frame.attach(desktop);
     window.trynix.desktop = desktop;
