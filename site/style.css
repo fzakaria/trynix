@@ -8,6 +8,9 @@
   --line: #e0e0e0;
   --accent: #4f6bed;
   --code-bg: #f4f4f4;
+  --good: #2e7d32;
+  --warn: #9a6700;
+  --bad: #c62828;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -17,6 +20,9 @@
     --line: #33363d;
     --accent: #8fa3ff;
     --code-bg: #22252c;
+    --good: #6fcf7a;
+    --warn: #e3b341;
+    --bad: #f28b82;
   }
 }
 * {
@@ -351,6 +357,17 @@ code {
 #network-status:empty,
 #vulkan-status:empty {
   display: none;
+}
+/* The Vulkan status line's note on the adapter, coloured by what the
+   browser has (Tone in vulkan.js): a GPU, a software adapter, or none. */
+#vulkan-status [data-tone="good"] {
+  color: var(--good);
+}
+#vulkan-status [data-tone="warn"] {
+  color: var(--warn);
+}
+#vulkan-status [data-tone="bad"] {
+  color: var(--bad);
 }
 /* The relay's field under the network choice, its label beside it. */
 #network .relay {

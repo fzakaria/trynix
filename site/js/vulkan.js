@@ -71,15 +71,38 @@ export async function probeAdapter(gpu) {
   return { kind: fallback ? Adapter.SOFTWARE : Adapter.HARDWARE, name };
 }
 
-// What the Settings lane says about the probe's answer.
+// How the status line colours its note on the adapter: good for a GPU,
+// a warning for a software adapter, bad for none. The values are the
+// note's data-tone in the page, which style.css colours.
+export const Tone = Object.freeze({
+  GOOD: "good",
+  WARN: "warn",
+  BAD: "bad",
+});
+
+// A page that lists what this browser's WebGPU gives a page, from the
+// WebGPU group's own repository (github.com/webgpu/webgpureport), for a
+// reader whose adapter is missing or in software.
+export const WEBGPU_REPORT = "https://webgpureport.org/";
+
+// What the Settings lane says about the probe's answer: { text, tone,
+// link }, the link null when the text, naming a GPU, says it all.
 export function adapterNote({ kind, name }) {
   switch (kind) {
     case Adapter.HARDWARE:
-      return `Vulkan programs would draw on this browser's WebGPU adapter: ${name}.`;
+      return { text: `WebGPU adapter: ${name}.`, tone: Tone.GOOD, link: null };
     case Adapter.SOFTWARE:
-      return `This browser's WebGPU adapter, ${name}, draws in software, so Vulkan programs would be slow.`;
+      return {
+        text: `WebGPU adapter: ${name}, in software, so Vulkan programs would be slow.`,
+        tone: Tone.WARN,
+        link: WEBGPU_REPORT,
+      };
     default:
-      return "This browser gives WebGPU no adapter, so programs would find no Vulkan device.";
+      return {
+        text: "This browser has no WebGPU adapter, so programs would find no Vulkan device.",
+        tone: Tone.BAD,
+        link: WEBGPU_REPORT,
+      };
   }
 }
 

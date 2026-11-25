@@ -817,20 +817,40 @@ function wireNetworkChoice() {
 wireNetworkChoice();
 
 // What the Vulkan status line says (showVulkanStatus): the adapter
-// probe's answer once it is in, and whether a choice waits for the next
+// probe's note once it is in, and whether a choice waits for the next
 // boot.
-let adapterSaid = "";
+let adapterSaid = null;
 let vulkanChanged = false;
 
+// The note on the adapter as the status line shows it: its text in its
+// tone, and its link, if any, by host name. The link opens a new tab so
+// that following it leaves a running guest running.
+function adapterLine({ text, tone, link }) {
+  const note = document.createElement("span");
+  note.dataset.tone = tone;
+  note.textContent = text;
+  if (link === null) {
+    return [note];
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = link;
+  anchor.target = "_blank";
+  anchor.rel = "noopener";
+  anchor.textContent = new URL(link).hostname;
+  return [note, " ", anchor];
+}
+
 function showVulkanStatus() {
-  vulkanStatus.textContent = [
-    adapterSaid,
-    vulkanChanged && bootState === BootState.RUNNING
-      ? "From the next boot; this guest keeps what it booted with."
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const parts = adapterSaid === null ? [] : adapterLine(adapterSaid);
+
+  // A choice made while a guest runs waits for the next boot.
+  if (vulkanChanged && bootState === BootState.RUNNING) {
+    const nextBoot =
+      "From the next boot; this guest keeps what it booted with.";
+    parts.push(parts.length === 0 ? nextBoot : ` ${nextBoot}`);
+  }
+  vulkanStatus.replaceChildren(...parts);
 }
 
 // The Vulkan choice under Settings: off or on. A choice goes into the

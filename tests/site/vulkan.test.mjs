@@ -14,8 +14,10 @@ import {
   kernelVulkan,
   pickVulkan,
   probeAdapter,
+  Tone,
   Vulkan,
   vulkanOf,
+  WEBGPU_REPORT,
 } from "../../site/js/vulkan.js";
 
 // The translator's versioned URL, as the page builds it from
@@ -103,22 +105,30 @@ test("the probe names the adapter and says whether it is software", async () => 
   assert.deepEqual(await probeAdapter(undefined), none);
 });
 
-// Checks what the status line says for each kind of adapter: the
-// adapter's name, a warning that a software one is slow, and without
-// one that programs would find no Vulkan device.
+// Checks what the status line says for each kind of adapter: a
+// hardware adapter by name alone, in the good tone; a software one by
+// name with a warning that it is slow; none with the warning that
+// programs would find no Vulkan device. The last two link to a page
+// that reports what this browser's WebGPU has, and the first needs no
+// link because the line already names the adapter.
 test("the status line names the adapter and warns about software", () => {
-  assert.match(
+  assert.deepEqual(
     adapterNote({ kind: Adapter.HARDWARE, name: "amd rdna-3" }),
-    /amd rdna-3/,
+    { text: "WebGPU adapter: amd rdna-3.", tone: Tone.GOOD, link: null },
   );
-  assert.match(
-    adapterNote({ kind: Adapter.SOFTWARE, name: "google swiftshader" }),
-    /google swiftshader.*slow/,
-  );
-  assert.match(
-    adapterNote({ kind: Adapter.ABSENT, name: "" }),
-    /no Vulkan device/,
-  );
+
+  const software = adapterNote({
+    kind: Adapter.SOFTWARE,
+    name: "google swiftshader",
+  });
+  assert.match(software.text, /google swiftshader.*slow/);
+  assert.equal(software.tone, Tone.WARN);
+  assert.equal(software.link, WEBGPU_REPORT);
+
+  const absent = adapterNote({ kind: Adapter.ABSENT, name: "" });
+  assert.match(absent.text, /no Vulkan device/);
+  assert.equal(absent.tone, Tone.BAD);
+  assert.equal(absent.link, WEBGPU_REPORT);
 });
 
 // Checks which adapters let the reader choose On: any adapter, hardware
