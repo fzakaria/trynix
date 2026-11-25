@@ -997,9 +997,15 @@ Time and frame rate:
 | mousepad                      | 17 s        | 26 s                          |
 | mpv, a lavfi test video       | 38 s        | 28 s                          |
 | wev                           | 5.3 s       | 0.7 s                         |
+| gzdoom + freedoom             | 10–12 s     | 14 s; title screen 27–32 s    |
 
 The galculator to wev rows were taken while an aarch64 build ran on
-the same machine, so read them as orders of magnitude. es2gears'
+the same machine, so read them as orders of magnitude. The gzdoom row
+is the Doom Try link, 2026-11-24, in headless Chromium 157 on
+SwiftShader with nothing cached: by its title screen the page had
+fetched 168 paths, 172.5 MB, on first use. GZDoom's first frame is one
+of the windows it opens and closes while it picks a GL context; it
+then loads its scripts before it draws the game. es2gears'
 first frame is the guest loading the program and Mesa under the
 emulator, and it is no faster with the small Mesa, since the virgl
 driver was never what took the time; the GL renderer itself loads in 0.06 s on

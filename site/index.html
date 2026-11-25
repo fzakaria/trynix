@@ -202,6 +202,14 @@
         title="a chat with Qwen2.5 0.5B, run by llama.cpp on your GPU; the model is a 400 MB download"
         >an LLM on your GPU</a
       > ·
+      <!-- GZDoom opens full screen unless told not to, and its Vulkan
+           renderer needs multiDrawIndirect, which the guest's Vulkan
+           driver lacks, so the link picks its GLES renderer. -->
+      <a
+        href="?pkg=gzdoom&pkg=freedoom&engine=unkernel&run=gzdoom%20-iwad%20/nix/store/%2A-freedoom-%2A/share/games/doom/freedoom1.wad%20%2Bvid_fullscreen%200%20%2Bvid_preferbackend%202%20%26&boot=1"
+        title="Freedoom in GZDoom, drawn by your GPU"
+        >Doom</a
+      > ·
       <a
         href="?pkg=aisleriot&engine=unkernel&run=sol%20%26&boot=1"
         >solitaire</a
