@@ -678,10 +678,14 @@ gives no adapter unless started with flags; `gui-test` starts it with
 the ones unkernel's own tests use (`--enable-unsafe-webgpu`,
 `--use-vulkan=swiftshader`, `--use-webgpu-adapter=swiftshader` and the
 `Vulkan` and `WebGPU` features), which give any host SwiftShader's
-adapter. Firefox 160 on Linux, headless, had no `navigator.gpu`; with
-`dom.webgpu.enabled` and `gfx.webgpu.ignore-blocklist` set in its
-preferences it had an adapter, and vulkaninfo and vkcube ran, vkcube
-at about 10 frames a second on SwiftShader against 58 in Chromium.
+adapter. With `--use-angle=vulkan` and the `Vulkan` feature instead
+it gives the host's GPU, `amd rdna-3` for the 780M, which is how [A
+language model](#a-language-model) was measured; `--use-vulkan=native`
+alone still gives SwiftShader. Firefox 160 on Linux, headless, had no
+`navigator.gpu`; with `dom.webgpu.enabled` and
+`gfx.webgpu.ignore-blocklist` set in its preferences it had an
+adapter, and vulkaninfo and vkcube ran, vkcube at about 10 frames a
+second on SwiftShader against 58 in Chromium.
 Safari has not been run.
 
 Without an adapter a program gets what it would get on a machine with
@@ -725,6 +729,55 @@ its pipelines are refused and abort the run (`quantize_q8_1_x4`,
 rwkv ones); the guest keeps a copy of every host-visible allocation,
 so models need the larger memory settings; and every number upstream
 has is from SwiftShader but one, an Apple M4 Pro in Chrome.
+
+### A language model
+
+The Try link "an LLM on your GPU" opens llama.cpp's chat, `llama-cli`
+from `llama-cpp-vulkan@1.0.0` (build 12359), on Qwen2.5-0.5B-Instruct
+at Q4_K_M, Apache 2.0: a 398 MB file the link names by its Hugging Face
+URL at a commit (`file=`). The version is pinned because the index
+sorts the build numbers nixpkgs used before 0.2.0 (up to 10408) above
+1.0.0. ggml-vulkan takes kwvk's device and `-ngl 99` puts every layer
+on it. `-c 2048` keeps the context buffers small: at Llama 3.2 1B's
+own 128k context, llama.cpp asked for 8 GB and gave up. On wikitext-2,
+Q4_K_M's perplexity was 15.12, Q8_0's (531 MB) 14.98 and Q4_0's
+(353 MB) 16.82.
+
+Measured on a laptop (Radeon 780M) in headless Chromium 152 with its
+hardware adapter, 2026-11-24, from opening the link to the first word
+of the answer to a question typed at the chat's prompt:
+
+| visit                       | first answer | downloaded                            |
+| --------------------------- | ------------ | ------------------------------------- |
+| first, in an empty profile  | 57 to 166 s  | 398 MB model, 33 MB llama.cpp closure |
+| a reload                    | 15 to 19 s   | nothing                               |
+| a reload, no WebGPU adapter | 39 s         | nothing                               |
+
+Each visit also fetched the site's own files, 17 to 28 MB, which the
+local server sent uncached. A first visit is the model's download,
+which Hugging Face's CDN served at 2.6 to 10 MB/s in three visits here;
+a reload reads the model from the Cache API, and most of its 15 s is
+llama-cli loading it through the share and onto the GPU. The renderer process peaked at 1.9 to 2.0 GiB,
+the GPU process at 150 to 225 MiB. The guest needs little: the chat
+answered in 512 MiB with 82 MiB to spare, so the link names no `mem=`.
+Without an adapter kwvk says `device lost`, llama.cpp warns that it
+found no usable GPU, and the same chat runs on the guest's CPU.
+
+llama-bench on the same build and file, 64 prompt tokens and 32
+generated:
+
+| where                         | prompt   | generation |
+| ----------------------------- | -------- | ---------- |
+| kwvk, the 780M through WebGPU | 784 t/s  | 31 t/s     |
+| the guest's CPU, 4 CPUs       | 4.3 t/s  | 1.2 t/s    |
+| the guest's CPU, 16 CPUs      | 5.8 t/s  | 1.4 t/s    |
+| the laptop itself, on RADV    | 2647 t/s | 145 t/s    |
+
+In the chat llama-cli reports 9 to 15 t/s: llama-bench times decoding
+alone, and llama-cli also reads each token's logits back and samples
+them on the guest's CPU. SmolLM2-135M and Llama-3.2-1B ran on kwvk too,
+at Q8_0, Q4_0 and Q4_K_M, all between 28 and 39 t/s; none of the
+pipelines kwvk refuses came up.
 
 ### What does not
 

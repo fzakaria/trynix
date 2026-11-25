@@ -193,6 +193,15 @@
         title="GL gears drawn by your GPU; the page adds a GL driver"
         >GL gears</a
       > ·
+      <!-- A chat with a language model, which llama.cpp runs on the
+           guest's Vulkan (vk=1), drawn on the page's WebGPU (docs/gui.md).
+           The model is a file the link names (file=), from Hugging Face
+           at a commit, which sends CORS headers. -->
+      <a
+        href="?pkg=llama-cpp-vulkan@1.0.0&file=https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/41ba88dbac95fed2528c92514c131d73eb5a174b/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf%20sha256-brkj59JunOoogR4ajoUgCbISQvsVeyYUnTsYjzqMhlM%3D&engine=unkernel&vk=1&run=llama-cli%20-m%20/nix/store/q9nxdhd6c2zhlk7ws54rczl2ivz00dqv-Qwen2.5-0.5B-Instruct-Q4_K_M.gguf%20-ngl%2099%20-c%202048&boot=1"
+        title="a chat with Qwen2.5 0.5B, run by llama.cpp on your GPU; the model is a 400 MB download"
+        >an LLM on your GPU</a
+      > ·
       <a
         href="?pkg=aisleriot&engine=unkernel&run=sol%20%26&boot=1"
         >solitaire</a
