@@ -321,6 +321,30 @@
         </p>
       </section>
 
+      <section class="change">
+        <h3>Two guest CPUs</h3>
+        <p class="meta">
+          <a
+            data-unpinned
+            href="https://github.com/fzakaria/trynix/blob/main/docs/unkernel.md"
+            >docs/unkernel.md</a
+          >
+          · unkernel's SMP kernel · the bench names the guest's size in every link
+        </p>
+        <p class="gain">
+          <code>opencode --version</code> 55 to 114 s between runs on one CPU, 30 to 33 s on two;
+          the other packages within a few percent
+        </p>
+        <p>
+          The page now boots the unkernel guest on several CPUs, up to four by the host's threads,
+          and the bench now boots it on two with 2048 MiB whatever the host has. The records before
+          this one ran on one CPU with 512 MiB. opencode's runtime runs threads beside its main
+          one, and on one CPU its time swung by two to one between runs, so those records' opencode
+          points are one draw from that spread. The step at this record is the second CPU, not a
+          faster unkernel.
+        </p>
+      </section>
+
       <h2>Appendix</h2>
       <dl id="appendix"></dl>
       <div id="appendix-skipped" class="muted"></div>
