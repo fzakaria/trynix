@@ -1,13 +1,68 @@
 # Networking
 
-Status: proposal, written 2026-09-12. Nothing here is built.
+Status: the unkernel guest has a network, on by default since
+2026-11-23, through a Wisp relay ("What is built"). The qemu guest has
+none, and the design proposed for it on 2026-09-12 ("Design for the
+qemu guest" and "Test first") is not built.
 
-The guest has no network. [`nix/guest/machine.json`](../nix/guest/machine.json)
-starts QEMU with `-nic none`, and the kernel fragment drops every NIC
-driver it can. People have asked for network access, and the tools they
-run in the guest are ordinary nixpkgs builds (curl, git, pip) pointed
-at ordinary hosts. This document is what the browser allows, what other
-projects did, and the design proposed for trynix.
+People have asked for network access, and the tools they run in the
+guest are ordinary nixpkgs builds (curl, git, pip) pointed at ordinary
+hosts. This document is what was built for the unkernel guest, what
+the browser allows, what other projects did, and the design proposed
+for the qemu guest.
+
+## What is built
+
+The unkernel guest takes the public relay route under "What the
+browser allows". unkernel's SDK gives the guest a network device whose
+frames end in a small network stack on the page (the SDK's
+`NetStack`), and each TCP connection the guest opens becomes a stream
+over one WebSocket to a
+[Wisp](https://github.com/MercuryWorkshop/wisp-protocol) relay, which
+opens the connection for it. The page side is
+[site/js/network.js](../site/js/network.js). The guest's addresses, the
+CA bundle the page writes for HTTPS, and the Settings and link controls
+are in [unkernel.md, "Network"](unkernel.md#network).
+
+```
+guest eth0, 10.0.2.15 by DHCP
+  -> NetStack on the page: DHCP, DNS to stand-in addresses, TCP
+  -> one wss:// WebSocket, a Wisp stream per TCP connection
+  -> the relay, wss://wisp.unkernel.dev:6680 unless a link names another
+  -> the host being reached, looked up by name on the relay
+```
+
+The proposal below had set a public relay aside for two reasons, and
+both went away. The stack in the page is unkernel's, so trynix carries
+none of its own. And unkernel's author added trynix.dev to the relay's
+allowed origins, so the traffic leaves from a relay whose operator
+agreed to carry it. Agreement is not an uptime promise: if the relay
+goes down or stops accepting the origin, the guest has no network until
+Settings or a link (`wisp=`) names another. There is no helper to run,
+and `wss://` to a public host needs no Local Network Access prompt.
+
+Every host the 2026-09-12 `fetch()` probe found blocked is reachable,
+since the relay opens a plain TCP connection and CORS never applies.
+Measured on trynix.dev from headless Chromium on a home connection,
+2026-11-25, with git 2.56.0 and curl 8.23.0 in one guest. curl's times
+are its own `time_total`; git's are the whole run as the page's
+`run-command` saw it, which adds 0.2 to 1 s over the command's own.
+
+| request                                             | `fetch()`, 2026-09-12 | through the relay, 2026-11-25      |
+| --------------------------------------------------- | --------------------- | ---------------------------------- |
+| github.com `info/refs?service=git-upload-pack`      | blocked               | 200 in 1.6 s                       |
+| `git clone --depth 1` of octocat/Hello-World        | cannot work           | cloned in 2.2 s                    |
+| `git clone --depth 1` of BurntSushi/ripgrep, 4.6 MB | cannot work           | cloned in 3.4 s                    |
+| index.crates.io `config.json`                       | blocked               | 200 in 1.0 s                       |
+| deb.debian.org `/debian/`                           | blocked               | 200 in 0.8 s                       |
+| api.anthropic.com `/`                               | blocked               | 404 in 1.7 s, the server answering |
+
+Each new connection opens a Wisp stream through the relay before its
+own TCP and TLS handshakes, so an HTTPS request costs about a second
+however small. There is no UDP beyond the DHCP and DNS the page answers
+itself, no IPv6, and nothing can connect in, so a server in the guest
+is reachable from the guest alone. What the relay sees is under
+"Security".
 
 ## What the browser allows
 
@@ -52,7 +107,8 @@ guest's frames and does real networking. Browsers differ:
 plain `wss://` to a public host. Tailscale's DERP relays are one such
 host: they carry WireGuard packets they cannot decrypt, and Tailscale
 added WebSockets as a DERP transport for exactly this use in its
-[SSH console](https://tailscale.com/blog/ssh-console).
+[SSH console](https://tailscale.com/blog/ssh-console). The unkernel
+guest reaches its Wisp relay the same way.
 
 ## Prior art
 
@@ -92,7 +148,15 @@ ships a browser build (`main.wasm.gz`, 6.56 MB) whose JS API is
 port on the server. Browser traffic is DERP-only until
 [tailcat#4](https://github.com/tailscale/tailcat/issues/4) adds WebRTC.
 
-## Design
+## Design for the qemu guest
+
+Proposed on 2026-09-12, before trynix had the unkernel engine, and not
+built. The qemu guest still has no network:
+[`nix/guest/machine.json`](../nix/guest/machine.json) starts QEMU with
+`-nic none`, and the kernel fragment drops every NIC driver it can.
+The relay route has not been tried on the qemu engine. This design
+puts the network stack on a helper the reader runs instead, and what
+such a helper would still add for the unkernel guest is under "Later".
 
 ### The VM always has a NIC
 
@@ -346,6 +410,26 @@ A boot with no network keeps the warm start described in
 
 ## Security
 
+### The relay
+
+Built, for the unkernel guest. The relay sits in the middle of every
+connection: it sees which hosts the guest connects to and the bytes of
+anything sent unencrypted, plain HTTP included. The guest's TLS stays
+end to end, since the CA bundle the page writes is nixpkgs' and the
+relay holds no certificate the guest trusts.
+
+A link can name a relay with `wisp=`
+([site/js/url.js](../site/js/url.js)), which sends a reader's traffic
+through a server the link's author chose. The page says so in Settings
+and in its log whenever a link does. The relay's URL travels in the
+query string, so a relay that lets readers in by a token in its URL
+hands that token to everyone the link reaches. The helper's connection
+string stays out of the query string, below, for the same reason.
+
+### The helper
+
+Not built; part of the design for the qemu guest.
+
 A WebSocket carries no CORS, so any site the reader visits can open
 `ws://127.0.0.1:<port>`. Unchecked, the helper is a way into the reader's
 LAN for every page in the browser. The loopback listener rejects any
@@ -377,7 +461,7 @@ own network, and the reason the link is a credential.
 
 ## Test first
 
-In order, since each gates the next:
+For the qemu guest's design, in order, since each gates the next:
 
 1. **Bytes out of QEMU.** emscripten routes the socket netdev through
    its WebSocket emulation. For localhost that is enough. For tailcat
@@ -415,11 +499,22 @@ translated to IP packets in the page, and about 16 MB loaded on login.
 LAN reachability is layer 3 only: mDNS, SSDP and discovery broadcasts do
 not cross the router.
 
-**A public relay.** `wss://wisp.mercurywork.shop` is a throttled public
-[wisp](https://github.com/MercuryWorkshop/wisp-protocol) server. Wisp
-multiplexes TCP streams, not frames, so it needs a network stack in the
-page, and all traffic would leave from someone else's IP under no terms
-trynix can rely on. An opt-in string at most.
+**A relay on the reader's machine.** The first version of this document
+listed a public Wisp relay here as an opt-in at most, because Wisp
+multiplexes TCP streams, not frames, and so needs a network stack in
+the page, and because the traffic would leave from someone else's IP
+under no terms trynix could rely on. That is what the unkernel guest
+now uses by default ("What is built"). What is left for later is the
+same relay run by the reader. Any Wisp v1 server that accepts
+trynix.dev's origin works as `wisp=`, so a reader who wants their own
+IP, their LAN, or no third party in the path could run one and name
+`ws://127.0.0.1:<port>`. That is the localhost row of "What the browser
+allows": a Local Network Access prompt in Chrome, none in Firefox,
+blocked in Safari. The server must check `Origin`, for the reason under
+"Security", or every page in the browser can use it. It carries TCP
+only, as the public relay does; UDP and connections in still need the
+helper's gvproxy. Untested, and trynix has no `nix run` for a Wisp
+server.
 
 **Fetch-only.** The alpine.sh model with no helper at all. The CORS table
 above is why it is not the default; it could back the none transport for
