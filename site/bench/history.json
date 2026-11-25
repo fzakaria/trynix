@@ -6220,6 +6220,355 @@
           ]
         }
       }
+    },
+    {
+      "engine": "unkernel",
+      "tag": "unkernel-0.2.0-261125-cec0a49",
+      "unkernel_version": "0.2.0-261125-cec0a49",
+      "subject": "unkernel 0.2.0-261125-cec0a49",
+      "date": "2026-11-25T18:06:12+00:00",
+      "measured": "2026-11-25T18:06:12+00:00",
+      "runner": {
+        "host": "leviathan",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
+        "cores": 256,
+        "memory_gib": 251,
+        "kernel": "6.18.63",
+        "browser": "Chromium 152.0.7977.75",
+        "cpu_affinity": [
+          120,
+          121,
+          122,
+          123
+        ],
+        "clock_mhz": 2362,
+        "memory_policy": "bind:5"
+      },
+      "exec": {
+        "results": [
+          {
+            "name": "hello",
+            "spec": "pkg=hello",
+            "command": "hello",
+            "shell_seconds": 2.9,
+            "resolved": "/nix/store/hwrycgha80xa6n743pfqa3s1wn4bakx7-hello-2.12.3",
+            "cold": {
+              "page_seconds": 0.169,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.16,
+                "user": 0.08,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.41,
+              "browser_peak_rss_bytes": 1430773760
+            },
+            "warm": {
+              "page_seconds": 0.116,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.11,
+                "user": 0.07,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.32,
+              "browser_peak_rss_bytes": 1432477696
+            }
+          },
+          {
+            "name": "ripgrep",
+            "spec": "pkg=ripgrep",
+            "command": "rg --version",
+            "shell_seconds": 2.95,
+            "resolved": "/nix/store/76bbldfx3g88jxaqjakksgc5mvl1c3kb-ripgrep-15.2.0",
+            "cold": {
+              "page_seconds": 0.071,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.06,
+                "user": 0.01,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.22,
+              "browser_peak_rss_bytes": 1463586816
+            },
+            "warm": {
+              "page_seconds": 0.027,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.02,
+                "user": 0.01,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.11,
+              "browser_peak_rss_bytes": 1458647040
+            }
+          },
+          {
+            "name": "jujutsu",
+            "spec": "pkg=jujutsu",
+            "command": "jj --version",
+            "shell_seconds": 2.99,
+            "resolved": "/nix/store/v4071wr5pzxywwajjz280c8rdwcv7792-jujutsu-0.47.1",
+            "cold": {
+              "page_seconds": 0.249,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.24,
+                "user": 0.19,
+                "sys": 0.01
+              },
+              "browser_cpu_seconds": 0.52,
+              "browser_peak_rss_bytes": 1590243328
+            },
+            "warm": {
+              "page_seconds": 0.203,
+              "wall_seconds": 0.27,
+              "status": 0,
+              "guest": {
+                "real": 0.19,
+                "user": 0.18,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 0.39,
+              "browser_peak_rss_bytes": 1594081280
+            }
+          },
+          {
+            "name": "python",
+            "spec": "pkg=python3",
+            "command": "python3 -c 'print(1)'",
+            "shell_seconds": 4.13,
+            "resolved": "/nix/store/9zyabiswyisqky2gd1d3z1ig5rm7dd94-python3-3.14.10",
+            "cold": {
+              "page_seconds": 1.124,
+              "wall_seconds": 1.33,
+              "status": 0,
+              "guest": {
+                "real": 1.11,
+                "user": 0.89,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 2.49,
+              "browser_peak_rss_bytes": 1762861056
+            },
+            "warm": {
+              "page_seconds": 0.97,
+              "wall_seconds": 1.06,
+              "status": 0,
+              "guest": {
+                "real": 0.96,
+                "user": 0.85,
+                "sys": 0.0
+              },
+              "browser_cpu_seconds": 2.12,
+              "browser_peak_rss_bytes": 1768460288
+            }
+          },
+          {
+            "name": "opencode",
+            "spec": "pkg=opencode@1.18.29",
+            "command": "opencode --version",
+            "shell_seconds": 4.56,
+            "resolved": "/nix/store/bggjqhxp5sapm7qnbd8jcwhmmwnbv9gh-opencode-1.18.29",
+            "cold": {
+              "page_seconds": 30.87,
+              "wall_seconds": 30.92,
+              "status": 0,
+              "guest": {
+                "real": 30.86,
+                "user": 37.78,
+                "sys": 0.4
+              },
+              "browser_cpu_seconds": 60.9,
+              "browser_peak_rss_bytes": 2013519872
+            },
+            "warm": {
+              "page_seconds": 29.546,
+              "wall_seconds": 29.6,
+              "status": 0,
+              "guest": {
+                "real": 29.53,
+                "user": 36.79,
+                "sys": 0.36
+              },
+              "browser_cpu_seconds": 56.89,
+              "browser_peak_rss_bytes": 1904455680
+            }
+          }
+        ],
+        "guest": {
+          "cpus": 2,
+          "memory_mib": 2048
+        }
+      },
+      "baseline": {
+        "tag": "engine-20260913-2056",
+        "exec": {
+          "results": [
+            {
+              "name": "hello",
+              "spec": "pkg=hello",
+              "command": "hello",
+              "shell_seconds": 5.25,
+              "resolved": "/nix/store/sd779x86bjaqxj2lzh2jsir4h0zjz6d1-hello-2.12.3",
+              "cold": {
+                "page_seconds": 1.207,
+                "wall_seconds": 1.33,
+                "status": 0,
+                "guest": {
+                  "real": 1.04,
+                  "user": 0.44,
+                  "sys": 0.5
+                },
+                "browser_cpu_seconds": 1.55,
+                "browser_peak_rss_bytes": 2714652672
+              },
+              "warm": {
+                "page_seconds": 0.496,
+                "wall_seconds": 0.53,
+                "status": 0,
+                "guest": {
+                  "real": 0.37,
+                  "user": 0.14,
+                  "sys": 0.21
+                },
+                "browser_cpu_seconds": 0.67,
+                "browser_peak_rss_bytes": 2719211520
+              }
+            },
+            {
+              "name": "ripgrep",
+              "spec": "pkg=ripgrep",
+              "command": "rg --version",
+              "shell_seconds": 5.23,
+              "resolved": "/nix/store/whbrk657qmih065xal60m4khwf6cb9pj-ripgrep-15.2.0",
+              "cold": {
+                "page_seconds": 0.955,
+                "wall_seconds": 1.06,
+                "status": 0,
+                "guest": {
+                  "real": 0.77,
+                  "user": 0.18,
+                  "sys": 0.52
+                },
+                "browser_cpu_seconds": 1.31,
+                "browser_peak_rss_bytes": 2750394368
+              },
+              "warm": {
+                "page_seconds": 0.397,
+                "wall_seconds": 0.53,
+                "status": 0,
+                "guest": {
+                  "real": 0.26,
+                  "user": 0.04,
+                  "sys": 0.21
+                },
+                "browser_cpu_seconds": 0.55,
+                "browser_peak_rss_bytes": 2755903488
+              }
+            },
+            {
+              "name": "jujutsu",
+              "spec": "pkg=jujutsu",
+              "command": "jj --version",
+              "shell_seconds": 5.32,
+              "resolved": "/nix/store/66qgw69a6dqj1hm2l83pkpkr0cqayswy-jujutsu-0.47.1",
+              "cold": {
+                "page_seconds": 3.143,
+                "wall_seconds": 3.17,
+                "status": 0,
+                "guest": {
+                  "real": 2.97,
+                  "user": 2.0,
+                  "sys": 0.87
+                },
+                "browser_cpu_seconds": 4.12,
+                "browser_peak_rss_bytes": 2779111424
+              },
+              "warm": {
+                "page_seconds": 1.259,
+                "wall_seconds": 1.32,
+                "status": 0,
+                "guest": {
+                  "real": 1.13,
+                  "user": 0.64,
+                  "sys": 0.45
+                },
+                "browser_cpu_seconds": 1.79,
+                "browser_peak_rss_bytes": 2786545664
+              }
+            },
+            {
+              "name": "python",
+              "spec": "pkg=python3",
+              "command": "python3 -c 'print(1)'",
+              "shell_seconds": 6.57,
+              "resolved": "/nix/store/bya4ansy58az5133kryqp2cvrxbnz8qy-python3-3.14.10",
+              "cold": {
+                "page_seconds": 5.369,
+                "wall_seconds": 5.54,
+                "status": 0,
+                "guest": {
+                  "real": 5.2,
+                  "user": 3.62,
+                  "sys": 1.27
+                },
+                "browser_cpu_seconds": 7.39,
+                "browser_peak_rss_bytes": 3078574080
+              },
+              "warm": {
+                "page_seconds": 3.036,
+                "wall_seconds": 3.17,
+                "status": 0,
+                "guest": {
+                  "real": 2.9,
+                  "user": 1.89,
+                  "sys": 0.91
+                },
+                "browser_cpu_seconds": 4.29,
+                "browser_peak_rss_bytes": 3036446720
+              }
+            },
+            {
+              "name": "opencode",
+              "spec": "pkg=opencode@1.18.29",
+              "command": "opencode --version",
+              "shell_seconds": 7.66,
+              "resolved": "/nix/store/6pw7n475sa1d4scq8sy1qkdn2bcy0glc-opencode-1.18.29",
+              "cold": {
+                "page_seconds": 184.099,
+                "wall_seconds": 184.14,
+                "status": 0,
+                "guest": {
+                  "real": 183.9,
+                  "user": 162.55,
+                  "sys": 18.64
+                },
+                "browser_cpu_seconds": 237.45,
+                "browser_peak_rss_bytes": 3401637888
+              },
+              "warm": {
+                "page_seconds": 173.084,
+                "wall_seconds": 173.34,
+                "status": 0,
+                "guest": {
+                  "real": 172.81,
+                  "user": 153.73,
+                  "sys": 17.09
+                },
+                "browser_cpu_seconds": 218.41,
+                "browser_peak_rss_bytes": 4070617088
+              }
+            }
+          ]
+        }
+      }
     }
   ]
 }
