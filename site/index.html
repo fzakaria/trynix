@@ -212,6 +212,17 @@
         title="a bullet-hell game drawn by your GPU through Vulkan"
         >Taisei on Vulkan</a
       > ·
+      <!-- The Zed editor, whose wgpu renderer draws through the guest's
+           Vulkan (vk=1), opening nixpkgs' recipe for hello, a file the
+           link fetches from raw.githubusercontent.com at a commit
+           (file=). Zed refuses to run as root, which every guest shell
+           is, unless ZED_ALLOW_ROOT says to. The version is the one
+           measured in docs/gui.md. -->
+      <a
+        href="?pkg=zed-editor@1.29.3&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/pkgs/by-name/he/hello/package.nix%20sha256-1Fp1hlr6JgOyv3376Y9Bh7wMCWRHJeskogmGSDxW%2BvA%3D&engine=unkernel&vk=1&run=ZED_ALLOW_ROOT%3Dtrue%20zeditor%20--foreground%20/nix/store/y3gpbspcv43bpagkik69lnix23jvq15m-package.nix%20%26&boot=1"
+        title="the Zed code editor drawn by your GPU through Vulkan, opening nixpkgs' recipe for hello"
+        >Zed on Vulkan</a
+      > ·
       <!-- GZDoom opens full screen unless told not to, and its Vulkan
            renderer compiles its shaders in the guest for about a minute
            before the first frame, so the link picks its GLES renderer. -->

@@ -924,6 +924,49 @@ them on the guest's CPU. SmolLM2-135M and Llama-3.2-1B ran on kwvk too,
 at Q8_0, Q4_0 and Q4_K_M, all between 28 and 39 t/s; none of the
 pipelines kwvk refuses came up.
 
+### An editor
+
+The Try link "Zed on Vulkan" opens nixpkgs' recipe for hello, fetched
+with `file=` from raw.githubusercontent.com at a commit, in the Zed
+editor 1.29.3, the index's newest aarch64 build. Zed draws with wgpu,
+and unkernel 0.2.0-261125-cec0a49's kwvk is what lets wgpu make its
+device and draw its pipelines the right way up. Zed refuses to start as
+root, which every guest shell is, unless `ZED_ALLOW_ROOT=true` says to.
+It opens the file in Restricted Mode and asks whether to trust
+`/share/nix/store`, the store's real path; Enter trusts it.
+
+VS Code is unfree, so Hydra does not build it and cache.nixos.org has
+none. VSCodium is there, and runs on GL as root with `--no-sandbox
+--user-data-dir <dir>`, once the guest has `/usr/bin/env` for its
+launcher's `#!` line ([unkernel.md](./unkernel.md#how-the-page-uses-it)).
+
+Measured 2026-11-25 on the laptop (Radeon 780M, headless Chromium 152
+with its hardware WebGPU adapter), each run in a new profile with
+downloads on first use. "Picture" is from the command to the first
+frame with more than 24 colours; typing is from each of twelve keys to
+the compositor's next frame from the program, polled every 5 ms, after
+the trust dialog was dismissed:
+
+| editor             | runs | shell              | picture            | link to picture    | typing, median   |
+| ------------------ | ---- | ------------------ | ------------------ | ------------------ | ---------------- |
+| Zed 1.29.3, Vulkan | 5    | 11.9 s (10.2–14.4) | 8.5 s (8.2–9.5)    | 20.1 s (18.6–23.6) | 110 ms (2–193)   |
+| VSCodium 1.143, GL | 3    | 24.4 s (18.0–27.2) | 51.8 s (50.7–55.1) | 76.2 s (68.7–82.3) | 296 ms (13–4273) |
+
+Zed's typing column is from the three runs that dismissed the dialog;
+its 2 ms is a frame that was already on its way.
+VSCodium's first frame came 20 to 22 s after the command, and its
+frames had fewer than 25 colours for 30 s more. Its keys took 13 ms to
+4.3 s, with one key in each run over 3.7 s.
+
+What they fetch: the selected package's own path comes before the
+shell, Zed's 90 MB (387 MB unpacked) and VSCodium's 199 MB (614 MB),
+and the rest of the closure on first use. Zed's closure is 247 paths,
+417 MB compressed and 1.57 GB unpacked, of which it opened 116 paths,
+231 MB unpacked, by its first picture, downloading 80 MB after the
+command. VSCodium's is 268 paths, 562 MB and 1.82 GB, of which 172
+paths, 379 MB unpacked, by its first picture. Both ran in the default
+2 GiB guest.
+
 ### What does not
 
 - kwvk does not offer geometry or tessellation shaders, texel buffers,
