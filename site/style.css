@@ -157,9 +157,43 @@ code {
   word-break: break-all;
 }
 
-/* Example links under the intro. */
+/* Example links under the intro, in a <div> spaced as the paragraphs
+   around it are. */
+.examples {
+  margin: 1em 0;
+}
 .examples a {
   white-space: nowrap;
+}
+
+/* The examples past the first few, in a <details> drawn inline: its
+   summary, "more", reads as the intro's hint phrases do, and its links
+   carry on the line once it opens. The summary goes then, since the
+   whole list is out. The closed content needs display: none of its
+   own, because an inline box ignores the content-visibility the
+   browser hides it with. A browser without ::details-content puts the
+   links on a line of their own, which still works. */
+.examples details,
+.examples summary,
+.examples details[open]::details-content {
+  display: inline;
+}
+.examples details:not([open])::details-content {
+  display: none;
+}
+.examples summary {
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+.examples summary::-webkit-details-marker {
+  display: none;
+}
+.examples summary:hover {
+  text-decoration-color: currentColor;
+}
+.examples details[open] > summary {
+  display: none;
 }
 
 /* The lane tabs: search, ranges, store path, settings. */
