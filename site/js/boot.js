@@ -331,8 +331,8 @@ export async function startVM({
     // name, so the package added last wins.
     //
     // Returns what the unkernel engine's add returns (unkernel.js). This
-    // guest gets no X server or PulseAudio daemon from the page, so an
-    // addition brings its shell nothing.
+    // guest gets no X server from the page, so an addition brings its
+    // shell nothing.
     add(unpacked, roots) {
       const basenames = [];
       while (unpacked.length > 0) {

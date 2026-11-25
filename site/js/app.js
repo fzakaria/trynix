@@ -1130,9 +1130,8 @@ function reportX11(result) {
 }
 
 // Say how the shell already running gets what an addition brought it,
-// an X server or a PulseAudio daemon (`added`, what the engine's add
-// resolved to; gui.js, shellNote), unless the status names silent
-// selections.
+// an X server (`added`, what the engine's add resolved to; gui.js,
+// shellNote), unless the status names silent selections.
 function reportShell(added) {
   const note = shellNote(added.shellUpdates);
   if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {

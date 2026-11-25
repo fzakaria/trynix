@@ -36,7 +36,6 @@ import { openTerminal } from "./terminal.js";
 import { consoleFrame } from "./frame.js";
 import { guestDriver } from "./agent.js";
 import { createSoundOut } from "./sound.js";
-import { pulseDaemonIn, soundEnv, soundServer } from "./pulse.js";
 import { caBundleShell } from "./network.js";
 import { CA_BUNDLE, CERTS_DIR } from "./config.js";
 import { consoleRecorder, pause } from "./console.js";
@@ -179,19 +178,12 @@ async function visible(kernel, paths) {
 // typed into, and the X display once the closure holds an X server
 // (`x11Server`, its basename, or null). With a network, TLS clients are
 // pointed at the CA bundle in the share (`caBundle`, or null without
-// one). Sound clients are told about the PulseAudio daemon the page
-// starts (`daemon`, a store basename, or null without one; pulse.js).
-// A variable given null is unset, which a shell started from another
-// shell needs as much as the exports: it inherits the older shell's
-// environment, and sources this over it.
-function manifest({ caBundle, daemon, x11Server }) {
+// one).
+function manifest({ caBundle, x11Server }) {
   const session = Object.entries({
     ...sessionEnv(),
-    ...soundEnv(daemon),
     ...(x11Server === null ? {} : x11Env()),
-  }).map(([name, value]) =>
-    value === null ? `unset ${name}` : `export ${name}="${value}"`,
-  );
+  }).map(([name, value]) => `export ${name}="${value}"`);
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
@@ -433,11 +425,9 @@ export async function startUnkernel({
     }
   }
 
-  // A command in the guest's shell, for the GUI session's and the sound
-  // server's setup.
+  // A command in the guest's shell, for the GUI session's setup.
   const sh = (command) => kernel.exec(SHELL, ["-c", command]);
   const session = guestSession({ FS, exec: sh });
-  const server = soundServer({ exec: sh });
 
   // Every path of the closure the guest sees: the written ones, and on a
   // lazily served share the ones still to come.
@@ -454,18 +444,12 @@ export async function startUnkernel({
   let x11Linked = null;
 
   // The shell fragment, written into the share for every shell that
-  // starts from now on, naming `daemon` as the PulseAudio daemon (a
-  // store basename, or null for none). At the boot that is the daemon
-  // the closure holds, since the page's shell sources the fragment
-  // before the daemon is up. Once a start has been tried, it is the
-  // daemon that runs, so a daemon that failed leaves the shells on ALSA
-  // rather than at a socket nothing listens on.
-  async function writeManifest(daemon) {
+  // starts from now on.
+  async function writeManifest() {
     FS.writeFile(
       MANIFEST_FILE,
       manifest({
         caBundle: await caBundle,
-        daemon,
         x11Server,
       }),
     );
@@ -494,26 +478,6 @@ export async function startUnkernel({
     await Promise.all(steps).catch((err) =>
       log(`gui: setup failed: ${err.message ?? err}`),
     );
-  }
-
-  // Start the PulseAudio daemon of the closure, if it holds one
-  // (pulse.js). Resolves once the daemon is up with card 0 as its sink,
-  // so a client typed at the prompt finds it. A failure is logged rather
-  // than thrown: the shell works without it, and ALSA programs still
-  // play. The whole closure is looked at, not one addition's paths, so
-  // a daemon that failed, as one does while another program holds the
-  // card, is tried again by the next addition. `server.running` says
-  // afterwards which daemon is up, if any.
-  async function soundSetup() {
-    const daemon = pulseDaemonIn(closure());
-    if (daemon === null) {
-      return;
-    }
-    try {
-      await server.start(daemon);
-    } catch (err) {
-      log(`sound: ${err.message ?? err}`);
-    }
   }
 
   // The handle everything outside the page reaches the guest through
@@ -564,12 +528,11 @@ export async function startUnkernel({
       share.linkAll(share.known(), roots, Precedence.KEEP);
 
       // The closure from here on counts the paths still to come, before
-      // the manifest is written: an X server or a PulseAudio daemon the
-      // closure holds is in the shells' environment even while its path
-      // has not arrived.
+      // the manifest is written: an X server the closure holds is in the
+      // shells' environment even while its path has not arrived.
       lazyStore = store;
       x11Server = x11ServerIn(closure());
-      await writeManifest(pulseDaemonIn(closure()));
+      await writeManifest();
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
@@ -635,19 +598,11 @@ export async function startUnkernel({
       // The shell is ready once it has sourced the manifest, taken the
       // handshake and redrawn its prompt on a cleared screen (see
       // HANDSHAKE for why that moment and no earlier one). The GUI
-      // session and the sound server come up meanwhile, and are waited
-      // for as well.
+      // session comes up meanwhile, and is waited for as well.
       const gui = guiSetup(closure());
-      const soundServerUp = soundSetup();
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
       await gui;
-      await soundServerUp;
-
-      // Shells started from now on are told of the daemon as its start
-      // left it: the page's shell was told of the closure's before the
-      // daemon was up, and a daemon that failed is no server.
-      await writeManifest(server.running);
     },
 
     // Add store paths to a guest that is already running. The share is
@@ -674,23 +629,18 @@ export async function startUnkernel({
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
 
-      // Whether an X server and a running daemon were there before this
-      // addition: a shell already running was told of neither otherwise.
+      // Whether an X server was there before this addition: a shell
+      // already running was not told of one otherwise.
       const hadX11Server = x11Server !== null;
-      const hadSoundServer = server.running !== null;
       await guiSetup(lazyStore === null ? basenames : closure());
-      await soundSetup();
 
       // Every shell from now on is told of what this addition brought,
-      // with the PulseAudio daemon only if it runs, and the reader is
-      // told how to bring the one already running up to date.
-      await writeManifest(server.running);
+      // and the reader is told how to bring the one already running up
+      // to date.
+      await writeManifest();
       const shellUpdates = [];
       if (!hadX11Server && x11Server !== null) {
         shellUpdates.push(ShellUpdate.X11);
-      }
-      if (!hadSoundServer && server.running !== null) {
-        shellUpdates.push(ShellUpdate.PULSE);
       }
 
       const added = roots.filter((basename) => basenames.includes(basename));

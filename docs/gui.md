@@ -644,119 +644,42 @@ with no underruns and nothing dropped.
 
 ### Which programs play
 
-Most programs that speak PulseAudio try it first and fall back to ALSA
-when no server answers. Measured in headless Chromium, 2026-11-23,
-each program selected with no server in the guest, by the chunks of
-audio that reached the page (a headless browser has no speakers):
+Programs play through ALSA on card 0, and the page starts no sound
+server. Most programs that speak PulseAudio try it first and fall back
+to ALSA when no server answers. Measured in headless Chromium, each
+program selected alone, by the audio that reached the page (a headless
+browser has no speakers):
 
-| program                               | tries                                 | with no server |
-| ------------------------------------- | ------------------------------------- | -------------- |
-| espeak-ng                             | PulseAudio, then ALSA                 | plays          |
-| `aplay`                               | ALSA                                  | plays          |
-| mpv, its default output               | PipeWire, PulseAudio, then ALSA       | plays          |
-| ffplay (SDL 3, through sdl2-compat)   | PipeWire, PulseAudio, then ALSA       | plays          |
-| `gst-launch-1.0` with `autoaudiosink` | pulsesink, then alsasink              | plays          |
-| firefox, a Web Audio tone             | PulseAudio, then ALSA (cubeb)         | plays          |
-| `canberra-gtk-play` (libcanberra)     | PulseAudio, whenever its module loads | silent         |
-| `paplay`, `pacat`                     | PulseAudio only                       | silent         |
-| `pw-play`                             | PipeWire only                         | silent         |
+| program                               | tries                           | plays |
+| ------------------------------------- | ------------------------------- | ----- |
+| espeak-ng                             | PulseAudio, then ALSA           | yes   |
+| `aplay`                               | ALSA                            | yes   |
+| mpv, its default output               | PipeWire, PulseAudio, then ALSA | yes   |
+| ffplay (SDL 3, through sdl2-compat)   | PipeWire, PulseAudio, then ALSA | yes   |
+| `gst-launch-1.0` with `autoaudiosink` | pulsesink, then alsasink        | yes   |
+| firefox, a Web Audio tone             | PulseAudio, then ALSA (cubeb)   | yes   |
+| aisleriot's card sounds (libcanberra) | ALSA, told by `CANBERRA_DRIVER` | yes   |
+| `paplay`, `pacat`                     | PulseAudio only                 | no    |
+| `pw-play`                             | PipeWire only                   | no    |
+
+espeak-ng, mpv and aisleriot were measured on 2026-11-24, the rest on
+2026-11-23. espeak-ng's line was held 1.3 s for the click, mpv opened
+`AO: [alsa]` and held its 2 s tone, and each card aisleriot dealt sent
+its 0.15 s click to the page's worklet. A program that speaks only
+PulseAudio, such as pavucontrol, has nothing to talk to.
 
 libcanberra plays GTK programs' event sounds and the sounds of games
-that use it, aisleriot's among them (off until turned on in its menu).
-It takes its PulseAudio backend whenever that backend's module loads,
-and when no server answers it fails there, with no fallback. So every
-shell of a guest with no server gets `CANBERRA_DRIVER=alsa`, and
-`canberra-gtk-play` plays.
+that use it, aisleriot's among them. It takes its PulseAudio backend
+whenever that backend's module loads, and when no server answers it
+fails there, with no fallback. So every shell gets
+`CANBERRA_DRIVER=alsa` ([site/js/gui.js](../site/js/gui.js),
+`sessionEnv`).
 
-### A PulseAudio server
-
-When the closure holds nixpkgs' `pulseaudio` package, which carries the
-daemon, the page starts the daemon before the shell is ready
-([site/js/pulse.js](../site/js/pulse.js)). Selecting pulseaudio with a
-program is how to get a server:
-
-```
-https://trynix.dev/?pkg=pulseaudio&pkg=sox&boot=1&run=sox+-n+-t+raw+-r+44100+-e+signed+-b+16+-c+2+-+synth+2+sine+440+%7C+pacat
-```
-
-The daemon loads no default script (`-n`), only three modules: an ALSA
-sink on card 0, the native protocol's socket at
-`$XDG_RUNTIME_DIR/pulse/native` with anonymous access (the guest has
-one user, root), and `module-suspend-on-idle`, which closes the card
-1 s after the last client stops. Shared memory is off, so audio goes
-over the socket. Every shell gets `PULSE_SERVER`, and has
-`CANBERRA_DRIVER` unset, which a shell typed at a prompt from before
-the daemon would otherwise inherit as `alsa`. A daemon an addition
-starts reaches shells started after it; for the shell already on the
-page, the status line names `sh` and `. $ENV`, as it does for an X
-server, in one line when an addition brings both. A client of any
-nixpkgs era speaks the native protocol to the daemon over the socket,
-so no library crosses from one era's process into another's
-([design.md](./design.md) says why that matters).
-
-The daemon runs with no realtime thread and no CPU limit
-(`--realtime=no --high-priority=no --no-cpu-limit`). With its defaults
-it was killed, status 137, as soon as a client played: under the
-emulated CPU its realtime thread overruns the time limit the daemon
-sets for it.
-
-With the daemon up, paplay, pacat, `canberra-gtk-play`, espeak-ng, mpv,
-ffplay and firefox played through it. The sink runs at the daemon's
-default 44.1 kHz, the rate most of them play at, and the page
-resamples to the device's rate.
-
-What it costs, measured with `pulseaudio-ctl`, whose closure holds the
-daemon without selecting it, so the daemon's libraries download only
-when it starts (three boots each, lazy downloads):
-
-| boot               | paths written | downloaded | running to prompt |
-| ------------------ | ------------- | ---------- | ----------------- |
-| without the daemon | 15            | 15.8 MB    | 2.2–2.5 s         |
-| with the daemon    | 44            | 32.5 MB    | 4.1–4.9 s         |
-
-The page does not add a daemon of its own to closures that hold only
-the client library. espeak-ng, mpv, firefox and most GTK programs hold
-it, they play without a server, and each boot would pay the 17 MB and
-2.5 s above. A server would also take the card from programs that
-write to ALSA themselves.
-
-The card has one stream. While the daemon plays, and for 1 s after, a
-program that opens the card itself gets EBUSY. The other way round, a
-PulseAudio client started while such a program holds the card waits,
-and goes on waiting after the card is free until it is stopped; the
-next client plays. With the daemon up, programs that try PulseAudio
-first go through it, so this takes a program that writes only to ALSA,
-such as `aplay`, playing at the same moment.
-
-A daemon started while such a program holds the card cannot open it.
-It logs the error and opens its socket anyway, with no sink, and every
-client then fails with "No such entity". So the page asks the daemon
-for its sinks with the closure's `pactl` once the socket is open, and
-counts it as up only with card 0's: the row `module-alsa-sink.c` makes
-for hw:0, named `alsa_output.hw_0`. A server already on the page's
-socket with any other sink, such as a null sink that takes every
-client's audio and plays none of it on the card, is stopped and the
-page's daemon started in its place. Stopping ends the daemon the page
-started, by the PID its start recorded, and whatever server answers on
-the page's socket, which `pactl exit` asks to go. A PulseAudio server a
-reader starts on a socket of their own keeps running. A new daemon
-without card 0's sink is stopped and the failure goes to the page's log;
-the next addition to the guest starts the daemon again, which succeeds
-once the card is free. Until then, shells started after the failure
-get `CANBERRA_DRIVER=alsa` and have `PULSE_SERVER` unset, as they would
-without a daemon in the closure. The page's shell at the boot sources
-its environment before the daemon is up, so a daemon that fails there
-leaves that one shell with `PULSE_SERVER` set, which a shell started
-from that shell unsets. Every addition asks the daemon for its sinks
-again: one stopped in the guest, with `pactl exit` say, is started
-again by the next addition, and one that cannot be is no longer named
-to new shells.
-
-The daemon opens the card as it starts and plays zeros until it
-closes it. The page shows the sound control only once a chunk holds a
-sample that is not zero, and the clip it holds for the first click
-starts there, so a boot with a daemon and nothing playing asks for no
-click.
+The card has one stream, so one program holds it at a time, and a
+second program that opens it meanwhile gets EBUSY. ALSA's dmix plugin,
+which mixes several programs into one stream, needs a PCM timer that
+unkernel has not turned on yet
+([pithings/unkernel#31](https://github.com/pithings/unkernel/issues/31)).
 
 ## What it costs
 
@@ -838,7 +761,7 @@ compositor:
 - **Java** draws, with `_JAVA_AWT_WM_NONREPARENTING=1`, which shells
   with `DISPLAY` get: the satellite does not reparent windows, and
   without it a Swing window stayed blank.
-- **An X server or PulseAudio daemon an addition brings** reaches
+- **An X server an addition brings** reaches
   shells started after it; the shell already on the page needs
   `. $ENV`, or a new shell (`sh`).
 - **A blit or copy within one texture level**, whose source and
@@ -862,20 +785,12 @@ compositor:
 - **Keyboard layout** is US, which is wland's.
 - **The touch key bar** types into the terminal only. A tap on it gives
   the terminal the keyboard, even while a window has it.
-- **PipeWire-only programs**, such as `pw-play`, stay silent: the
-  page starts no PipeWire daemon.
-- **Selecting pulseaudio brings the X server too.** pulseaudio's own
-  closure holds libX11, for its X11 modules, and no Wayland library, so
-  the X11 rule counts it as an X11 program. With downloads on first use
-  that costs about a hundred more lookups as the closure is walked;
-  with downloads set to all, the X server's 105 MB. Telling them apart
-  would mean reading which libraries each program's binaries load.
-- **A PulseAudio daemon that could not start**, because a program held
-  the sound card, is tried again only by an addition that brings new
-  paths, not when the card is let go.
-- **A PulseAudio daemon stopped in the guest**, with `pactl exit` say,
-  is started again only by the next addition. Shells started before
-  then are still given its socket, where nothing answers.
+- **PulseAudio and PipeWire's own clients**, such as `paplay`,
+  `pacat`, pavucontrol and `pw-play`, stay silent: the page starts no
+  sound server, and programs play through ALSA.
+- **One program plays at a time**, until unkernel turns on the PCM
+  timer ALSA's dmix needs
+  ([pithings/unkernel#31](https://github.com/pithings/unkernel/issues/31)).
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
   60 FPS. Its xterm case, which takes keys through Xwayland, passed in

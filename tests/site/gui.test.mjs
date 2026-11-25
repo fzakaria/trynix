@@ -343,6 +343,14 @@ test("the X11 environment names display :0, the resources and AWT's flag", () =>
   });
 });
 
+// Checks that every shell sends libcanberra to ALSA, through the
+// session's environment. libcanberra, which plays GTK programs' event
+// sounds and aisleriot's, takes its PulseAudio backend whenever that
+// backend's module loads, and with no server to answer it plays nothing.
+test("every shell sends libcanberra to ALSA", () => {
+  assert.equal(sessionEnv().CANBERRA_DRIVER, "alsa");
+});
+
 // Checks that the session writes the X resources the environment names,
 // giving xterm the monospace font fontconfig knows, since Xwayland has
 // none of the core fonts xterm asks for by default.
@@ -371,11 +379,7 @@ test("a session writes X resources that give xterm a font", async () => {
 test("one note names what an addition brought the running shell", () => {
   assert.equal(shellNote([]), null);
   assert.equal(
-    shellNote([ShellUpdate.PULSE]),
-    "PulseAudio clients work now in new shells (type sh for one), or in this one after . $ENV",
-  );
-  assert.equal(
-    shellNote([ShellUpdate.X11, ShellUpdate.PULSE]),
-    "X11 programs and PulseAudio clients work now in new shells (type sh for one), or in this one after . $ENV",
+    shellNote([ShellUpdate.X11]),
+    "X11 programs work now in new shells (type sh for one), or in this one after . $ENV",
   );
 });

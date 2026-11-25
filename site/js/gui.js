@@ -48,7 +48,7 @@ const FONTS_CONF = `${GUI_SHARE_DIR}/fonts.conf`;
 
 // The session's runtime directory and socket, as logind would make
 // them for root, the user the guest's shell runs as.
-export const RUNTIME_DIR = "/run/user/0";
+const RUNTIME_DIR = "/run/user/0";
 const DISPLAY_NAME = "wayland-0";
 const RELAY_LOG = `${RUNTIME_DIR}/wlandr.log`;
 const RELAY_SOCKET = `${RUNTIME_DIR}/${DISPLAY_NAME}`;
@@ -128,11 +128,18 @@ const WAYLAND_PATH = /^[0-9a-z]{32}-wayland-\d/;
 // store path holding it is a GL driver the guest can use.
 const MESA_EGL_VENDOR = "share/glvnd/egl_vendor.d/50_mesa.json";
 
+// libcanberra's driver: ALSA, the guest's card 0. libcanberra plays GTK
+// programs' event sounds and aisleriot's, and takes its PulseAudio
+// backend whenever that backend's module loads. The guest runs no
+// PulseAudio server, and libcanberra does not fall back from one that
+// does not answer.
+const CANBERRA_DRIVER = "alsa";
+
 // The environment every guest shell gets, so a GUI program started
 // plainly finds the relay and picks its Wayland backend. Toolkits that
 // would otherwise look for X are told to use Wayland; each falls back
 // to X where it has no Wayland backend, which works only once the
-// closure holds an X server (x11Env).
+// closure holds an X server (x11Env). libcanberra is sent to ALSA.
 export function sessionEnv() {
   return {
     XDG_RUNTIME_DIR: RUNTIME_DIR,
@@ -144,6 +151,7 @@ export function sessionEnv() {
     MOZ_ENABLE_WAYLAND: "1",
     ELECTRON_OZONE_PLATFORM_HINT: "wayland",
     FONTCONFIG_FILE: FONTS_CONF,
+    CANBERRA_DRIVER,
   };
 }
 
@@ -165,15 +173,12 @@ export function x11Env() {
 }
 
 // What a shell started before an addition can lack: the addition
-// brought an X server or a running PulseAudio daemon, and the shell
-// sourced its environment (unkernel.js, manifest) before either was
-// there. Each value is how the reader is told what needs it.
+// brought an X server, and the shell sourced its environment
+// (unkernel.js, manifest) before one was there. Each value is how the
+// reader is told what needs it.
 export const ShellUpdate = Object.freeze({
   // DISPLAY and the rest of x11Env.
   X11: "X11 programs",
-  // PULSE_SERVER, and libcanberra's driver left to choose (pulse.js,
-  // soundEnv).
-  PULSE: "PulseAudio clients",
 });
 
 // What the page tells the reader after an addition whose `updates`

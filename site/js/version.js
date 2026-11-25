@@ -1,6 +1,5 @@
 // Comparing the dotted versions in store path names, which the page
-// reads to choose between two builds of one package (gldriver.js,
-// pulse.js).
+// reads to choose between two builds of one package (gldriver.js).
 
 // A dotted version as numbers, for comparing: "2.42" -> [2, 42].
 const numbers = (version) => version.split(".").map(Number);
