@@ -74,6 +74,11 @@
           # (nix/wlandr.nix)
           wlandr = import ./nix/wlandr.nix { inherit pkgs; };
 
+          # wland's compositor core as wasm, built from the relay's
+          # source and patches, which the site serves
+          # (nix/wland-wasm.nix)
+          wland-wasm = import ./nix/wland-wasm.nix { inherit pkgs; };
+
           # the native QEMU the snapshot is taken on, from the fork and
           # the patches, so it is never older than the engine
           # (nix/native-qemu.nix)

@@ -1,0 +1,208 @@
+Subject: [PATCH] core: hold frame callbacks of surfaces not on screen
+
+trynix carries this patch for wland's compositor until wland takes it.
+
+tick fired every frame callback whose surface had committed since the
+request, unless its window was minimized or hidden. A surface with
+nothing on screen got its done too: one whose content went with an
+attach(NULL), one whose xdg_toplevel was destroyed, one with no role.
+weston and wlroots fire frame callbacks only for surfaces they paint,
+so a callback of an unmapped surface waits until the surface is mapped
+again or dies with it, and clients are written against that.
+
+SDL 3 can lose track of a frame callback: in GZDoom's trace it asks
+for two on a window's surface before the window's first frame and
+keeps one, and the listener of the other points at the window's data.
+When the window is hidden and destroyed, SDL detaches the surface's
+buffer and commits, which latched that callback here, and the next
+tick fired it into the freed window. GZDoom shows and destroys a window several
+times while it picks a GL context. It crashed with SIGSEGV at a wild
+address on each of four starts in a 928 px wide frame, and on each of
+three second starts in a guest with a 753 px one.
+
+A frame callback now fires only while its surface is shown
+(surfaceShown, which presentation feedback already goes by). The frame
+callback test runs on a mapped toplevel, and checks that a callback
+waits while the window has no content and that one latched by the
+detaching commit of a destroyed toplevel never fires.
+
+---
+diff --git a/core/src/compositor.zig b/core/src/compositor.zig
+index 3357457..1ec050d 100644
+--- a/core/src/compositor.zig
++++ b/core/src/compositor.zig
+@@ -1418,9 +1418,10 @@ pub const Compositor = struct {
+     /// WebSocket the relay intercepts wl_surface.frame and fires done
+     /// itself, so that half is a no-op there — never both, or the app gets a
+     /// fatal double done. Presentation feedback is the core's on every link.
+-    /// A minimized or hidden window's callbacks are held until it is
+-    /// restored or shown — on stream links only: the relay's own (WS) keep
+-    /// their 16 ms pace.
++    /// A callback of a surface that is not on screen (surfaceShown: no
++    /// content, a role that is not shown, or a minimized or hidden window)
++    /// is held until it is, or dies with its surface — on stream links
++    /// only: the relay's own (WS) keep their 16 ms pace.
+     pub fn tick(self: *Compositor, t: Tick) void {
+         var it = self.conns.iterator();
+         while (it.next()) |kv| {
+@@ -1429,11 +1430,15 @@ pub const Compositor = struct {
+             if (conn.feedbacks.items.len > 0) self.presentFeedbacks(conn_id, conn, t);
+             var keep: usize = 0;
+             for (conn.frame_callbacks.items) |cb| {
+-                // a minimized (or hidden) window's surfaces are not
+-                // repainted: their callbacks wait for the window to come
+-                // back (the client's render loop stops, as on any
+-                // compositor)
+-                if (!cb.committed or underHidden(conn, cb.surface)) {
++                // a surface that is not on screen is not repainted: its
++                // callbacks wait for it to come back (the client's render
++                // loop stops, as on any compositor). That covers a
++                // minimized or hidden window, and a surface whose content
++                // went (attach(NULL)) or whose toplevel was destroyed:
++                // weston and wlroots fire no done for an unmapped surface,
++                // and SDL 3 can lose track of a frame callback whose
++                // listener points at a window it then frees
++                if (!cb.committed or !surfaceShown(conn, cb.surface)) {
+                     conn.frame_callbacks.items[keep] = cb;
+                     keep += 1;
+                     continue;
+@@ -5776,16 +5781,16 @@ test "wl_shm v2 release: destructor answers delete_id; a re-bind still works" {
+     try std.testing.expectEqual(@as(usize, 2), sink.events.items.len);
+ }
+ 
+-test "frame callbacks latch at commit and fire at the next tick; surface destroy drops them" {
++test "frame callbacks latch at commit and fire at the next tick while the surface is on screen; surface destroy drops them" {
++    const T = WinTest;
+     var sink: TestSink = undefined;
+     var comp = testSetup(&sink);
+     defer comp.deinit();
+     defer sink.events.deinit(sink.gpa);
++    // surface 6: a toplevel (xdg_surface 7, xdg_toplevel 8) showing buffer 30
++    try T.setup(&comp, &sink);
+ 
+-    const s = comptime protocol.find("wl_surface").?;
+-    const frame_op = comptime s.requestIndex("frame").?;
+-    const commit_op = comptime s.requestIndex("commit").?;
+-    const destroy_op = comptime s.requestIndex("destroy").?;
++    const destroy_op = comptime T.surf.requestIndex("destroy").?;
+     const done_op = comptime protocol.find("wl_callback").?.eventIndex("done").?;
+     const delete_op = comptime protocol.find("wl_display").?.eventIndex("delete_id").?;
+     const Count = struct {
+@@ -5807,62 +5812,83 @@ test "frame callbacks latch at commit and fire at the next tick; surface destroy
+         }
+     };
+ 
+-    try comp.connOpen(1);
+-    var buf: [128]u8 = undefined;
+-    try comp.onWire(1, wire.encodeMessage(&buf, 1, 1, &.{.{ .new_id = 2 }})); // registry
+-    try comp.onWire(1, wire.encodeMessage(&buf, 2, 0, &.{ .{ .uint = 1 }, .{ .new_id_dynamic = .{ .interface = "wl_compositor", .version = 4, .id = 4 } } }));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 4, 0, &.{.{ .new_id = 6 }})); // surface 6
+-    try comp.onWire(1, wire.encodeMessage(&buf, 4, 0, &.{.{ .new_id = 11 }})); // surface 11
++    try T.send(&comp, 3, 0, &.{.{ .new_id = 11 }}); // surface 11, no role
+     sink.events.clearRetainingCapacity();
+ 
+     // frame without a commit: pending, a tick fires nothing
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, frame_op, &.{.{ .new_id = 7 }}));
++    try T.send(&comp, 6, T.frame_op, &.{.{ .new_id = 40 }});
+     comp.tick(.{ .time_ms = 10 });
+     try std.testing.expectEqual(@as(usize, 0), sink.events.items.len);
+ 
+     // the commit latches it; the NEXT tick fires done(time) + delete_id, once
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, commit_op, &.{}));
+-    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 7, done_op));
++    try T.send(&comp, 6, T.commit_op, &.{});
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 40, done_op));
+     comp.tick(.{ .time_ms = 20 });
+-    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 7, done_op));
+-    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 7));
++    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 40, done_op));
++    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 40));
+     for (sink.events.items) |e| {
+-        if (e.object_id == 7) try std.testing.expectEqual(@as(u32, 20), std.mem.readInt(u32, e.bytes[wire.header_size..][0..4], .little));
++        if (e.object_id == 40) try std.testing.expectEqual(@as(u32, 20), std.mem.readInt(u32, e.bytes[wire.header_size..][0..4], .little));
+     }
+     comp.tick(.{ .time_ms = 30 });
+-    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 7, done_op));
++    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 40, done_op));
+ 
+     // commit BEFORE the request: that commit does not latch it
+     sink.events.clearRetainingCapacity();
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, commit_op, &.{}));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, frame_op, &.{.{ .new_id = 8 }}));
++    try T.send(&comp, 6, T.commit_op, &.{});
++    try T.send(&comp, 6, T.frame_op, &.{.{ .new_id = 41 }});
+     comp.tick(.{ .time_ms = 40 });
+     try std.testing.expectEqual(@as(usize, 0), sink.events.items.len);
+ 
+-    // per surface: committing 6 latches 8 and 9, not 11's callback 10
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, frame_op, &.{.{ .new_id = 9 }}));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 11, frame_op, &.{.{ .new_id = 10 }}));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, commit_op, &.{}));
++    // per surface: committing 6 latches 41 and 42, not 11's callback 43
++    try T.send(&comp, 6, T.frame_op, &.{.{ .new_id = 42 }});
++    try T.send(&comp, 11, T.frame_op, &.{.{ .new_id = 43 }});
++    try T.send(&comp, 6, T.commit_op, &.{});
+     comp.tick(.{ .time_ms = 50 });
+-    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 8, done_op));
+-    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 9, done_op));
+-    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 10, done_op));
+-
+-    // destroying surface 11 drops its callback: delete_id, never done
+-    sink.events.clearRetainingCapacity();
+-    try comp.onWire(1, wire.encodeMessage(&buf, 11, destroy_op, &.{}));
+-    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 10));
++    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 41, done_op));
++    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 42, done_op));
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 43, done_op));
++
++    // a surface with no role is never on screen: its committed callback
++    // waits, and destroying the surface drops it: delete_id, never done
++    sink.events.clearRetainingCapacity();
++    try T.send(&comp, 11, T.commit_op, &.{});
++    comp.tick(.{ .time_ms = 55 });
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 43, done_op));
++    try T.send(&comp, 11, destroy_op, &.{});
++    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 43));
+     comp.tick(.{ .time_ms = 60 });
+-    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 10, done_op));
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 43, done_op));
+ 
+-    // a committed-but-unfired callback dies with its surface too
++    // content gone (attach NULL): the callback waits until the window
++    // shows a buffer again
+     sink.events.clearRetainingCapacity();
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, frame_op, &.{.{ .new_id = 12 }}));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, commit_op, &.{}));
+-    try comp.onWire(1, wire.encodeMessage(&buf, 6, destroy_op, &.{}));
++    try T.send(&comp, 6, T.frame_op, &.{.{ .new_id = 44 }});
++    try T.send(&comp, 6, T.attach_op, &.{ .{ .object = 0 }, .{ .int = 0 }, .{ .int = 0 } });
++    try T.send(&comp, 6, T.commit_op, &.{});
++    comp.tick(.{ .time_ms = 65 });
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 44, done_op));
++    try T.send(&comp, 6, T.attach_op, &.{ .{ .object = 30 }, .{ .int = 0 }, .{ .int = 0 } });
++    try T.send(&comp, 6, T.commit_op, &.{});
+     comp.tick(.{ .time_ms = 70 });
+-    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 12, done_op));
+-    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 12));
++    try std.testing.expectEqual(@as(usize, 1), Count.of(&sink, 44, done_op));
++
++    // the toplevel destroyed and its content detached, as SDL 3 hides a
++    // window, then the surface destroyed: no done, ever. SDL can lose
++    // track of a frame callback (it asked for two before the window's
++    // first frame and kept one) whose listener holds the window it then
++    // frees, and a done here crashed the app.
++    sink.events.clearRetainingCapacity();
++    try T.send(&comp, 6, T.frame_op, &.{.{ .new_id = 45 }});
++    try T.send(&comp, 8, comptime T.tl.requestIndex("destroy").?, &.{});
++    try T.send(&comp, 7, comptime protocol.find("xdg_surface").?.requestIndex("destroy").?, &.{});
++    try T.send(&comp, 6, T.attach_op, &.{ .{ .object = 0 }, .{ .int = 0 }, .{ .int = 0 } });
++    try T.send(&comp, 6, T.commit_op, &.{});
++    comp.tick(.{ .time_ms = 75 });
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 45, done_op));
++    try T.send(&comp, 6, destroy_op, &.{});
++    comp.tick(.{ .time_ms = 80 });
++    try std.testing.expectEqual(@as(usize, 0), Count.of(&sink, 45, done_op));
++    try std.testing.expectEqual(@as(usize, 1), Count.deleted(&sink, 45));
+ }
+ 
+ test "presentation feedback: clock_id on bind, latched by commit, presented at the next tick or discarded" {

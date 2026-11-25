@@ -42,9 +42,14 @@ pkgs.stdenvNoCC.mkDerivation {
   # libwayland flushes up to 28 at once: a client that made more pools
   # than that before it flushed was disconnected, its window gone with
   # the program still running. GZDoom's title bar, dragged while it
-  # loads, did it (docs/gui.md).
+  # loads, did it. The compositor fired frame callbacks of surfaces
+  # with nothing on screen, and SDL 3 crashed on one it had lost
+  # track of. The compositor's wasm is built from this source with
+  # these patches too (nix/wland-wasm.nix), so the two halves stay one
+  # tree (docs/gui.md).
   patches = [
     ../patches/wland/0001-relay-queue-every-fd-of-one-client-flush.patch
+    ../patches/wland/0002-core-hold-frame-callbacks-of-surfaces-not-on-screen.patch
   ];
 
   nativeBuildInputs = [ pkgs.zig ];

@@ -56,6 +56,11 @@ The cases:
            SDL program's title bar on every pointer motion while the
            program is busy). Checks that the connection lives through
            them.
+    frames wayland-probe.py's frames check: a frame callback committed
+           on a surface with nothing on screen. Checks that the
+           compositor fires no done for it, as weston and wlroots fire
+           none; SDL 3 leaves such a callback behind pointing at a
+           window it frees, and GZDoom crashed on its done.
     glx    extremetuxracer, selected alone: an SFML 2 game that speaks
            X11 alone and makes its GL context with GLX, with no X
            server or driver selected. Waits for its window and checks
@@ -668,6 +673,7 @@ PROBE_SCRIPT = os.path.join(HERE, "wayland-probe.py")
 PROBE_IN_GUEST = "/tmp/wayland-probe.py"
 PROBE_PASSED = "WAYLAND-PROBE PASS"
 PROBE_FDS = "fds"
+PROBE_FRAMES = "frames"
 RELAY_RUNNING = "gui: the Wayland relay is running in the guest"
 RELAY_LOG = "/run/user/0/wlandr.log"
 RELAY_LOG_LINES = 5
@@ -817,7 +823,7 @@ LLM_COMMAND = (
 LLM_LIMIT_SECONDS = 180
 
 
-CASES = ["foot", "gl", "x11", "feedback", "fds", "glx", "oldgl", "slowx", "vulkan", "llm"]
+CASES = ["foot", "gl", "x11", "feedback", "fds", "frames", "glx", "oldgl", "slowx", "vulkan", "llm"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -1328,6 +1334,17 @@ def run_fds(browser, base, screenshots, fetch, viewport):
     print("  the relay took one flush of descriptors and kept the client")
 
 
+def run_frames(browser, base, screenshots, fetch, viewport):
+    """frames: boot python3 and run wayland-probe.py's frames check,
+    which commits a frame callback on a surface with nothing on screen,
+    and check that the compositor held it."""
+    del screenshots  # The program opens no window.
+    print("frames")
+    if not run_probe(browser, base, viewport, fetch, PROBE_FRAMES):
+        raise SystemExit("FAIL the compositor fired a frame callback of a surface not on screen")
+    print("  the compositor held the callback until the surface went")
+
+
 def run_glx(browser, base, screenshots, fetch, viewport):
     """glx: boot extremetuxracer alone, let the link start it, wait for
     its window, and check that its frames came through the GL renderer
@@ -1615,6 +1632,7 @@ RUNNERS = {
     "x11": run_x11,
     "feedback": run_feedback,
     "fds": run_fds,
+    "frames": run_frames,
     "glx": run_glx,
     "oldgl": run_oldgl,
     "slowx": run_slowx,

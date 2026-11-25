@@ -20,11 +20,14 @@
 # there is nothing to build out of band and nothing to publish.
 #
 # wland is the Wayland compositor the page runs for GUI programs in
-# the unkernel guest (docs/gui.md): its browser modules and the wasm
-# core. Its relay, the guest half, is built from source (nix/wlandr.nix)
-# from the commit this release was published from.
+# the unkernel guest (docs/gui.md): its browser modules. Its wasm core
+# (nix/wland-wasm.nix) and its relay, the guest half (nix/wlandr.nix),
+# are built from the commit this release was published from, with the
+# patches trynix carries.
 { pkgs }:
 let
+  wlandWasm = import ./wland-wasm.nix { inherit pkgs; };
+
   npm =
     name: version: sha256:
     pkgs.fetchurl {
@@ -141,11 +144,12 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   echo ${unkernelVersion} > $out/unkernel/VERSION
   rm -r unpack/package
 
-  # The compositor finds its wasm next to engine.mjs, where it is put.
+  # The compositor finds its wasm next to engine.mjs, where it is put:
+  # the one built with trynix's patches, not the release's.
   tar -xzf ${wland} -C unpack
   mkdir -p $out/wland
   for module in ${pkgs.lib.concatStringsSep " " wlandModules}; do
     cp unpack/package/dist/$module.mjs $out/wland/
   done
-  cp unpack/package/dist/wland.wasm unpack/package/LICENSE $out/wland/
+  cp ${wlandWasm}/wland.wasm unpack/package/LICENSE $out/wland/
 ''

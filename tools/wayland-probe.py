@@ -25,6 +25,15 @@ The checks:
            that drops some of those descriptors meets a create_pool
            without one and closes the connection, and the window is
            gone while the program runs on.
+    frames asks for a frame callback on a surface with nothing on
+           screen, a wl_surface with no role and no buffer, commits it,
+           and checks for two seconds of roundtrips that the callback
+           does not fire, nor once the surface is destroyed. weston and
+           wlroots fire no frame callback of a surface that is not
+           mapped. SDL 3 can lose track of one whose listener points
+           at a window it frees later; GZDoom shows and destroys a
+           window several times as it starts, and a done for such a
+           callback crashed it.
 """
 
 import enum
@@ -32,6 +41,7 @@ import os
 import socket
 import struct
 import sys
+import time
 
 # The descriptors one libwayland flush carries at most, which is how
 # many the fds check sends in one write.
@@ -39,6 +49,12 @@ FDS_IN_ONE_WRITE = 28
 
 # The size of each pool, one page.
 POOL_SIZE = 4096
+
+# How long the frames check gives the compositor to fire a callback it
+# should hold, which is many of the page's frames, and the time between
+# its roundtrips.
+HOLD_SECONDS = 2
+HOLD_POLL_SECONDS = 0.1
 
 # The protocol's fixed objects and opcodes (wayland.xml).
 DISPLAY_ID = 1
@@ -52,6 +68,12 @@ SHM_CREATE_POOL = 0
 SHM_POOL_DESTROY = 1
 SHM_INTERFACE = "wl_shm"
 SHM_VERSION = 1
+COMPOSITOR_CREATE_SURFACE = 0
+COMPOSITOR_INTERFACE = "wl_compositor"
+COMPOSITOR_VERSION = 4
+SURFACE_DESTROY = 0
+SURFACE_FRAME = 3
+SURFACE_COMMIT = 6
 
 # The ids this client gives its objects: the registry and its sync,
 # then each check's from CHECK_FIRST_ID on.
@@ -72,6 +94,7 @@ class Check(enum.Enum):
     """What a run checks, by the name it is given."""
 
     FDS = "fds"
+    FRAMES = "frames"
 
 
 def message(object_id, opcode, body=b""):
@@ -197,8 +220,55 @@ def check_fds(conn):
     return None
 
 
+def check_frames(conn):
+    """A frame callback of a surface with nothing on screen, committed:
+    no done while the page draws, nor once the surface is gone."""
+    compositor_id, surface_id, callback_id = CHECK_FIRST_ID, CHECK_FIRST_ID + 1, CHECK_FIRST_ID + 2
+    next_sync_id = CHECK_FIRST_ID + 3
+    conn.bind(COMPOSITOR_INTERFACE, COMPOSITOR_VERSION, compositor_id)
+
+    # The surface, its callback, and the commit that latches it.
+    conn.send(
+        message(compositor_id, COMPOSITOR_CREATE_SURFACE, struct.pack("<I", surface_id))
+        + message(surface_id, SURFACE_FRAME, struct.pack("<I", callback_id))
+        + message(surface_id, SURFACE_COMMIT)
+    )
+
+    # Every event read is looked at for the callback's done.
+    fired = []
+
+    def note(object_id, opcode, _body):
+        if object_id == callback_id and opcode == CALLBACK_DONE:
+            fired.append(object_id)
+
+    def roundtrip(requests=b""):
+        nonlocal next_sync_id
+        sync_id = next_sync_id
+        next_sync_id += 1
+        conn.send(requests + message(DISPLAY_ID, DISPLAY_SYNC, struct.pack("<I", sync_id)))
+        return conn.wait_for_done(sync_id, note)
+
+    # Roundtrips while the page draws its frames.
+    deadline = time.monotonic() + HOLD_SECONDS
+    while time.monotonic() < deadline:
+        if not roundtrip():
+            return "the connection ended"
+        if fired:
+            return "the frame callback of a surface with nothing on screen fired"
+        time.sleep(HOLD_POLL_SECONDS)
+
+    # Destroying the surface drops the callback.
+    if not roundtrip(message(surface_id, SURFACE_DESTROY)):
+        return "the connection ended"
+    if fired:
+        return "the frame callback fired as its surface was destroyed"
+    print(f"{PASS}: no done in {HOLD_SECONDS} s for a surface with nothing on screen")
+    return None
+
+
 CHECKS = {
     Check.FDS: check_fds,
+    Check.FRAMES: check_frames,
 }
 
 

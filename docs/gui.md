@@ -1100,6 +1100,13 @@ without one. libdecor's GTK plugin redraws an SDL program's title bar
 into a new pool on every pointer motion, so dragging GZDoom's title
 bar while it loaded sent such a burst, and the window went with the
 program still running.
+The frames case runs the probe's frames check: it commits a frame
+callback on a surface with no role and no buffer, and checks over two
+seconds of roundtrips, and after the surface is destroyed, that the
+compositor never fires it. The compositor used to fire every committed
+callback. SDL 3 can lose track of a frame callback whose listener
+points at a window it later frees, and GZDoom, which shows and
+destroys several windows as it starts, crashed on the done.
 The glx case boots extremetuxracer alone, with no X server or driver
 selected, waits for the game's window, and checks that its frames went
 through the page's GL renderer by GPU resource, which GLX reaches only
@@ -1158,9 +1165,14 @@ release in [nix/vendor.nix](../nix/vendor.nix) (the compositor) and
 the source in [nix/wlandr.nix](../nix/wlandr.nix) (the relay). The
 relay and the compositor speak one stream protocol.
 
-The relay is built with [patches/wland/](../patches/wland/), which
-queues every descriptor of a client's flush; it goes once wland has
-the change, and an update past that commit drops it.
+The relay ([nix/wlandr.nix](../nix/wlandr.nix)) and the compositor's
+wasm core ([nix/wland-wasm.nix](../nix/wland-wasm.nix)) are built from
+that commit's source with [patches/wland/](../patches/wland/); the
+npm release supplies the browser modules. One patch makes the relay
+queue every descriptor of a client's flush, and one makes the
+compositor hold the frame callbacks of a surface with nothing on
+screen. Each goes once wland has the change, and an update past that
+commit drops it.
 
 ## Licenses
 
