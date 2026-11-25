@@ -118,13 +118,15 @@
 
     <!-- Each example boots on click and types its command at the shell
          once the guest is up (boot=1, run=; site/js/url.js), so the
-         command shows at the prompt and the up arrow brings it back. -->
+         command shows at the prompt and the up arrow brings it back.
+         Each "·" follows a &nbsp;, which keeps it on the line of the
+         link before it rather than at the start of the next. -->
     <div class="examples muted">
       Try:
       <a
         href="?pkg=hello&run=hello&boot=1"
         >hello</a
-      > ·
+      >&nbsp;·
       <!-- These two fetch files the link names by URL and hash (file=;
            site/js/files.js) from raw.githubusercontent.com at a commit,
            which never changes and sends CORS headers. The command names
@@ -133,12 +135,12 @@
         href="?pkg=ripgrep&pkg=jq&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/maintainers/maintainer-list.nix%20sha256-qD3XTmtAfLsCR8Vr3rkiZQkr/N2VnMFN0hmZIoAFyfE%3D&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/pkgs/os-specific/linux/kernel/kernels-org.json%20sha256-wqMutWYUlW/5oBLjmJYI8t43v2YCLl4MdfgYYRRgG/0%3D&run=rg%20-or%20%27%241%27%20%27%5E%20%20%28%5Cw%2Anix%5Cw%2A%29%20%3D%27%20%2Fnix%2Fstore%2Fwhmg5hajv6z6fprb5v46p008jiz4mr54-maintainer-list.nix%20%26%26%20jq%20-r%20%27to_entries%5B%5D%7C%22%5C%28.key%29%20%5C%28.value.version%29%22%27%20%2Fnix%2Fstore%2F7dmyl6k8v95rwdfk8lnphk14db8hc4nb-kernels-org.json&boot=1"
         title="searches nixpkgs' maintainer list and reads its kernel versions, two files the link fetches"
         >ripgrep and jq</a
-      > ·
+      >&nbsp;·
       <a
         href="?pkg=python3@3.6.2&file=https://raw.githubusercontent.com/mwaskom/seaborn-data/71e2436a092d714350de0fc409ca8a8714e7e78f/penguins.csv%20sha256-4HY2vYr3QmAJnqL4Z44uq7813vV5lAzHb2cGHuFsBsE%3D&run=python3%20--version%20%26%26%20python3%20-c%20%22import%20csv%2Ccollections%3Bprint%28collections.Counter%28r%5B%27species%27%5D%20for%20r%20in%20csv.DictReader%28open%28%27%2Fnix%2Fstore%2F16lvfqchy2lr4cz48ds45lsvh1m97605-penguins.csv%27%29%29%29%29%22&boot=1"
         title="counts the penguins in a CSV the link fetches"
         >python 3.6.2 from 2017</a
-      > ·
+      >&nbsp;·
       <!-- A chat with a language model, which llama.cpp runs on the
            guest's Vulkan (vk=1), drawn on the page's WebGPU (docs/gui.md).
            The model is the store path `nix store add-file` gives
@@ -148,7 +150,7 @@
         href="?pkg=llama-cpp-vulkan@1.0.0&path=/nix/store/q9nxdhd6c2zhlk7ws54rczl2ivz00dqv-Qwen2.5-0.5B-Instruct-Q4_K_M.gguf&cache=https://trynix.cachix.org%20trynix.cachix.org-1:xmOWOHz2g/BlpCVQrTEZjSKWPk3S3Dukn1xiSWLidkY%3D&engine=unkernel&vk=1&run=llama-cli%20-m%20/nix/store/q9nxdhd6c2zhlk7ws54rczl2ivz00dqv-Qwen2.5-0.5B-Instruct-Q4_K_M.gguf%20-ngl%2099%20-c%202048&boot=1"
         title="a chat with Qwen2.5 0.5B, run by llama.cpp on your GPU; the model is a 400 MB download"
         >an LLM on your GPU</a
-      > ·
+      >&nbsp;·
       <!-- GZDoom opens full screen unless told not to, and its Vulkan
            renderer compiles its shaders in the guest for about a minute
            before the first frame, so the link picks its GLES renderer. -->
@@ -156,7 +158,7 @@
         href="?pkg=gzdoom&pkg=freedoom&engine=unkernel&run=gzdoom%20-iwad%20/nix/store/%2A-freedoom-%2A/share/games/doom/freedoom1.wad%20%2Bvid_fullscreen%200%20%2Bvid_preferbackend%202%20%26&boot=1"
         title="Freedoom in GZDoom, drawn by your GPU"
         >Doom</a
-      > ·
+      >&nbsp;·
       <!-- A browser in the guest. 2 GiB because firefox runs the guest
            out of memory at 512 MiB, which is a phone's default
            (docs/gui.md). -->
@@ -164,7 +166,7 @@
         href="?pkg=firefox&engine=unkernel&mem=2048&run=firefox%20%26&boot=1"
         title="a web browser; its window takes about half a minute"
         >firefox</a
-      > ·
+      >&nbsp;·
       <!-- The first six show the range, and the rest wait behind
            "N more": a <details> drawn inline (site/style.css), so
            once it opens its links carry on the line. N is written
@@ -176,15 +178,15 @@
         <a
           href="?pkg=jujutsu@0.43.0&run=jj%20--version&boot=1"
           >jujutsu</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=hello@2.10&pkg=hello@2.12.2&run=for%20h%20in%20/nix/store/%2A-hello-2.1%2A/bin/hello%3B%20do%20%24h%20--version%20%7C%20head%20-1%3B%20done&boot=1"
           >two eras of hello at once</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=python3@3.10.6&pkg=openssl@1.1.1q&run=openssl%20version%20%26%26%20python3%20-c%20%27import%20ssl%3B%20print%28ssl.OPENSSL_VERSION%29%27&boot=1"
           >python 3.10 with openssl 1.1</a
-        > ·
+        >&nbsp;·
         <!-- A package no public cache holds, served as a static directory
              next to this page (site/examples/cache). The cache and the key
              that vouches for it ride in the link, which is the whole point:
@@ -193,7 +195,7 @@
           href="?path=/nix/store/awmhh7ci4admi71gs6b73awh0lxgrqqn-hello-trynix-2.12.3&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY=&run=hello&boot=1"
           title="a patched hello that exists in no public cache, fetched from a cache served next to this page"
           >a patched hello from another cache</a
-        > ·
+        >&nbsp;·
         <!-- The emulator's own throughput probe (nix/emubench.nix), from the
              same cache; docs/engine-execution.md says what each row
              measures. -->
@@ -201,7 +203,7 @@
           href="?path=/nix/store/vk1ih0la8pfs92v8cy5vkv48kgmi14db-trynix-emubench-static-x86_64-unknown-linux-musl-1&cache=/examples/cache%20trynix-examples-1:dZOV2uGWvjHo6IC5ZqCCu0dmIRzLm9pyOQJBDnBsXRY=&run=emubench%20all&boot=1"
           title="the emulator's throughput probe: each instruction class's speed"
           >benchmark the emulator</a
-        > ·
+        >&nbsp;·
         <!-- A program that speaks through the guest's sound card
              (site/js/sound.js). The browser plays it at the reader's first
              click on the page, which is why the title asks for one. -->
@@ -209,23 +211,23 @@
           href="?pkg=espeak-ng&engine=unkernel&run=espeak-ng%20%27Hello%20from%20the%20Nix%20multiverse%27&boot=1"
           title="a speech synthesizer: click the page to hear it"
           >a voice</a
-        > ·
+        >&nbsp;·
         <!-- GUI programs, each started by its link and seen to draw. -->
         <a
           href="?pkg=foot&engine=unkernel&run=foot%20%26&boot=1"
           title="a terminal in a window"
           >foot in a window</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=galculator&engine=unkernel&run=galculator%20%26&boot=1"
           title="a GTK calculator"
           >galculator</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=mesa-demos&engine=unkernel&run=LIBDECOR_PLUGIN_DIR%3D%20es2gears_wayland%20%26&boot=1"
           title="GL gears drawn by your GPU; the page adds a GL driver"
           >GL gears</a
-        > ·
+        >&nbsp;·
         <!-- Taisei on its SDL 3 GPU renderer, which draws through the
              guest's Vulkan (vk=1): the site's kwvk on the page's WebGPU,
              its frames handed to the compositor without readback
@@ -234,7 +236,7 @@
           href="?pkg=taisei@1.4.6&engine=unkernel&vk=1&run=TAISEI_RENDERER%3Dsdlgpu%3Avulkan%20taisei%20%26&boot=1"
           title="a bullet-hell game drawn by your GPU through Vulkan"
           >Taisei on Vulkan</a
-        > ·
+        >&nbsp;·
         <!-- The Zed editor, whose wgpu renderer draws through the guest's
              Vulkan (vk=1), opening nixpkgs' recipe for hello, a file the
              link fetches from raw.githubusercontent.com at a commit
@@ -245,21 +247,21 @@
           href="?pkg=zed-editor@1.29.3&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/pkgs/by-name/he/hello/package.nix%20sha256-1Fp1hlr6JgOyv3376Y9Bh7wMCWRHJeskogmGSDxW%2BvA%3D&engine=unkernel&vk=1&run=ZED_ALLOW_ROOT%3Dtrue%20zeditor%20--foreground%20/nix/store/y3gpbspcv43bpagkik69lnix23jvq15m-package.nix%20%26&boot=1"
           title="the Zed code editor drawn by your GPU through Vulkan, opening nixpkgs' recipe for hello"
           >Zed on Vulkan</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=aisleriot&engine=unkernel&run=sol%20%26&boot=1"
           >solitaire</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=mousepad&engine=unkernel&run=mousepad%20%26&boot=1"
           title="a text editor"
           >mousepad</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=mpv&engine=unkernel&run=mpv%20--vo=wlshm%20av://lavfi:mandelbrot%20%26&boot=1"
           title="a video player drawing a fractal"
           >mpv</a
-        > ·
+        >&nbsp;·
         <!-- A film in mpv, decoded by the browser's own video decoder
              through the guest's VA-API (docs/gui.md, "Video"): the first
              30 seconds of Big Buck Bunny, (c) 2008 Blender Foundation,
@@ -271,17 +273,17 @@
           href="?pkg=mpv&file=https://cdn.jsdelivr.net/npm/video-media-samples@1.0.0/big-buck-bunny-1080p-30sec.mp4%20sha256-B7dWpMe0gYKXdmRcFTFnyhTJ34At2%2Bp9/9o9gXqlJho%3D&engine=unkernel&run=mpv%20--hwdec=vaapi%20--vo=dmabuf-wayland%20--video-sync=desync%20--loop%20/nix/store/45vnxpjln5923dd0vv3k6138d0gvgi0k-big-buck-bunny-1080p-30sec.mp4%20%26&boot=1"
           title="Big Buck Bunny (CC BY 3.0, Blender Foundation) in 1080p, decoded by your browser for mpv; click the page to hear it"
           >a film in mpv</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=xeyes&engine=unkernel&run=xeyes%20%26&boot=1"
           title="an X11 program, through Xwayland"
           >xeyes</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=wev&engine=unkernel&run=wev%20%26&boot=1"
           title="prints the window's input events to the terminal"
           >wev</a
-        > ·
+        >&nbsp;·
         <a
           href="?pkg=weston&engine=unkernel&run=weston%20%26%20until%20%5B%20-S%20%24XDG_RUNTIME_DIR/wayland-1%20%5D%3B%20do%20sleep%201%3B%20done%3B%20WAYLAND_DISPLAY=wayland-1%20weston-terminal%20%26&boot=1"
           title="a whole compositor in one window, with a terminal inside it"

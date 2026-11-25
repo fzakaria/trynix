@@ -10,6 +10,9 @@ import { readFileSync } from "node:fs";
 
 import { fileInfo, fileOf } from "../../site/js/files.js";
 
+// How the markup writes the space that joins a "·" to the link before it.
+const NO_BREAK_SPACE = "&nbsp;";
+
 // The page's markup, as the tests below read it.
 function pageHtml() {
   return readFileSync(
@@ -47,6 +50,28 @@ test("the Try line's summary counts the links behind it", () => {
   assert.notEqual(named, null, `the summary names no count: ${summary}`);
   const links = [...hidden.matchAll(/<a\b/g)].length;
   assert.equal(Number(named[1]), links);
+});
+
+// The text of the last link that closes before `index` in `markup`.
+function linkBefore(markup, index) {
+  const names = [...markup.slice(0, index).matchAll(/>([^<>]*)<\/a\b/g)];
+  return names.at(-1)?.[1];
+}
+
+// Reads the Try line's markup and checks that every "·" between two
+// links follows a no-break space, which joins it to the link before
+// it. After a plain space or a line break in the markup, a narrow
+// screen can start a line with the "·". A failure names the links
+// whose "·" is loose.
+test("each separator in the Try line stays with the link before it", () => {
+  const line = tryLine();
+  const separators = [...line.matchAll(/([^\n·]*)·/g)];
+  assert.notEqual(separators.length, 0, "no separators in the Try line");
+
+  const loose = separators
+    .filter(([, before]) => !before.endsWith(NO_BREAK_SPACE))
+    .map((separator) => linkBefore(line, separator.index));
+  assert.deepEqual(loose, []);
 });
 
 // Reads each link's files and command from the page's markup and checks
