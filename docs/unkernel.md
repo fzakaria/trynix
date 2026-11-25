@@ -72,6 +72,21 @@ NUMA node with boost off (node 7 as of 2026-11-20:
 and do it again whenever the version in
 [nix/vendor.nix](../nix/vendor.nix) changes.
 
+The guest's size is fixed too: exec-bench boots the unkernel guest on
+two CPUs with 2048 MiB (`--cpus`, `--mem`) and fails a run whose guest
+booted on another size. The page's own default is up to 4 CPUs by host
+threads, so a record taken at it would move with the machine.
+
+Records before 2026-11-24 ran on one CPU with 512 MiB, the page then
+having neither the SMP kernel nor a memory setting. On one CPU
+`opencode --version` is too spread to track: six rounds on leviathan on
+2026-11-23 read 55 to 114 s, cold or warm, on both versions measured,
+and on 2026-11-25 one run each read 49 s on 75694e2 and 108 s on
+8f039c5. Six runs on the page's default, which is two CPUs on four
+pinned host cores, read 30.7 to 32.8 s on both versions. The other
+packages are single-threaded and moved by a few percent between one
+CPU and two.
+
 ### 0.2.0-261119-040e142 to 0.2.0-261123-8f039c5
 
 Measured on a laptop (Ryzen 7 7840U, headless Chromium 152) on

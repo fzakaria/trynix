@@ -45,7 +45,10 @@ a run on one host, which the record names. One machine is not one speed
 either: leviathan's kernel began boosting busy cores from 2.45 to 3.5 GHz
 in November 2026, on every NUMA node where boost has not been turned
 off, and a boosted run reads a third faster. A record keeps the CPUs it
-was pinned to and the clock a busy one of them ran at.
+was pinned to, the NUMA policy its memory was placed by, and the clock a
+busy one of them ran at. The unkernel guest's own CPUs and memory are
+fixed by exec-bench (two CPUs, 2048 MiB) and kept in the record's exec
+results as `guest`.
 """
 
 import argparse
@@ -84,6 +87,8 @@ UNKERNEL_ENGINE = "unkernel"
 QEMU_ENGINE = "qemu"
 UNKERNEL_TAG_PREFIX = "unkernel-"
 UNKERNEL_VERSION_FILE = "vendor/unkernel/VERSION"
+# The policy numa_maps names for a process numactl did not bind.
+DEFAULT_MEMORY_POLICY = "default"
 # How long a core spins before its clock is read, so it has left idle.
 CLOCK_SPIN_SECONDS = 1
 KHZ_PER_MHZ = 1000
@@ -324,6 +329,21 @@ def busy_clock(cpu):
     return round(khz / KHZ_PER_MHZ)
 
 
+def memory_policy(numa_maps):
+    """A process's NUMA memory policy, from the text of its
+    /proc/<pid>/numa_maps (`bind:5`, `interleave:1,5`), or None for the
+    kernel's default. Every mapping without its own policy carries the
+    process's, so the first line's is the one numactl set."""
+    for line in numa_maps.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        if fields[1] == DEFAULT_MEMORY_POLICY:
+            return None
+        return fields[1]
+    return None
+
+
 def runner(browser):
     """What the numbers were measured on."""
     cpu = None
@@ -365,6 +385,15 @@ def runner(browser):
     clock = busy_clock(allowed[0])
     if clock is not None:
         machine["clock_mhz"] = clock
+
+    # The NUMA policy this run's memory is placed by, when it has one.
+    try:
+        with open("/proc/self/numa_maps") as f:
+            policy = memory_policy(f.read())
+    except OSError:
+        return machine
+    if policy is not None:
+        machine["memory_policy"] = policy
     return machine
 
 
@@ -411,7 +440,11 @@ def measure_exec(site, only, browser, workdir, log, guest_engine=QEMU_ENGINE):
     if not os.path.exists(out):
         return {"error": failure or "no output"}
     with open(out) as f:
-        return {"results": json.load(f)["results"]}
+        written = json.load(f)
+    measured = {"results": written["results"]}
+    if "guest" in written:
+        measured["guest"] = written["guest"]
+    return measured
 
 
 def measure_unkernel(site, pins_root, only, browser, machine, log):

@@ -178,5 +178,32 @@ class UnkernelRecord(unittest.TestCase):
         self.assertEqual(record["baseline"]["exec"], {"results": [{"name": "hello"}]})
 
 
+class MemoryPolicy(unittest.TestCase):
+    """Tests reading a run's NUMA memory policy from /proc/self/numa_maps,
+    which a record keeps beside the CPUs it was pinned to. numactl
+    --membind sets a policy, not a cpuset, so Mems_allowed in
+    /proc/self/status does not show it. Fed made-up numa_maps text."""
+
+    LINE = "618c01320000 {} file=/nix/store/abc-coreutils/bin/coreutils mapped=22 N1=20 N5=2 kernelpagesize_kB=4\n"
+
+    def test_bound_to_one_node(self):
+        history = load()
+        self.assertEqual(history.memory_policy(self.LINE.format("bind:5")), "bind:5")
+
+    def test_interleaved(self):
+        history = load()
+        self.assertEqual(history.memory_policy(self.LINE.format("interleave:1,5")), "interleave:1,5")
+
+    def test_default(self):
+        """A run with the kernel's default policy is not bound, and the
+        record says nothing."""
+        history = load()
+        self.assertIsNone(history.memory_policy(self.LINE.format("default")))
+
+    def test_empty(self):
+        history = load()
+        self.assertIsNone(history.memory_policy(""))
+
+
 if __name__ == "__main__":
     unittest.main()

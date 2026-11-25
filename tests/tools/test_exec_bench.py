@@ -90,16 +90,17 @@ class PageTimer(unittest.TestCase):
 
 class PageQuery(unittest.TestCase):
     """Tests the link an entry is booted with: the entry's spec, the
-    engine and when the closure downloads named outright so a record
-    never depends on the page's defaults, and boot=1. Called directly
-    with suite-shaped entries."""
+    engine, when the closure downloads and the unkernel guest's CPUs and
+    memory named outright so a record never depends on the page's
+    defaults or the host's threads, and boot=1. Called directly with
+    suite-shaped entries."""
 
     def test_package(self):
         bench = load()
         entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
         self.assertEqual(
             bench.page_query(entry, "unkernel"),
-            {"pkg": "hello", "engine": "unkernel", "fetch": "all", "boot": "1"},
+            {"pkg": "hello", "engine": "unkernel", "fetch": "all", "cpus": "2", "mem": "2048", "boot": "1"},
         )
 
     def test_downloads_on_first_use(self):
@@ -108,7 +109,7 @@ class PageQuery(unittest.TestCase):
         entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
         self.assertEqual(
             bench.page_query(entry, "unkernel", "lazy"),
-            {"pkg": "hello", "engine": "unkernel", "fetch": "lazy", "boot": "1"},
+            {"pkg": "hello", "engine": "unkernel", "fetch": "lazy", "cpus": "2", "mem": "2048", "boot": "1"},
         )
 
     def test_engine_is_always_named(self):
@@ -116,8 +117,23 @@ class PageQuery(unittest.TestCase):
         entry = {"name": "x", "spec": "path=/nix/store/abc-x-1", "command": "x"}
         self.assertEqual(
             bench.page_query(entry, "qemu"),
-            {"path": "/nix/store/abc-x-1", "engine": "qemu", "fetch": "all", "boot": "1"},
+            {
+                "path": "/nix/store/abc-x-1",
+                "engine": "qemu",
+                "fetch": "all",
+                "cpus": "2",
+                "mem": "2048",
+                "boot": "1",
+            },
         )
+
+    def test_guest_size_is_chosen_by_the_caller(self):
+        """--cpus and --mem replace the bench's fixed guest size."""
+        bench = load()
+        entry = {"name": "hello", "spec": "pkg=hello", "command": "hello"}
+        query = bench.page_query(entry, "unkernel", "all", bench.Guest(cpus=4, memory_mib=4096))
+        self.assertEqual(query["cpus"], "4")
+        self.assertEqual(query["mem"], "4096")
 
     def test_suite_runs_on_either_engine(self):
         """Every entry is found by name in the index, so each engine
@@ -126,6 +142,37 @@ class PageQuery(unittest.TestCase):
         bench = load()
         for entry in bench.SUITE:
             self.assertTrue(entry["spec"].startswith("pkg="), entry["name"])
+
+
+class GuestMismatch(unittest.TestCase):
+    """Tests the check that the guest booted with the CPUs and memory
+    its link asked for: the page clamps a CPU count to the host's
+    threads and falls back to less memory when an allocation fails, and
+    a run on another guest size than the record names must fail rather
+    than land. Called with what the page reports, made up."""
+
+    def test_the_size_asked_for(self):
+        bench = load()
+        asked = bench.Guest(cpus=1, memory_mib=2048)
+        self.assertIsNone(bench.guest_mismatch(asked, {"cpus": 1, "memoryMiB": 2048}))
+
+    def test_fewer_cpus(self):
+        bench = load()
+        asked = bench.Guest(cpus=4, memory_mib=2048)
+        error = bench.guest_mismatch(asked, {"cpus": 2, "memoryMiB": 2048})
+        self.assertIn("2 CPUs", error)
+
+    def test_less_memory(self):
+        bench = load()
+        asked = bench.Guest(cpus=1, memory_mib=4096)
+        error = bench.guest_mismatch(asked, {"cpus": 1, "memoryMiB": 1024})
+        self.assertIn("1024 MiB", error)
+
+    def test_an_engine_without_the_settings(self):
+        """The qemu engine's guest is a fixed machine and reports none."""
+        bench = load()
+        asked = bench.Guest(cpus=1, memory_mib=2048)
+        self.assertIsNone(bench.guest_mismatch(asked, None))
 
 
 if __name__ == "__main__":

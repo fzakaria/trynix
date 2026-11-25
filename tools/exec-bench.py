@@ -19,7 +19,18 @@ page would have chosen. --fetch says when the closure downloads, and is
 named outright too: `all` (the default here, though not the page's)
 downloads everything before the shell starts, so the cold execution
 measures the engine and not the network; `lazy` measures a first run
-that fetches store paths as the guest opens them (site/js/lazy.js). --engine overlays a locally built qemu engine
+that fetches store paths as the guest opens them (site/js/lazy.js).
+--cpus and --mem size the unkernel guest, named outright as well: the
+page's own default depends on the browser and the host's threads, and a
+guest on several CPUs runs a multi-threaded program like opencode in a
+fraction of the time, so a record would change with the machine and not
+the engine. The default here is two CPUs and 2048 MiB: on one CPU
+opencode's --version ranged from 50 to 114 s between runs, on two it
+stays within a few percent (docs/unkernel.md). A run whose guest booted on
+another size than it asked for (the page clamps CPUs to the host's
+threads and falls back to less memory) is an error. The qemu engine's
+guest is a fixed machine (nix/guest/machine.json) and ignores both.
+--engine overlays a locally built qemu engine
 over the site's qemu/ files in a scratch copy. --baseline prints the
 ratio of every number against an earlier run. --only picks entries by
 name. The suite is the table below; every entry is a `pkg=` the page's
@@ -45,6 +56,7 @@ import sys
 import tempfile
 import time
 import urllib.parse
+from dataclasses import dataclass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 cpu = None
@@ -78,13 +90,30 @@ SUITE = [
 ]
 
 # The page's engines (site/js/engine.js), by the name a link carries.
-GUEST_ENGINES = ["unkernel", "qemu"]
-DEFAULT_GUEST_ENGINE = "unkernel"
+UNKERNEL_ENGINE = "unkernel"
+GUEST_ENGINES = [UNKERNEL_ENGINE, "qemu"]
+DEFAULT_GUEST_ENGINE = UNKERNEL_ENGINE
 
 # When the page downloads a closure (site/js/downloads.js), by the name
 # a link carries.
 FETCH_MODES = ["all", "lazy"]
 DEFAULT_FETCH = "all"
+
+# The unkernel guest's size, as a link names it (site/js/url.js).
+@dataclass(frozen=True)
+class Guest:
+    cpus: int
+    memory_mib: int
+
+
+DEFAULT_GUEST = Guest(cpus=2, memory_mib=2048)
+
+# What the page reports of the guest it booted (site/js/unkernel.js's
+# window.trynix.kernel), or null on the qemu engine.
+BOOTED_GUEST = (
+    "(() => { const kernel = window.trynix?.kernel;"
+    " return kernel ? { cpus: kernel.stats().cpus, memoryMiB: kernel.memoryMiB } : null; })()"
+)
 
 ITERATIONS = ["cold", "warm"]
 COMMAND_LIMIT_SECONDS = 1800
@@ -228,17 +257,37 @@ def group_usage(pgid):
     return cpu_ticks / CLOCK_TICKS, rss
 
 
-def page_query(entry, guest_engine, fetch=DEFAULT_FETCH):
+def page_query(entry, guest_engine, fetch=DEFAULT_FETCH, guest=DEFAULT_GUEST):
     """The link's parameters for one entry: what to boot, on which
-    engine, when its closure downloads, and to start without a click."""
+    engine, when its closure downloads, the unkernel guest's size, and
+    to start without a click."""
     kind, value = entry["spec"].split("=", 1)
-    return {kind: value, "engine": guest_engine, "fetch": fetch, "boot": "1"}
+    return {
+        kind: value,
+        "engine": guest_engine,
+        "fetch": fetch,
+        "cpus": str(guest.cpus),
+        "mem": str(guest.memory_mib),
+        "boot": "1",
+    }
 
 
-def run_entry(entry, base, browser_binary, runs_dir, guest_engine, fetch=DEFAULT_FETCH):
+def guest_mismatch(asked, booted):
+    """Why the guest the page booted is not the size its link asked
+    for, or None when it is or the engine reports no size."""
+    if booted is None:
+        return None
+    if booted["cpus"] != asked.cpus:
+        return f"asked for {asked.cpus} CPUs, the guest booted on {booted['cpus']} CPUs"
+    if booted["memoryMiB"] != asked.memory_mib:
+        return f"asked for {asked.memory_mib} MiB, the guest booted with {booted['memoryMiB']} MiB"
+    return None
+
+
+def run_entry(entry, base, browser_binary, runs_dir, guest_engine, fetch=DEFAULT_FETCH, guest=DEFAULT_GUEST):
     """Boot a fresh guest with the entry's package, run its command cold
     then warm, and return the measurements."""
-    query = urllib.parse.urlencode(page_query(entry, guest_engine, fetch))
+    query = urllib.parse.urlencode(page_query(entry, guest_engine, fetch, guest))
     url = f"{base}/?{query}"
     profile = tempfile.mkdtemp(prefix="exec-bench-", dir=runs_dir)
     browser = cpu.Browser(browser_binary, profile)
@@ -259,6 +308,12 @@ def run_entry(entry, base, browser_binary, runs_dir, guest_engine, fetch=DEFAULT
         time.sleep(0.5)
         result["shell_seconds"] = round(time.monotonic() - started, 2)
         pgid = os.getpgid(browser.process.pid)
+
+        # The guest must have booted at the size the record names.
+        mismatch = guest_mismatch(guest, browser.evaluate(BOOTED_GUEST))
+        if mismatch is not None:
+            result["error"] = mismatch
+            return result
 
         # which package the command resolves to, from the guest's own
         # PATH: the page picks a version, and a link to the run should
@@ -371,6 +426,18 @@ def main():
         default=DEFAULT_FETCH,
         help="when the closure downloads: all before the shell starts, or as the guest opens it",
     )
+    parser.add_argument(
+        "--cpus",
+        type=int,
+        default=DEFAULT_GUEST.cpus,
+        help="the unkernel guest's CPUs",
+    )
+    parser.add_argument(
+        "--mem",
+        type=int,
+        default=DEFAULT_GUEST.memory_mib,
+        help="the unkernel guest's memory, MiB",
+    )
     parser.add_argument("--json", help="write the measurements here")
     parser.add_argument("--baseline", help="an earlier --json file to print ratios against")
     parser.add_argument("--only", action="append", help="run only this entry (repeatable)")
@@ -395,6 +462,7 @@ def main():
             site, scratch = emu.overlay_engine(site, args.engine)
         base, shutdown = cpu.serve(site)
 
+    guest = Guest(cpus=args.cpus, memory_mib=args.mem)
     suite = [e for e in SUITE if not args.only or e["name"] in args.only]
     baseline = None
     if args.baseline:
@@ -406,7 +474,7 @@ def main():
     try:
         for entry in suite:
             print(f"== {entry['name']}: {entry['command']}", flush=True)
-            results.append(run_entry(entry, base, args.browser, runs_dir, args.guest_engine, args.fetch))
+            results.append(run_entry(entry, base, args.browser, runs_dir, args.guest_engine, args.fetch, guest))
             if args.json:
                 record = {
                     "engine": args.engine or "site",
@@ -414,6 +482,9 @@ def main():
                     "fetch": args.fetch,
                     "results": results,
                 }
+                # Only the unkernel guest has a size a link chooses.
+                if args.guest_engine == UNKERNEL_ENGINE:
+                    record["guest"] = {"cpus": guest.cpus, "memory_mib": guest.memory_mib}
                 with open(args.json, "w") as f:
                     json.dump(record, f, indent=2)
     finally:
