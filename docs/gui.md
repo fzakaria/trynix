@@ -224,10 +224,10 @@ Mesa carries two patches for unkernel's renderer. Since unkernel
 ([pithings/unkernel#27](https://github.com/pithings/unkernel/issues/27)):
 it keeps a texture WebGL would refuse off the unit, and the draw
 lands. The patches stay because what that draw then samples is not
-what GL defines. Without them, on 2026-11-24, the feedback case below
-read black where GL defines level 0's red, and (0, 0, 0, 0) where it
-defines (0, 0, 0, 1) for an integer sampler with an incomplete texture
-or none. In the first,
+what GL defines. Without them, on 2026-11-24 and again on
+0.2.0-261125-cec0a49, the feedback case below read black where GL
+defines level 0's red, and (0, 0, 0, 0) where it defines (0, 0, 0, 1)
+for an integer sampler with an incomplete texture or none. In the first,
 [patches/mesa/0001](../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch),
 a draw that renders into a level of a texture
 while a sampler view of the draw covers that level is a feedback loop:
@@ -690,7 +690,8 @@ back to GLES, Taisei 1.4.6's Vulkan renderer loses the device at its
 first draw, and the DDNet 20.0 client finds no memory it can map and
 gives up. Seven small changes to the driver's `icd.c` make all three
 draw, each filed upstream as
-[pithings/unkernel#32](https://github.com/pithings/unkernel/issues/32):
+[pithings/unkernel#32](https://github.com/pithings/unkernel/issues/32).
+0.2.0-261125-cec0a49 left the code they change as it was:
 
 | patch                                             | GZDoom | Taisei | DDNet |
 | ------------------------------------------------- | ------ | ------ | ----- |
@@ -707,7 +708,9 @@ source at the commit the vendored SDK was published from, with the
 changes as [patches/kwvk/](../patches/kwvk/), the way unkernel's
 `vk/icd/build.sh` builds it: zig cc for aarch64 against glibc 2.36's
 symbols, stripped, against the Vulkan headers unkernel pins. Without
-the patches the build gives the base system's driver byte for byte.
+the patches the build gives the base system's driver but for the
+compiler version in its `.comment` section: LLVM 21.1.8 in nixpkgs' zig,
+21.1.0 in the one unkernel 0.2.0-261125-cec0a49 was built with.
 The driver and the SDK's renderer speak one protocol, so
 [nix/vendor.nix](../nix/vendor.nix) takes unkernel's version from
 kwvk.nix. The output is the driver and a manifest that names it by

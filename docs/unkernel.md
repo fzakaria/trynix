@@ -642,8 +642,12 @@ implement (that would show as SIGILL).
 ## Updating it
 
 The npm package carries the kernel prebuilt, so there is nothing to
-build out of band. Change the version and hash in
-[nix/vendor.nix](../nix/vendor.nix), then:
+build out of band; the site's build makes the guest's Vulkan driver
+from unkernel's source at the release's commit
+([gui.md](./gui.md#the-vulkan-driver)). Change the version, the commit
+and the source's hash in [nix/kwvk.nix](../nix/kwvk.nix) and the npm
+package's hash in [nix/vendor.nix](../nix/vendor.nix), check that
+[patches/kwvk/](../patches/kwvk/) still apply, then:
 
 ```sh
 site=$(nix build .#site --no-link --print-out-paths)

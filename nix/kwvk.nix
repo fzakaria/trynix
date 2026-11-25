@@ -13,11 +13,13 @@
 # Vulkan headers unkernel pins (vk/pins.sh). Zig cross-compiles from
 # whatever system builds the site, as it does the relay
 # (nix/wlandr.nix). Without the patches this build gives the base
-# system's driver byte for byte.
+# system's driver but for the compiler version in its .comment section:
+# nixpkgs' zig carries LLVM 21.1.8, the one the release was built with
+# 21.1.0.
 { pkgs }:
 let
-  version = "0.2.0-261124-75694e2";
-  rev = "75694e278fa9e32427251bdc31b755cce6851036";
+  version = "0.2.0-261125-cec0a49";
+  rev = "cec0a49f5d028867955dbc19769fe9e810dc9384";
 
   # The guest's CPU and C library, as vk/icd/build.sh names them.
   target = "aarch64-linux-gnu.2.36";
@@ -52,7 +54,7 @@ let
     owner = "pithings";
     repo = "unkernel";
     inherit rev;
-    sha256 = "sha256-ADiSLuaChSp3I9cfCYLIhxh8QmhxDHqdCvHglRQa9fE=";
+    sha256 = "sha256-a8fOhHr+BCrFsCOxPX3fy8tIWZJZ372avA6C4BpyL1g=";
   };
 
   # The source with trynix's patches applied, which the SPIR-V check

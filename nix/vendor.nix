@@ -1,5 +1,5 @@
 # Vendored browser dependencies, pinned by hash and served same-origin.
-# Same-origin is not just hygiene: the page is cross-origin isolated
+# Same-origin is required: the page is cross-origin isolated
 # (COOP/COEP, for SharedArrayBuffer), and every cross-origin subresource
 # would need CORP headers we do not control on a CDN.
 #
@@ -46,7 +46,7 @@ let
   # from (nix/kwvk.nix): the driver and the SDK's renderer speak one
   # protocol, so the two move together.
   unkernelVersion = (import ./kwvk.nix { inherit pkgs; }).version;
-  unkernel = npm "unkernel" unkernelVersion "1x5zf9a30ajvg0kd93andxs7kngyx0ir2la39rhsihfm1w2i64qv";
+  unkernel = npm "unkernel" unkernelVersion "1i85h53db9fzj87ilsiyg4dv0qih01ali3ki2gdv93f4x9s5fzib";
   wland = npm "wland" "0.1.0-261124-3c987e5" "04baraili99mgag86icmzvrcdn413yl4gpps96d5v704wg7yp767";
 
   # The modules the compositor's browser entry (client.mjs) imports,
@@ -88,7 +88,7 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   # since (hello 2.7 is bzip2, hello 2.8 is xz). A wasm decoder rather
   # than one of the pure-JS ones because the difference is not small:
   # measured over python3-3.2.3's closure, 281 MB unpacked, this decodes
-  # at 16 MB/s against 1.4 for the quickest JS implementation on npm —
+  # at 16 MB/s against 1.4 for the quickest JS implementation on npm:
   # seventeen seconds of a boot against three minutes. The wasm sits
   # beside the module, which is where the wasm-bindgen glue looks for
   # it.

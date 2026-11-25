@@ -22,10 +22,10 @@ A variable named in an OpGroupDecorate is kept.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 3fa9b4d..8b41789 100644
+index d324c66..119b678 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -1564,6 +1564,111 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
+@@ -1580,6 +1580,111 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
  	return out;
  }
  
@@ -137,7 +137,7 @@ index 3fa9b4d..8b41789 100644
  /* One pass over the module in *w (*nw words), which *owned holds, or
   * the app when *owned is NULL: the module the pass returns replaces it. */
  typedef uint32_t *(*spirv_pass)(const uint32_t *w, size_t nw, size_t *out_nw);
-@@ -1579,11 +1684,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
+@@ -1595,11 +1700,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
  	*nw = out_nw;
  }
  

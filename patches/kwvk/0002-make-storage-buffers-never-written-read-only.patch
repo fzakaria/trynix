@@ -25,10 +25,10 @@ the same decoration gap for older glslang.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 884161f..3fa9b4d 100644
+index 08f347b..d324c66 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -1433,6 +1433,162 @@ static int spirv_writable(const uint32_t *w, size_t nw, uint32_t *out, int cap)
+@@ -1449,6 +1449,162 @@ static int spirv_writable(const uint32_t *w, size_t nw, uint32_t *out, int cap)
  	return bad ? -1 : n;
  }
  
@@ -191,7 +191,7 @@ index 884161f..3fa9b4d 100644
  /* does the module decorate anything BuiltIn BaseVertex (4424), BaseInstance
   * (4425) or DrawIndex (4426)? WGSL has none: the translator reads 0 */
  static int spirv_base(const uint32_t *w, size_t nw)
-@@ -1458,12 +1614,17 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+@@ -1474,12 +1630,17 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
  {
  	(void)a;
  	struct kw_device *d = DEV(dh);
@@ -211,7 +211,7 @@ index 884161f..3fa9b4d 100644
  	if (nw > 0)
  		memcpy(o->w, tmp, nw * sizeof(uint32_t));
  	struct jb j = {0};
-@@ -1474,11 +1635,12 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+@@ -1490,11 +1651,12 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
  		snprintf(path, sizeof path, "%s/%u.spv", dir, o->id);
  		FILE *f = fopen(path, "wb");
  		if (f) {

@@ -16,10 +16,10 @@ They carry nothing but source positions.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index c614452..371f9e3 100644
+index 91559f8..9a703ce 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -1582,6 +1582,41 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
+@@ -1598,6 +1598,41 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
  	return out;
  }
  
@@ -61,7 +61,7 @@ index c614452..371f9e3 100644
  /* Descriptor bindings no function of the module uses, dropped: their
   * OpVariable, the decorations and names on it, and its place in the
   * entry points' interfaces. The translator reflects every binding a
-@@ -1702,12 +1737,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
+@@ -1718,12 +1753,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
  	*nw = out_nw;
  }
  
@@ -78,7 +78,7 @@ index c614452..371f9e3 100644
  	spirv_apply(spirv_drop_unused, &w, &nw, &owned);
  	spirv_apply(spirv_mark_unwritten, &w, &nw, &owned);
  	*out_nw = nw;
-@@ -1739,7 +1775,7 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+@@ -1755,7 +1791,7 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
  {
  	(void)a;
  	struct kw_device *d = DEV(dh);

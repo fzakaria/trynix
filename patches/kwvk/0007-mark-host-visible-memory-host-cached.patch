@@ -16,10 +16,10 @@ are cached, and type 1 now says so.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 4d4e060..ca9979c 100644
+index 169e442..5d10c44 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -481,7 +481,10 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
+@@ -489,7 +489,10 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
  	m->memoryTypeCount = 2;
  	m->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
  	m->memoryTypes[0].heapIndex = 0;

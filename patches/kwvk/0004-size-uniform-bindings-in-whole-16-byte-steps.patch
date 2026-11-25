@@ -18,10 +18,10 @@ minUniformBufferOffsetAlignment (256), so the grown range always fits.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 8b41789..c614452 100644
+index 119b678..91559f8 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -1095,6 +1095,20 @@ void kw_readback(struct kw_device *d, struct kw_memory *only)
+@@ -1111,6 +1111,20 @@ void kw_readback(struct kw_device *d, struct kw_memory *only)
  
  /* ---- buffers ---- */
  
@@ -42,7 +42,7 @@ index 8b41789..c614452 100644
  static API VkResult CALL kw_vkCreateBuffer(VkDevice dh, const VkBufferCreateInfo *ci, const VkAllocationCallbacks *a, VkBuffer *out)
  {
  	(void)a;
-@@ -1108,8 +1122,12 @@ static API VkResult CALL kw_vkCreateBuffer(VkDevice dh, const VkBufferCreateInfo
+@@ -1124,8 +1138,12 @@ static API VkResult CALL kw_vkCreateBuffer(VkDevice dh, const VkBufferCreateInfo
  	b->id = link_id(d->link);
  	b->size = ci->size;
  	b->usage = ci->usage;
@@ -56,7 +56,7 @@ index 8b41789..c614452 100644
  	send_msg(d, &j, NULL, 0);
  	pthread_mutex_lock(&d->mu);
  	b->next = d->buffers;
-@@ -2435,7 +2453,7 @@ static API void CALL kw_vkUpdateDescriptorSets(VkDevice dh, uint32_t nw, const V
+@@ -2456,7 +2474,7 @@ static API void CALL kw_vkUpdateDescriptorSets(VkDevice dh, uint32_t nw, const V
  				struct kw_buffer *b = HANDLE(struct kw_buffer, bi->buffer);
  				jb_printf(&j, "%s{\"buffer\":%u,\"offset\":%llu,\"range\":", k ? "," : "", b ? b->id : 0,
  					  (unsigned long long)bi->offset);

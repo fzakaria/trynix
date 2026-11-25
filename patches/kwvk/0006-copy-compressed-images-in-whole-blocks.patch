@@ -16,10 +16,10 @@ driver keeps each image's format, so it knows the block.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 371f9e3..4d4e060 100644
+index 9a703ce..169e442 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -3388,17 +3388,42 @@ static API void CALL kw_vkCmdBlitImage(VkCommandBuffer c, VkImage src, VkImageLa
+@@ -3409,17 +3409,42 @@ static API void CALL kw_vkCmdBlitImage(VkCommandBuffer c, VkImage src, VkImageLa
  	jb_printf(b, "],\"filter\":%u}", filter);
  }
  
@@ -64,7 +64,7 @@ index 371f9e3..4d4e060 100644
  		JS(b, "}");
  	}
  	JS(b, "]}");
-@@ -3408,7 +3433,7 @@ static API void CALL kw_vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer src,
+@@ -3429,7 +3454,7 @@ static API void CALL kw_vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer src,
  {
  	struct jb *b = cmd(c, "vkCmdCopyBufferToImage");
  	jb_printf(b, ",\"srcBuffer\":%u,\"dstImage\":%u,\"dstImageLayout\":%u", BUFID(src), OID(dst), dl);
@@ -73,7 +73,7 @@ index 371f9e3..4d4e060 100644
  	/* from each region's bufferOffset to the end (as vkCmdCopyImageToBuffer's writes) */
  	for (uint32_t i = 0; i < n; i++)
  		cb_read_range(CB(c), HANDLE(struct kw_buffer, src), r[i].bufferOffset, KW_WHOLE);
-@@ -3418,7 +3443,7 @@ static API void CALL kw_vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage src, V
+@@ -3439,7 +3464,7 @@ static API void CALL kw_vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage src, V
  {
  	struct jb *b = cmd(c, "vkCmdCopyImageToBuffer");
  	jb_printf(b, ",\"srcImage\":%u,\"srcImageLayout\":%u,\"dstBuffer\":%u", OID(src), sl, BUFID(dst));

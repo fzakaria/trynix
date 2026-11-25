@@ -16,10 +16,10 @@ maxDrawIndirectCount the spec allows with it.
 
 ---
 diff --git a/vk/icd/icd.c b/vk/icd/icd.c
-index 9f37450..884161f 100644
+index 42f7815..08f347b 100644
 --- a/vk/icd/icd.c
 +++ b/vk/icd/icd.c
-@@ -357,7 +357,10 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
+@@ -365,7 +365,10 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
  	l->subTexelPrecisionBits = 4;
  	l->mipmapPrecisionBits = 4;
  	l->maxDrawIndexedIndexValue = 0xffffffffu;
@@ -31,7 +31,7 @@ index 9f37450..884161f 100644
  	l->maxSamplerLodBias = 0;
  	l->maxSamplerAnisotropy = 16;
  	l->maxViewports = 1;
-@@ -419,6 +422,7 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
+@@ -427,6 +430,7 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
  	f->shaderClipDistance = HAS("clip-distances");
  	f->dualSrcBlend = HAS("dual-source-blending");
  	f->drawIndirectFirstInstance = HAS("indirect-first-instance");
