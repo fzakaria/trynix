@@ -598,6 +598,12 @@ CASES = {
 URL_CASES = ["reload-first", "index-fails", "engine-switch"]
 
 
+def open_browser(kind, binary, profile):
+    """gui-test.py's driver for `kind`, on `profile`, with neither a GPU
+    nor a WebGPU adapter: the links under test draw nothing."""
+    return gui.DRIVERS[kind](binary, profile, cpu.Gpu.OFF, cpu.WebGpu.OFF)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", help="a built site directory to serve")
@@ -642,9 +648,7 @@ def main():
                 if args.site is None
                 else serve(args.site, case.worker)
             )
-            browser = gui.DRIVERS[args.kind](
-                binary, os.path.join(workdir, name), cpu.Gpu.OFF
-            )
+            browser = open_browser(args.kind, binary, os.path.join(workdir, name))
             try:
                 browser.preload(PRELOAD)
                 case.run(browser, base, server, checks)
