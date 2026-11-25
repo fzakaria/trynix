@@ -616,7 +616,9 @@ stopped answering; it was not revisited.
 A Vulkan program in the guest draws on the page's WebGPU. unkernel's
 kernel bundle carries kwvk, a Vulkan driver whose GPU is the page's
 ([.agents/vk.md](https://github.com/pithings/unkernel/blob/main/.agents/vk.md)
-in unkernel). The loader loads the driver into the program; the driver
+in unkernel), and the site serves kwvk built with seven fixes of its
+own (see [The Vulkan driver](#the-vulkan-driver)), which the guest
+uses instead. The loader loads the driver into the program; the driver
 sends the program's Vulkan calls over vsock port 1018 to the SDK's
 renderer on the page, which makes the objects on one WebGPU device and
 translates the program's SPIR-V shaders to WGSL with `kwvk-naga.wasm`.
@@ -652,20 +654,78 @@ gzipped). On SwiftShader in headless Chromium the renderer was ready
 With `vk=1` every shell gets two variables (`sessionEnv` in
 [site/js/gui.js](../site/js/gui.js)):
 
-- `VK_ADD_DRIVER_FILES=/kw/layer/usr/share/vulkan/icd.d/kw_icd.json`,
-  kwvk's manifest. nixpkgs' loader looks for drivers in `/etc/xdg`,
-  `/run/opengl-driver/share` and `/usr/share`; the guest has the
-  manifest in none of them, and `/run/opengl-driver` is the GL
-  driver's link. The variable adds kwvk to the drivers the loader
-  finds, so a selected `mesa` still brings its own. The driver is built
-  against glibc 2.34 and links nothing else, so a program from nixpkgs
-  22.05 on loads it. The loaders of older nixpkgs, 1.2 and before,
-  ignore the variable, and their programs see no Vulkan device; 1.3.211,
-  the oldest 1.3 in the index, reads it.
+- `VK_DRIVER_FILES=/nix/store/<kwvk>/share/vulkan/icd.d/kw_icd.json`,
+  the manifest of the site's kwvk. nixpkgs' loader looks for drivers in
+  `/etc/xdg`, `/run/opengl-driver/share` and `/usr/share`; the guest
+  has the manifest in none of them, and `/run/opengl-driver` is the GL
+  driver's link. The variable makes kwvk the one driver the loader
+  loads: the kernel's own kwvk, in the kw layer, is not loaded beside
+  it, and neither is a Vulkan driver a selected `mesa` brings. Where
+  the page could not read the site's manifest, the variable names the
+  kernel's own kwvk, `/kw/layer/usr/share/vulkan/icd.d/kw_icd.json`.
+  The driver is built against glibc 2.34 and links nothing else, so a
+  program from nixpkgs 22.05 on loads it. The loaders of older nixpkgs,
+  1.2 and before, ignore the variable, and their programs see no Vulkan
+  device; 1.3.211, the oldest 1.3 in the index, reads it.
 - `LIBGL_KOPPER_DISABLE=1`. A nixpkgs Mesa the reader selects tries
   zink on the first Vulkan device when its own GL driver fails, which
   would run GL through kwvk; unkernel advises the variable for that.
   The site's Mesa has no zink.
+
+### The Vulkan driver
+
+The kwvk in unkernel 0.2.0-261124-75694e2's base system draws none of
+the games tried: GZDoom 4.14.2 finds no device it accepts and falls
+back to GLES, Taisei 1.4.6's Vulkan renderer loses the device at its
+first draw, and the DDNet 20.0 client finds no memory it can map and
+gives up. Seven small changes to the driver's `icd.c` make all three
+draw, each filed upstream as
+[pithings/unkernel#32](https://github.com/pithings/unkernel/issues/32):
+
+| patch                                             | GZDoom | Taisei | DDNet |
+| ------------------------------------------------- | ------ | ------ | ----- |
+| 0001, report `multiDrawIndirect`                  | needs  |        |       |
+| 0002, storage buffers never written are read-only | needs  |        |       |
+| 0003, drop descriptor bindings no function uses   | needs  | needs  |       |
+| 0004, uniform bindings in whole 16-byte steps     | needs  |        |       |
+| 0005, drop `OpLine` and `OpNoLine`                |        | needs  |       |
+| 0006, compressed copies in whole blocks           |        | needs  |       |
+| 0007, host-visible memory is `HOST_CACHED`        |        |        | needs |
+
+[nix/kwvk.nix](../nix/kwvk.nix) builds the driver from unkernel's
+source at the commit the vendored SDK was published from, with the
+changes as [patches/kwvk/](../patches/kwvk/), the way unkernel's
+`vk/icd/build.sh` builds it: zig cc for aarch64 against glibc 2.36's
+symbols, stripped, against the Vulkan headers unkernel pins. Without
+the patches the build gives the base system's driver byte for byte.
+The driver and the SDK's renderer speak one protocol, so
+[nix/vendor.nix](../nix/vendor.nix) takes unkernel's version from
+kwvk.nix. The output is the driver and a manifest that names it by
+its store path: 143 KB, 47.8 KB as the xz NAR the page fetches.
+
+The site serves it as it serves the GL driver: a store path in the
+site's cache, `gl/cache/`, named in `gl/drivers.json` (as `vulkan`),
+whose closure is walked the first time the guest looks inside it
+([site/js/lazy.js](../site/js/lazy.js), capabilities). That lookup is
+the Vulkan loader reading the manifest `VK_DRIVER_FILES` names, so a
+boot fetches nothing of it, and neither does a `vk=1` guest until a
+program loads Vulkan. Unlike the GL driver's, its files are not
+committed: zig builds the driver from any system, so the site's build
+writes its narinfo, listing and NAR into `gl/cache/` and names it in
+the served `drivers.json` ([tools/site-cache.py](../tools/site-cache.py)),
+and the served driver can never lag the patches. The committed
+`drivers.json` names no Vulkan driver.
+
+`checks.kwvk-spirv` ([nix/kwvk-check.nix](../nix/kwvk-check.nix))
+compiles the patched `icd.c` natively into a harness
+([tests/kwvk/](../tests/kwvk/)) and runs the three SPIR-V passes on
+shaders glslang compiles at build time: buffers only read must come
+out read-only and written ones stay writable, unused bindings must go,
+from SPIR-V 1.4 entry point interfaces too, no line instructions may
+be left, and `spirv-val` must pass. `checks.site` checks that the
+built site names the driver, lists it among its cache's paths, has a
+listing beside its narinfo, and that its NAR matches the narinfo's
+`NarHash` and unpacks to the driver.
 
 ### Which browsers have an adapter
 
@@ -1180,7 +1240,9 @@ the console, terminal and windows, at each step.
 page writes into the share and runs in the guest, offline, the
 environment every shell gets among it,
 [tests/site/unkernel.test.mjs](../tests/site/unkernel.test.mjs) that
-a shell that sources it has kwvk named and zink kept off,
+a shell that sources it has the site's kwvk named as its one Vulkan
+driver, or the kernel's own when the site names none, and zink kept
+off,
 [tests/site/lazy.test.mjs](../tests/site/lazy.test.mjs) how a
 capability joins the store on its first lookup and stays out of the
 farm, and
@@ -1213,7 +1275,9 @@ site next to the files:
   (`gui.<hash>/LICENSE-wland`). The relay is built from the upstream
   commit named in `nix/wlandr.nix`, unmodified.
 - unkernel's SDK is MIT and its kernel GPL-2.0
-  (`vendor/unkernel/LICENSE`, `LICENSE-MIT`). `virgl.wasm` is
+  (`vendor/unkernel/LICENSE`, `LICENSE-MIT`). kwvk, the Vulkan driver
+  the site serves, is GPL-2.0-or-later, built from the upstream commit
+  named in `nix/kwvk.nix` with `patches/kwvk/`. `virgl.wasm` is
   virglrenderer and parts of Mesa, both MIT, and `kwvk-naga.wasm` is
   naga and its Rust dependencies, MIT or Apache-2.0, each with
   unkernel's glue under GPL-2.0-or-later; their notices are in

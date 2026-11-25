@@ -149,17 +149,30 @@ const CANBERRA_DRIVER = "alsa";
 // four, none came in 30 s of the game.
 const ALSOFT_PERIODS = 4;
 
-// kwvk's manifest, in the kw layer of unkernel's base system: kwvk is
-// the Vulkan driver whose GPU is the page's WebGPU (unkernel.js, the vk
-// option). nixpkgs' Vulkan loader looks for drivers in /etc/xdg,
-// /run/opengl-driver/share and /usr/share, none of which holds it, so
-// every shell of a guest with Vulkan names it. The manifest names the
-// driver as /usr/lib/kw/libvulkan_kw.so, which the base system links
-// into the kw layer. The driver is built against glibc 2.34 and links
-// nothing else, so a program from nixpkgs 22.05 on loads it into its
-// own process. The loaders of older nixpkgs, 1.2 and before, ignore
-// the variable, and their programs see no Vulkan device.
-const KWVK_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
+// kwvk is the Vulkan driver whose GPU is the page's WebGPU (unkernel.js,
+// the vk option). The site serves it built with trynix's patches
+// (nix/kwvk.nix), as a store path in its own cache that the guest
+// fetches the first time a program loads Vulkan (lazy.js, capability),
+// and the manifest naming the driver to the loader sits at
+// KWVK_MANIFEST in that path. The kernel's base system has the driver
+// without the patches, which no game drew with, and its manifest in the
+// kw layer, KWVK_BASE_ICD; a page with no driver from the site names
+// that one. nixpkgs' Vulkan loader looks for drivers in /etc/xdg,
+// /run/opengl-driver/share and /usr/share, none of which holds either,
+// so every shell of a guest with Vulkan names the driver. Either is
+// built against glibc 2.34 and links nothing else, so a program from
+// nixpkgs 22.05 on loads it into its own process. The loaders of older
+// nixpkgs, 1.2 and before, ignore the variable, and their programs see
+// no Vulkan device.
+const KWVK_MANIFEST = "share/vulkan/icd.d/kw_icd.json";
+const KWVK_BASE_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
+
+// The manifest of kwvk at `driver`, the basename of the site's driver,
+// or the base system's when the site publishes none (null).
+const kwvkIcd = (driver) =>
+  driver === null
+    ? KWVK_BASE_ICD
+    : `${GUEST_STORE_DIR}/${driver}/${KWVK_MANIFEST}`;
 
 // The environment every guest shell gets, the same from the boot to the
 // end, so a GUI program started plainly finds the relay and picks its
@@ -169,20 +182,23 @@ const KWVK_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
 // configuration that gives it a longer buffer (ALSOFT_PERIODS).
 //
 // With guest Vulkan on (`vulkan`, vulkan.js), the Vulkan loader is told
-// of kwvk, beside any driver a selected Mesa brings, and Mesa's zink is
-// kept off: a nixpkgs Mesa the reader selects tries zink on the first
-// Vulkan device when its own GL driver fails, which would run GL
-// through kwvk, and unkernel advises the variable. With it off the
-// shells have neither variable.
+// that kwvk is its one driver: the site's, `vulkanDriver` (a store
+// basename), or the base system's when that is null. VK_DRIVER_FILES
+// replaces the drivers the loader would find rather than adding to
+// them, so a Mesa the reader selects brings no Vulkan driver of its
+// own. Mesa's zink is kept off: a nixpkgs Mesa the reader selects
+// tries zink on the first Vulkan device when its own GL driver fails,
+// which would run GL through kwvk, and unkernel advises the variable.
+// With it off the shells have neither variable.
 //
 // Java's AWT waits for its window manager to reparent each window into
 // a frame of its own, and the satellite, whose windows' frames are the
 // compositor's, does not: a Swing window opened blank and stayed so
 // until AWT was told.
-export function sessionEnv(vulkan = Vulkan.OFF) {
+export function sessionEnv({ vulkan = Vulkan.OFF, vulkanDriver = null } = {}) {
   const vulkanEnv =
     vulkan === Vulkan.ON
-      ? { VK_ADD_DRIVER_FILES: KWVK_ICD, LIBGL_KOPPER_DISABLE: "1" }
+      ? { VK_DRIVER_FILES: kwvkIcd(vulkanDriver), LIBGL_KOPPER_DISABLE: "1" }
       : {};
   return {
     XDG_RUNTIME_DIR: RUNTIME_DIR,

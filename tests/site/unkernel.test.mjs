@@ -1,12 +1,13 @@
 // Tests the shell fragment every shell in the unkernel guest sources
 // (site/js/unkernel.js, manifest, from gui.js's sessionEnv): that with
-// guest Vulkan on (vk=1, site/js/vulkan.js) it names kwvk's Vulkan
-// driver to the Vulkan loader and keeps Mesa from running GL through
-// zink, and that without it the shell has neither variable, as before
-// there was guest Vulkan. The fragment is written as the page writes
-// it, then sourced by a real sh with nothing else in its environment,
-// whose variables are read back, so a quoting slip fails here as it
-// would in the guest.
+// guest Vulkan on (vk=1, site/js/vulkan.js) it names the site's kwvk,
+// the Vulkan driver built with trynix's patches, to the Vulkan loader as
+// its one driver, or the base system's kwvk when the site publishes
+// none, and keeps Mesa from running GL through zink; and that without
+// it the shell has none of those variables, as before there was guest
+// Vulkan. The fragment is written as the page writes it, then sourced
+// by a real sh with nothing else in its environment, whose variables
+// are read back, so a quoting slip fails here as it would in the guest.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -21,16 +22,26 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener: () => {} });
 const { manifest } = await import("../../site/js/unkernel.js");
 const { Vulkan } = await import("../../site/js/vulkan.js");
 
-// kwvk's manifest in the guest, in the kw layer of unkernel's base
-// system, and what LIBGL_KOPPER_DISABLE is set to.
-const KWVK_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
+// The site's kwvk as the page names it to the guest (its store path's
+// basename), its manifest in the guest's store, the base system's
+// manifest in the kw layer, and what LIBGL_KOPPER_DISABLE is set to.
+const SITE_DRIVER =
+  "0123456789abcdfghijklmnpqrsvwxyz-kwvk-0.2.0-261124-75694e2";
+const SITE_ICD = `/nix/store/${SITE_DRIVER}/share/vulkan/icd.d/kw_icd.json`;
+const BASE_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
 const KOPPER_DISABLED = "1";
 
 // What the sh prints for a variable it does not have.
 const UNSET = "(unset)";
 
-// The two variables guest Vulkan sets.
-const VULKAN_VARIABLES = ["VK_ADD_DRIVER_FILES", "LIBGL_KOPPER_DISABLE"];
+// The variables guest Vulkan sets, and the one it used to set, which
+// added kwvk to the drivers the loader finds instead of naming the one
+// driver it loads.
+const VULKAN_VARIABLES = [
+  "VK_DRIVER_FILES",
+  "VK_ADD_DRIVER_FILES",
+  "LIBGL_KOPPER_DISABLE",
+];
 
 // The shells the page writes the fragment for: a guest with no
 // network, and one with a network, whose shells are also pointed at the
@@ -63,28 +74,44 @@ function sourced(fragment, names) {
 }
 
 // Checks that with guest Vulkan on every shell, with a network or
-// without, gets VK_ADD_DRIVER_FILES naming kwvk's manifest and
-// LIBGL_KOPPER_DISABLE, by sourcing each fragment in sh and reading
-// both variables back.
-test("with vk=1 every shell names kwvk and keeps zink off", () => {
+// without, gets VK_DRIVER_FILES naming the site's kwvk in the store as
+// the loader's one driver, no VK_ADD_DRIVER_FILES, and
+// LIBGL_KOPPER_DISABLE, by sourcing each fragment in sh and reading the
+// variables back.
+test("with vk=1 every shell names the site's kwvk and keeps zink off", () => {
   for (const [shell, options] of Object.entries(SHELLS)) {
-    const [driverFiles, kopper] = sourced(
-      manifest({ ...options, vulkan: Vulkan.ON }),
+    const values = sourced(
+      manifest({ ...options, vulkan: Vulkan.ON, vulkanDriver: SITE_DRIVER }),
       VULKAN_VARIABLES,
     );
-    assert.equal(driverFiles, KWVK_ICD, shell);
-    assert.equal(kopper, KOPPER_DISABLED, shell);
+    assert.deepEqual(values, [SITE_ICD, UNSET, KOPPER_DISABLED], shell);
   }
 });
 
-// Checks that with guest Vulkan off, the default, no shell has either
-// variable, by sourcing each fragment in sh and asking for both.
-test("without vk=1 no shell has the Vulkan variables", () => {
+// Checks that with guest Vulkan on and no driver from the site, as on a
+// site whose manifest could not be read, every shell names the base
+// system's kwvk the same way, so Vulkan programs still find a device.
+test("with vk=1 and no site driver every shell names the base kwvk", () => {
   for (const [shell, options] of Object.entries(SHELLS)) {
     const values = sourced(
-      manifest({ ...options, vulkan: Vulkan.OFF }),
+      manifest({ ...options, vulkan: Vulkan.ON, vulkanDriver: null }),
       VULKAN_VARIABLES,
     );
-    assert.deepEqual(values, [UNSET, UNSET], shell);
+    assert.deepEqual(values, [BASE_ICD, UNSET, KOPPER_DISABLED], shell);
+  }
+});
+
+// Checks that with guest Vulkan off, the default, no shell has any of
+// the variables, the site's driver published or not, by sourcing each
+// fragment in sh and asking for them.
+test("without vk=1 no shell has the Vulkan variables", () => {
+  for (const [shell, options] of Object.entries(SHELLS)) {
+    for (const vulkanDriver of [SITE_DRIVER, null]) {
+      const values = sourced(
+        manifest({ ...options, vulkan: Vulkan.OFF, vulkanDriver }),
+        VULKAN_VARIABLES,
+      );
+      assert.deepEqual(values, [UNSET, UNSET, UNSET], shell);
+    }
   }
 });

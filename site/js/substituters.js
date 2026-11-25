@@ -76,10 +76,13 @@ export function setSitePaths(storePaths) {
 }
 
 // What a page has from a site that publishes no manifest.
-const NO_MANIFEST = Object.freeze({ paths: [], drivers: [] });
+const NO_MANIFEST = Object.freeze({ paths: [], drivers: [], vulkan: null });
 
 // The site's manifest, site/gl/drivers.json: the GL drivers it publishes
-// (gldriver.js) and every store path its cache serves. Read once, by
+// (gldriver.js), the store path of its Vulkan driver or null (gui.js,
+// sessionEnv), and every store path its cache serves. The committed file
+// names no Vulkan driver: nix/site.nix builds kwvk, adds it to the cache
+// and names it in the copy the site serves. Read once, by
 // the first narinfo lookup or the first caller to want the drivers,
 // whichever comes first: the paths decide which cache a lookup asks,
 // and a store path the site serves, pasted into a page that has just
@@ -112,7 +115,11 @@ async function readManifest() {
   const read = await res.json();
   const paths = read.paths ?? [];
   setSitePaths(paths);
-  return { paths, drivers: read.drivers ?? [] };
+  return {
+    paths,
+    drivers: read.drivers ?? [],
+    vulkan: read.vulkan?.storePath ?? null,
+  };
 }
 
 // The caches to ask for one digest, in order: those that list what they

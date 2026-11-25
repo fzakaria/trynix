@@ -9,6 +9,8 @@
 #   guest/                              kernel, initramfs, BIOS blobs
 #   gui.<hash>/                         the GUI compositor, its relay
 #                                       and the guest's fonts
+#   gl/                                 the guest's GL driver, committed,
+#                                       and its Vulkan driver, built
 #   assets.json                         content hashes for the above
 #
 # The engine and snapshot are fetches rather than builds (nix/engine.nix
@@ -21,6 +23,7 @@ let
   engine = import ./engine.nix { inherit pkgs; };
   guest = (import ./guest.nix { inherit pkgs; }).guest;
   wlandr = import ./wlandr.nix { inherit pkgs; };
+  kwvk = import ./kwvk.nix { inherit pkgs; };
 
   # The guest's fonts: one monospace for terminals and one proportional
   # for everything else. The names are the ones nixpkgs' dejavu_fonts
@@ -37,8 +40,21 @@ let
     url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/LICENSE";
     sha256 = "14wajpjybsk1l5dzw261chphvlbxbhg7a69l9iwn9l34dq9kn23s";
   };
+
+  # What the build runs: python3 for the tools, and nix and kwvk's
+  # references for kwvk's narinfo (tools/site-cache.py).
+  inputs = {
+    nativeBuildInputs = [
+      pkgs.nix
+      pkgs.python3
+    ];
+    exportReferencesGraph = [
+      "kwvk-graph"
+      kwvk
+    ];
+  };
 in
-pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+pkgs.runCommand "trynix-site" inputs ''
   mkdir -p $out
   # The site directory alone, rather than a subpath of the whole flake
   # source: reaching through `self` would make every file in the tree an
@@ -85,6 +101,15 @@ pkgs.runCommand "trynix-site" { nativeBuildInputs = [ pkgs.python3 ]; } ''
   mv $out/gui "$out/gui.$hash"
   substituteInPlace $out/js/config.js \
     --replace-fail '"gui"' "\"gui.$hash\""
+
+  # The guest's Vulkan driver, kwvk with trynix's patches
+  # (nix/kwvk.nix), as a store path in the site's cache beside the GL
+  # driver, and named in the manifest the page reads (drivers.json).
+  # The guest fetches it the first time a program loads Vulkan. Unlike
+  # the GL driver's, these files are written here from the build rather
+  # than committed: zig builds the driver from any system.
+  HOME=$TMPDIR python3 ${../tools/site-cache.py} $out/gl/cache $out/gl/drivers.json \
+    kwvk-graph ${kwvk}
 
   # The CA certificates the unkernel guest checks HTTPS servers against
   # when its network is on (site/js/network.js): nixpkgs' cacert, which

@@ -173,11 +173,12 @@ async function visible(kernel, paths) {
 // shell gets the GUI session's environment too (gui.js), the Wayland
 // socket and the X display alike, so a GUI program added after the boot
 // finds the relay from the shell it is typed into, and with guest Vulkan
-// on (`vulkan`, vulkan.js) the Vulkan driver. With a network, TLS
-// clients are pointed at the CA bundle in the share (`caBundle`, or
-// null without one).
-export function manifest({ caBundle, vulkan }) {
-  const session = Object.entries(sessionEnv(vulkan)).map(
+// on (`vulkan`, vulkan.js) the Vulkan driver: the site's, whose store
+// basename is `vulkanDriver`, or the kernel's own when that is null.
+// With a network, TLS clients are pointed at the CA bundle in the share
+// (`caBundle`, or null without one).
+export function manifest({ caBundle, vulkan, vulkanDriver = null }) {
+  const session = Object.entries(sessionEnv({ vulkan, vulkanDriver })).map(
     ([name, value]) => `export ${name}="${value}"`,
   );
   return [
@@ -494,7 +495,10 @@ export async function startUnkernel({
     // for it. `x11Server` and `glDriver` are the basenames of the X
     // server and the site's GL driver (null for none), capabilities of
     // the store that the guest's fixed names point at from the boot.
-    async run(roots, { store, x11Server, glDriver }) {
+    // `vulkanDriver` is the basename of the site's Vulkan driver (null
+    // for none), a capability too, which the shells name with guest
+    // Vulkan on.
+    async run(roots, { store, x11Server, glDriver, vulkanDriver = null }) {
       // The GUI session's files download while the shell comes up, so
       // the relay listens soon after the prompt. A download that fails
       // here is tried again, and reported, by the session's start.
@@ -504,7 +508,7 @@ export async function startUnkernel({
       lazyStore = store;
       FS.writeFile(
         MANIFEST_FILE,
-        manifest({ caBundle: await caBundle, vulkan }),
+        manifest({ caBundle: await caBundle, vulkan, vulkanDriver }),
       );
 
       // The share is read-only to the guest: a store is immutable, and

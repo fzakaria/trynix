@@ -369,12 +369,22 @@
           # module with a browser's copy of the old wasm. Guest Vulkan's
           # chunks are imported by their hashes and import the one
           # core.mjs the entry does, and assets.json versions the
-          # translator's wasm, whose URL the page hands the SDK
+          # translator's wasm, whose URL the page hands the SDK. And the
+          # site serves the Vulkan driver nix/kwvk.nix builds: the
+          # served drivers.json names it and lists it among the cache's
+          # paths, its narinfo has a listing beside it, and its NAR
+          # matches the narinfo's NarHash and unpacks to the driver
           site =
             let
               site = self.packages.${system}.site;
+              kwvk = self.packages.${system}.kwvk;
+              nativeBuildInputs = [
+                pkgs.jq
+                pkgs.nix
+                pkgs.xz
+              ];
             in
-            pkgs.runCommand "trynix-site-check" { } ''
+            pkgs.runCommand "trynix-site-check" { inherit nativeBuildInputs; } ''
               test -f ${site}/index.html
               test -f ${site}/js.*/app.js
               test -f ${site}/js.*/unzstd-wasm.js
@@ -401,6 +411,27 @@
                 echo "assets.json does not version kwvk-naga.wasm by its hash, $wasm"
                 exit 1
               fi
+              gl=${site}/gl
+              if [ "$(jq -r .vulkan.storePath $gl/drivers.json)" != ${kwvk} ]; then
+                echo "drivers.json does not name ${kwvk} as the Vulkan driver"
+                exit 1
+              fi
+              if ! jq -e --arg path ${kwvk} '.paths | index($path)' $gl/drivers.json > /dev/null; then
+                echo "drivers.json does not list ${kwvk} among the cache's paths"
+                exit 1
+              fi
+              digest=$(basename ${kwvk} | cut -c1-32)
+              test -f $gl/cache/$digest.ls
+              url=$(sed -n 's/^URL: //p' $gl/cache/$digest.narinfo)
+              want=$(sed -n 's/^NarHash: sha256://p' $gl/cache/$digest.narinfo)
+              xz -dc $gl/cache/$url > kwvk.nar
+              got=$(nix-hash --type sha256 --base32 --flat kwvk.nar)
+              if [ "$got" != "$want" ]; then
+                echo "the Vulkan driver's NAR hashes to $got, its narinfo says $want"
+                exit 1
+              fi
+              nix-store --restore unpacked < kwvk.nar
+              diff -r unpacked ${kwvk}
               touch $out
             '';
 

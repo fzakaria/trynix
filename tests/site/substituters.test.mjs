@@ -176,3 +176,31 @@ test("a manifest the server failed to send is asked for again, a missing one is 
     assert.equal(requests, asked, `requests after a ${first}`);
   }
 });
+
+// Checks that the manifest names the site's Vulkan driver, kwvk with
+// trynix's patches, which nix/site.nix adds to the site's cache and to
+// the manifest at build time, and that a manifest without one, as the
+// file committed under site/gl/ is, names none. Each case loads a copy
+// of the module of its own, since a page reads its manifest once.
+test("the manifest names the site's Vulkan driver, or none", async () => {
+  const driver = `/nix/store/${SITE_DIGEST}-kwvk-0.2.0-261124-75694e2`;
+  const cases = [
+    {
+      name: "built",
+      served: { paths: [driver], drivers: [], vulkan: { storePath: driver } },
+      want: driver,
+    },
+    { name: "committed", served: { paths: [], drivers: [] }, want: null },
+  ];
+  for (const { name, served, want } of cases) {
+    const { siteManifest } = await import(
+      `../../site/js/substituters.js?vulkan=${name}`
+    );
+    globalThis.fetch = async (url) => {
+      assert.equal(String(url), GL_DRIVERS);
+      return Response.json(served);
+    };
+
+    assert.equal((await siteManifest()).vulkan, want, name);
+  }
+});

@@ -68,6 +68,7 @@ import {
   parseSubstituters,
   readSubstituters,
   setExtraSubstituters,
+  siteManifest,
   verify,
 } from "./substituters.js";
 import { humanBytes } from "./format.js";
@@ -1201,12 +1202,16 @@ function allowGlamorFor(closure) {
 }
 
 // Name the capabilities of an unkernel guest's store (lazy.js,
-// capability): the X server, and `glDriver`, the site's GL driver's
-// store path or null. Each one's closure is walked the first time the
-// guest looks inside it, and never before. Each path joins the store,
-// its listing on its way, the moment the walk finds it.
-function serveCapabilities(store, glDriver) {
-  const roots = glDriver === null ? [X11_SERVER] : [X11_SERVER, glDriver];
+// capability): the X server, `glDriver`, the site's GL driver's store
+// path or null, and `vulkanDriver`, the site's Vulkan driver's or null.
+// Each one's closure is walked the first time the guest looks inside it,
+// and never before: the Vulkan driver's when a program in a guest with
+// Vulkan on loads the Vulkan loader, which reads its manifest. Each path
+// joins the store, its listing on its way, the moment the walk finds it.
+function serveCapabilities(store, glDriver, vulkanDriver) {
+  const roots = [X11_SERVER, glDriver, vulkanDriver].filter(
+    (storePath) => storePath !== null,
+  );
   for (const storePath of roots) {
     store.capability(storePath.slice(STORE_PREFIX.length), async (join) => {
       const started = performance.now();
@@ -1949,16 +1954,18 @@ async function boot() {
     let closurePromise;
     let offered = null;
     let gl = { driver: null, note: null };
+    let vulkanDriver = null;
     if (throughStore) {
       // The selected packages now, and the rest of the closure as the
       // guest touches it (lazy.js), or before the shell with downloads
-      // set to all. The X server and the GL driver are named, and
-      // nothing of them is fetched.
+      // set to all. The X server and the GL and Vulkan drivers are
+      // named, and nothing of them is fetched.
       selectedDigests = rootDigests;
       served = serveLazily(vmPromise, listings);
       served.store.add(stored);
       gl = await glDriverFor(closure, rootDigests);
-      serveCapabilities(served.store, gl.driver);
+      vulkanDriver = (await siteManifest()).vulkan;
+      serveCapabilities(served.store, gl.driver, vulkanDriver);
       offered = lazily ? served.offer(infos) : null;
       const eager = eagerOf(stored, rootDigests);
       served.show({
@@ -2014,6 +2021,7 @@ async function boot() {
       store: served?.store,
       x11Server: X11_SERVER.slice(STORE_PREFIX.length),
       glDriver: gl.driver?.slice(STORE_PREFIX.length) ?? null,
+      vulkanDriver: vulkanDriver?.slice(STORE_PREFIX.length) ?? null,
     });
     log("virtual machine running");
     reportSilent(vm, closure, roots);
