@@ -866,16 +866,12 @@ code {
 }
 /* A phrase with a short note under it (site/js/hints.js): the dotted
    underline the progress rows' setting links have, and the note shown
-   on hover or once the phrase is clicked. */
+   on hover or once the phrase is clicked. The phrase is a span, so it
+   needs none of a button's resets. */
 .hint {
   position: relative;
 }
 .hint-phrase {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
   cursor: pointer;
   text-decoration: underline dotted var(--muted);
   text-underline-offset: 3px;
@@ -904,6 +900,23 @@ code {
 .hint:hover .hint-note,
 .hint-phrase[aria-expanded="true"] + .hint-note {
   display: block;
+}
+
+/* On a phone a note that starts under its phrase can run past the
+   right edge of the screen, so the note hangs from the paragraph
+   instead, under its last line and at its width. */
+@media (max-width: 40rem) {
+  .hints {
+    position: relative;
+  }
+  .hint {
+    position: static;
+  }
+  .hint-note {
+    right: 0;
+    width: auto;
+    max-width: none;
+  }
 }
 
 /* A progress row's label that links to its setting: the row reads as

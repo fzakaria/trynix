@@ -96,19 +96,32 @@
     </p>
 
     <!-- GUI programs and sound (docs/gui.md). Each half opens a short
-         note under it, on hover or on a click (site/js/hints.js). -->
-    <p>
+         note under it, on hover or on a click (site/js/hints.js). Each
+         half is a span with the button role, which breaks across lines
+         as the words around it do; hints.js says why it is not a
+         <button>. -->
+    <p class="hints">
       <span class="hint"
-        ><button type="button" class="hint-phrase" aria-expanded="false" aria-controls="hint-gui">
-          GUI programs open as windows on the page</button
+        ><span
+          class="hint-phrase"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-controls="hint-gui"
+          >GUI programs open as windows on the page</span
         ><span class="hint-note" id="hint-gui" role="tooltip"
           >Wayland and X11 programs open as windows over the terminal. GL programs draw with your
           browser's WebGL2. This needs the aarch64 guest, and works in Chrome and Firefox.</span
         ></span
       >, and
       <span class="hint"
-        ><button type="button" class="hint-phrase" aria-expanded="false" aria-controls="hint-sound">
-          sound works too</button
+        ><span
+          class="hint-phrase"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-controls="hint-sound"
+          >sound works too</span
         ><span class="hint-note" id="hint-sound" role="tooltip"
           >Sound starts after your first click on the page. The sound switch on the terminal's bar
           turns it off.</span
