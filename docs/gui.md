@@ -26,11 +26,7 @@ Until the first window, a strip under the terminal says `starting
 <program>` with the time since the command, for a program whose closure
 holds a Wayland client library, libX11 or libxcb (site/js/activity.js).
 Paths downloading on first use show on the same strip, by name or count,
-with their bytes. A download being tried again says which attempt it is
-on and why the one before failed, and one the page gave up on stays on
-the strip for 20 s as `could not download <path>`, beside the I/O error
-the guest printed for it.
-The wait ends when a window more than before appears,
+with their bytes. The wait ends when a window more than before appears,
 or when the program, once seen running, is gone for three looks a
 second apart. A program run in the foreground that switches the
 terminal to its alternate screen, as `emacs -nw` and vim do, is a

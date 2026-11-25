@@ -119,11 +119,7 @@ async function drain(res, { onBytes, onTotal } = {}) {
 // onCacheRead reports the source and size of each completed byte read.
 //
 // A download that goes `options.idleMs` (IDLE_TIMEOUT_MS by default)
-// without a byte is abandoned and retried, `options.backoffMs`
-// (BACKOFF_MS by default) times the attempts so far later.
-// options.onAttemptFailed({ attempt, attempts, reason }) hears of each
-// attempt that fails, numbered from 1 against the attempts there are,
-// as it fails: the last one's failure is the error this throws.
+// without a byte is abandoned and retried.
 //
 // `verify(bytes)` resolves to null for good bytes and to a reason for
 // bad ones. A body can arrive short without the fetch failing — a
@@ -179,18 +175,13 @@ export async function fetchWithProgress(url, options = {}) {
       guard.stop();
       options.onBytes?.(-downloaded);
       downloaded = 0;
-      options.onAttemptFailed?.({
-        attempt,
-        attempts: ATTEMPTS,
-        reason: err.message,
-      });
 
       if (attempt >= ATTEMPTS) {
         log(`giving up on ${url} after ${attempt} attempts: ${err.message}`);
         throw new Error(`${url}: ${err.message}`);
       }
       log(`retrying ${url} (attempt ${attempt} failed: ${err.message})`);
-      await delay((options.backoffMs ?? BACKOFF_MS) * attempt);
+      await delay(BACKOFF_MS * attempt);
     }
   }
 }

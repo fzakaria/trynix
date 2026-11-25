@@ -4,10 +4,7 @@
 //
 //   downloads in flight, on a lazily served share (lazy.js): the path,
 //   or how many, and the bytes so far, with a line along the strip's
-//   top edge that fills. A download being tried again says which
-//   attempt it is on and why the one before failed (net.js), and one
-//   the page gave up on says so for a while, since the guest's read
-//   that waited on it has just failed with an I/O error;
+//   top edge that fills;
 //
 //   a program starting that opens windows (opensWindows), from the
 //   moment its command is entered until its first window appears, it
@@ -87,10 +84,6 @@ const START_LIMIT_MS = START_LIMIT_MINUTES * SECONDS_PER_MINUTE * MS_PER_SECOND;
 // How long the strip stays open after the last thing it showed ended,
 // so a run of small downloads does not open and close it each time.
 const LINGER_MS = 1200;
-
-// How long a download the page gave up on stays on the strip: long
-// enough to read beside the error the guest printed for it.
-const FAILURE_SHOWN_MS = 20_000;
 
 // The program a command line runs: the first command's first word past
 // any variable assignments, without its directory. null for a blank
@@ -232,62 +225,33 @@ function clock(ms) {
   return `${minutes}:${rest}`;
 }
 
-// What the strip shows for `starting` ({ program, since } or null),
-// `downloads` ([{ basename, bytes, total, retry }], `retry` being
-// { attempt, attempts, reason } for a download on its second attempt or
-// later) and `failures` ([{ basename, reason }], downloads the page
-// gave up on) at `now`: hidden, or a primary line, a secondary one,
-// whether it reports a failure, the downloads' fill from 0 to 1 (null
+// What the strip shows for `starting` ({ program, since } or null) and
+// `downloads` ([{ basename, bytes, total }]) at `now`: hidden, or a
+// primary line, a secondary one, the downloads' fill from 0 to 1 (null
 // when there are none) and the time since the program was started.
-export function activityLine({ starting, downloads, failures = [], now }) {
-  if (starting === null && downloads.length === 0 && failures.length === 0) {
+export function activityLine({ starting, downloads, now }) {
+  if (starting === null && downloads.length === 0) {
     return { visible: false };
   }
 
-  // The failures, by name when there is one. They take the strip from
-  // the downloads, since they explain an error the guest just printed.
-  const failed = failures.length > 0;
-  const lost =
-    failures.length === 1
-      ? nameOf(failures[0].basename)
-      : `${failures.length} paths`;
-  if (failed && starting === null) {
-    return {
-      visible: true,
-      failed,
-      primary: `could not download ${lost}`,
-      secondary: failures.length === 1 ? failures[0].reason : "",
-      progress: null,
-      elapsed: "",
-    };
-  }
-
-  // The downloads, by name when there is one, with the attempt one is
-  // on, or how many are being tried again.
+  // The downloads, by name when there is one.
   let fetching = "";
   let progress = null;
   if (downloads.length > 0) {
     const bytes = downloads.reduce((sum, d) => sum + d.bytes, 0);
     const total = downloads.reduce((sum, d) => sum + d.total, 0);
-    const single = downloads.length === 1 ? downloads[0] : null;
     const what =
-      single !== null ? nameOf(single.basename) : `${downloads.length} paths`;
+      downloads.length === 1
+        ? nameOf(downloads[0].basename)
+        : `${downloads.length} paths`;
     fetching = `downloading ${what}`;
     progress = total > 0 ? Math.min(1, bytes / total) : null;
-    let amount = `${humanBytes(bytes)} / ${humanBytes(total)}`;
-    const retry = single?.retry;
-    const retrying = downloads.filter((d) => d.retry !== undefined).length;
-    if (retry !== undefined) {
-      amount = `${amount} · attempt ${retry.attempt} of ${retry.attempts}`;
-    } else if (retrying > 0) {
-      amount = `${amount} · ${retrying} retrying`;
-    }
+    const amount = `${humanBytes(bytes)} / ${humanBytes(total)}`;
     if (starting === null) {
       return {
         visible: true,
-        failed,
         primary: fetching,
-        secondary: retry !== undefined ? `${amount} (${retry.reason})` : amount,
+        secondary: amount,
         progress,
         elapsed: "",
       };
@@ -297,9 +261,8 @@ export function activityLine({ starting, downloads, failures = [], now }) {
 
   return {
     visible: true,
-    failed,
     primary: `starting ${starting.program}`,
-    secondary: failed ? `could not download ${lost}` : fetching,
+    secondary: fetching,
     progress,
     elapsed: clock(now - starting.since),
   };
@@ -405,9 +368,6 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
   // Downloads in flight, by basename, and the time any have been.
   const downloads = new Map();
   const downloading = downloadClock();
-  // Downloads the page gave up on, by basename, each with the timer
-  // that takes it off the strip.
-  const failures = new Map();
   // The program starting, or null, and its watch.
   let starting = null;
   let watch = null;
@@ -428,10 +388,6 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
     const line = activityLine({
       starting,
       downloads: [...downloads.values()],
-      failures: [...failures.values()].map(({ basename, reason }) => ({
-        basename,
-        reason,
-      })),
       now: Date.now(),
     });
 
@@ -452,16 +408,9 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
     primary.textContent = line.primary;
     secondary.textContent = line.secondary;
     elapsed.textContent = line.elapsed;
-    element.dataset.failed = String(line.failed);
     element.dataset.progress = line.progress === null ? "sweep" : "fill";
     fill.style.width =
       line.progress === null ? "" : `${(line.progress * 100).toFixed(1)}%`;
-  }
-
-  // Take a failed download off the strip.
-  function forget(basename) {
-    clearTimeout(failures.get(basename)?.timer);
-    failures.delete(basename);
   }
 
   // Stop waiting for the program that was starting.
@@ -482,10 +431,8 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
     },
 
     // A download began, of `total` compressed bytes; it reads `bytes`
-    // more at a time; it ended, whichever way. A path downloaded again
-    // is no longer one the page gave up on.
+    // more at a time; it ended, whichever way.
     downloadStarted(basename, total) {
-      forget(basename);
       downloads.set(basename, { basename, bytes: 0, total });
       downloading.inFlight(downloads.size, Date.now());
       render();
@@ -501,29 +448,6 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
     downloadEnded(basename) {
       downloads.delete(basename);
       downloading.inFlight(downloads.size, Date.now());
-      render();
-    },
-
-    // A download in flight is on its attempt `attempt` of `attempts`,
-    // the one before having failed for `reason` (net.js).
-    downloadRetrying(basename, { attempt, attempts, reason }) {
-      const download = downloads.get(basename);
-      if (download === undefined) {
-        return;
-      }
-      download.retry = { attempt, attempts, reason };
-      render();
-    },
-
-    // The page gave up on a download, for `reason`: shown for
-    // FAILURE_SHOWN_MS, or until the path is downloaded again.
-    downloadFailed(basename, reason) {
-      forget(basename);
-      const timer = setTimeout(() => {
-        failures.delete(basename);
-        render();
-      }, FAILURE_SHOWN_MS);
-      failures.set(basename, { basename, reason, timer });
       render();
     },
 

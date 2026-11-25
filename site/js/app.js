@@ -1385,14 +1385,9 @@ function serveLazily(vmPromise, listings) {
     listing: (info) => listings.of(info),
     dropListing: forgetListing,
     async fetch(info) {
-      // The strip under the terminal shows the download while it runs,
-      // each attempt after the first, and a failure the guest's read
-      // is about to hear of as an I/O error.
+      // The strip under the terminal shows the download while it runs.
       const basename = basenameOf(info);
       activity.downloadStarted(basename, info.fileSize);
-      // Why the download's last attempt failed, once it has: shorter on
-      // the strip than the error, which names the URL.
-      let lastReason = null;
       try {
         const entries = await fetchNar(
           info,
@@ -1401,23 +1396,9 @@ function serveLazily(vmPromise, listings) {
             activity.downloadBytes(basename, bytes);
           },
           (result, bytes) => telemetry.cacheRead(result, bytes),
-          ({ attempt, attempts, reason }) => {
-            if (attempt === attempts) {
-              lastReason = reason;
-              return;
-            }
-            activity.downloadRetrying(basename, {
-              attempt: attempt + 1,
-              attempts,
-              reason,
-            });
-          },
         );
         checkSystem(info, entries, selectedDigests);
         return entries;
-      } catch (err) {
-        activity.downloadFailed(basename, lastReason ?? err.message);
-        throw err;
       } finally {
         activity.downloadEnded(basename);
       }
