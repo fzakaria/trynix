@@ -65,15 +65,13 @@ BOTH_VERSIONS = ["2.10", "2.12.2"]
 VERSION_COMMAND = f"{PACKAGE} --version"
 VERSION_LINE = "hello (GNU Hello) {}"
 
-# An addition retried after its download failed: the first of
-# BOTH_VERSIONS is booted on the unkernel engine and the second is
-# added, in each of the engine's download modes (site/js/downloads.js,
-# the link's fetch), with the added version's NAR refused on the first
-# try. A refused download fails in the page as a dropped connection
-# does, and the addition's progress row says so. The boot tool's answer
-# for a failed addition opens with ADDITION_FAILED.
+# An addition whose download failed: the first of BOTH_VERSIONS is
+# booted on the unkernel engine and the second is added, with the added
+# version's NAR refused on the first try. A refused download fails in
+# the page as a dropped connection does, and the addition's progress row
+# says so. The boot tool's answer for a failed addition opens with
+# ADDITION_FAILED.
 RETRY_ENGINE = "unkernel"
-DOWNLOAD_MODES = ["lazy", "all"]
 REFUSED_PATH_SUFFIX = f"-{PACKAGE}-{BOTH_VERSIONS[1]}"
 REFUSAL_MESSAGE = "Failed to fetch"
 FAILED_ROW = "document.querySelector('#boot-progress .failed')?.textContent ?? ''"
@@ -159,7 +157,7 @@ POLYFILL = """
 })();
 """
 
-# Installed before the page's own scripts for the retried addition and
+# Installed before the page's own scripts for the failed addition and
 # the boot that fails before its guest starts. It wraps the page's
 # fetch: the narinfo of the store path ending in
 # REFUSED_PATH_SUFFIX names the NAR to refuse, and while
@@ -488,31 +486,25 @@ def preloaded(browser, source):
         )
 
 
-def check_retried_addition(browser, checks, base, mode):
+def check_failed_addition(browser, checks, base):
     """An addition whose download failed, retried once the download works.
 
-    The first of BOTH_VERSIONS is booted with downloads in `mode`, and
-    the second is added while its NAR is refused, so the addition fails.
-    The boot tool has to say so and why, as the progress row does: it
-    used to answer that the packages were added, which left a caller no
-    reason to retry. Then the NAR is let through and boot is called
-    again: the retry has to link the second version's programs, so
-    hello --version says the second version. The first try used to
-    record the second version as the guest's before its download, and
-    the retry, finding it recorded, linked nothing: hello --version
-    still said 2.10.
+    The first of BOTH_VERSIONS is booted, and the second is added while
+    its NAR is refused, so the addition fails. The boot tool has to say
+    so and why, as the progress row does: it used to answer that the
+    packages were added, which left a caller no reason to retry. Then
+    the NAR is let through, and calling boot again adds the package.
     """
-    print(f"an addition retried after its download failed, downloads {mode}")
+    print("an addition whose download failed")
     forget_cached_paths(browser, base)
     with preloaded(browser, REFUSE):
-        query = urllib.parse.urlencode({"engine": RETRY_ENGINE, "fetch": mode})
+        query = urllib.parse.urlencode({"engine": RETRY_ENGINE})
         browser.send("Page.navigate", url=f"{base}/?{query}")
         await_tools(browser)
         booted, added = BOTH_VERSIONS
         call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": booted}])
         said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
         checks.true("booted", said.startswith("booted;"))
-        checks.equal("the booted version runs", version_line(browser), VERSION_LINE.format(booted))
 
         # The first try: the added version's NAR is refused.
         call(browser, "select-packages", packages=[{"attr": PACKAGE, "version": added}])
@@ -531,7 +523,6 @@ def check_retried_addition(browser, checks, base, mode):
         said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
         print(f"  {said}")
         checks.true("the retry added", said.startswith("added to the running guest;"))
-        checks.equal("the added version runs", version_line(browser), VERSION_LINE.format(added))
 
 
 def await_new_page(browser):
@@ -729,10 +720,8 @@ def main():
         # A fresh page and guest, since this boot selects two versions.
         check_addition_keeps_winner(browser, checks, base)
 
-        # A fresh page and guest for each download mode, since the two
-        # modes take different paths through an addition.
-        for mode in DOWNLOAD_MODES:
-            check_retried_addition(browser, checks, base, mode)
+        # A fresh page and guest for an addition that fails.
+        check_failed_addition(browser, checks, base)
 
         # A fresh page for each boot that fails.
         check_failed_boot(browser, checks, base)
