@@ -4,10 +4,11 @@ A Wayland program from nixpkgs, run in the unkernel guest, opens a
 window on the page. foot, GTK 3 programs (galculator, mousepad,
 aisleriot), mpv, wev and GL programs through Mesa have been run this
 way, and X11 programs through Xwayland: xterm, xeyes, xclock, Tk's
-`wish` and Python's tkinter. Everything runs in the tab: the guest, the
-relay that carries the program's protocol, the compositor that draws
-its windows, the X server and the GL renderer. There is no server, and
-the host's own display is never involved.
+`wish` and Python's tkinter, and Vulkan programs on the page's WebGPU
+where the browser has an adapter. Everything runs in the tab: the
+guest, the relay that carries the program's protocol, the compositor
+that draws its windows, the X server and the GL and Vulkan renderers.
+There is no server, and the host's own display is never involved.
 
 Only the unkernel engine has this. The qemu engine's guest has no
 device a compositor could read a program's pixels through.
@@ -121,6 +122,7 @@ https://trynix.dev/?pkg=xeyes&boot=1&run=xeyes+%26
  xterm ──X11──> Xwayland ──> xwayland-satellite ──wayland──> wlandr
  (wlandr holds :0 and starts the satellite, which starts Xwayland)
  etr ──GLX──> Mesa virgl ──DRI3──> Xwayland, drawing with glamor through Mesa virgl
+ vkcube ── kwvk ──vsock 1018──> kwvk renderer on WebGPU, frames read back into wl_shm buffers
 ```
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
@@ -609,6 +611,155 @@ every X11 program in one window. An earlier try of `weston --xwayland`
 inside wland gave a black window, after which the guest's shell
 stopped answering; it was not revisited.
 
+## Vulkan programs
+
+A Vulkan program in the guest draws on the page's WebGPU. unkernel's
+kernel bundle carries kwvk, a Vulkan driver whose GPU is the page's
+([.agents/vk.md](https://github.com/pithings/unkernel/blob/main/.agents/vk.md)
+in unkernel). The loader loads the driver into the program; the driver
+sends the program's Vulkan calls over vsock port 1018 to the SDK's
+renderer on the page, which makes the objects on one WebGPU device and
+translates the program's SPIR-V shaders to WGSL with `kwvk-naga.wasm`.
+The program sees "kwvk (WebGPU)", an integrated GPU with Vulkan 1.2.
+
+```
+https://trynix.dev/?pkg=vulkan-tools&boot=1&run=vulkaninfo+--summary
+```
+
+It is on in every boot, with nothing to set in a link, and nothing of
+it runs until a program asks for it. The SDK listens on the driver's
+port and waits for a program to create a VkInstance. Only then does it
+ask the browser for a WebGPU adapter and a device, and fetch the
+renderer's two chunks (433 bytes) and the translator (1.39 MB, 442 KB
+gzipped). On SwiftShader in headless Chromium the renderer was ready
+73 to 150 ms after the first VkInstance.
+
+Every shell gets two variables (`sessionEnv` in
+[site/js/gui.js](../site/js/gui.js)):
+
+- `VK_ADD_DRIVER_FILES=/kw/layer/usr/share/vulkan/icd.d/kw_icd.json`,
+  kwvk's manifest. nixpkgs' loader looks for drivers in `/etc/xdg`,
+  `/run/opengl-driver/share` and `/usr/share`; the guest has the
+  manifest in none of them, and `/run/opengl-driver` is the GL
+  driver's link. The variable adds kwvk to the drivers the loader
+  finds, so a selected `mesa` still brings its own. The driver is built
+  against glibc 2.34 and links nothing else, so a program from nixpkgs
+  22.05 on loads it. The loaders of older nixpkgs, 1.2 and before,
+  ignore the variable, and their programs see no Vulkan device; 1.3.211,
+  the oldest 1.3 in the index, reads it.
+- `LIBGL_KOPPER_DISABLE=1`. A nixpkgs Mesa the reader selects tries
+  zink on the first Vulkan device when its own GL driver fails, which
+  would run GL through kwvk; unkernel advises the variable for that.
+  The site's Mesa has no zink.
+
+### Which browsers have an adapter
+
+The renderer needs a WebGPU adapter. Chrome has one on macOS, Windows,
+ChromeOS and Android. Chrome on Linux has `navigator.gpu` and gives no
+adapter unless started with flags; `gui-test` starts Chromium with
+the ones unkernel's own tests use (`--enable-unsafe-webgpu`,
+`--use-vulkan=swiftshader`, `--use-webgpu-adapter=swiftshader` and the
+`Vulkan` and `WebGPU` features), which give any host SwiftShader's
+adapter. Firefox 160 on Linux, headless, had no `navigator.gpu`; with
+`dom.webgpu.enabled` and `gfx.webgpu.ignore-blocklist` set in its
+preferences it had an adapter, and vulkaninfo and vkcube ran, vkcube
+at about 10 frames a second on SwiftShader against 58 in Chromium.
+Safari has not been run.
+
+Without an adapter a program gets what it would get on a machine with
+no Vulkan driver: the driver answers the loader
+`VK_ERROR_INCOMPATIBLE_DRIVER` and prints `kwvk: device lost: the host
+closed the link` on the program's stderr, and the page's log says why
+(`[host] vk: no renderer: navigator.gpu.requestAdapter() gave no
+adapter`, or with no `navigator.gpu` at all, `no WebGPU on this
+thread`). vulkaninfo fails that way in 0.4 s the first time and
+0.04 s after.
+
+### What runs
+
+Run in trynix, 2026-11-24, headless Chromium with SwiftShader's WebGPU:
+
+- `vulkaninfo`, which names kwvk's device. Every shell has `DISPLAY`,
+  so it also asks the X display about surfaces, and its first run
+  starts the X server: 3.0 s, against 0.5 s when shells had no
+  `DISPLAY`.
+- `vkcube --wsi wayland`, 58 frames a second at 500x500. The frames
+  reach the compositor as wl_shm buffers, each read back from the GPU
+  at present: wland on the page does not offer the external buffers
+  kwvk can present by instead. nixpkgs' vkcube (vulkan-tools 1.4.304
+  on) needs a hand: it loads libwayland-client and libxcb with
+  `dlopen`, and its RUNPATH names only the Vulkan loader. On NixOS
+  Mesa's Vulkan driver links libwayland-client, so the library is
+  already in the process when vkcube asks; kwvk opens Wayland with
+  `dlopen` too, and vkcube says `Cannot load wayland dynamic library`.
+  Naming the store's libwayland directories works; there are several
+  once the GL driver's and the X server's closures are in:
+  `LD_LIBRARY_PATH=$(ls -d /nix/store/*-wayland-[0-9]*/lib | tr '\n' :) vkcube --wsi wayland`.
+
+unkernel's own tests ran these on Debian 13 on the same driver
+(vk.md, "What runs"): vkmark's seven scenes; SDL 2's and SDL 3's
+`testvulkan`; SDL 3's GPU API (`testgpu_simple_clear`,
+`testgpu_spinning_cube`); GTK 4.18 with `GSK_RENDERER=vulkan`, which
+GTK's default renderer is not; vkd3d-gears through Xvfb. llama.cpp's
+ggml-vulkan selects kwvk and generates text, with caveats: some of
+its pipelines are refused and abort the run (`quantize_q8_1_x4`,
+`count_experts`, which rules out mixture-of-experts models, and the
+rwkv ones); the guest keeps a copy of every host-visible allocation,
+so models need the larger memory settings; and every number upstream
+has is from SwiftShader but one, an Apple M4 Pro in Chrome.
+
+### What does not
+
+- kwvk does not offer geometry or tessellation shaders, texel buffers,
+  1D-array storage images, linear-tiling images, `robustBufferAccess`,
+  logic ops, `multiDrawIndirect`, `fillModeNonSolid`, wide lines, large
+  points, 16- and 64-bit integers or 64-bit floats in shaders, pipeline
+  statistics queries, sparse resources, timeline semaphores, or the
+  subgroup operations naga lacks.
+- No zink. Mesa's zink connects to kwvk and gives up after the hello:
+  it wants far more features. GL stays on virgl.
+- No DXVK. It needs texel buffers and geometry shaders.
+
+### Programs that prefer Vulkan
+
+Some programs try Vulkan before GL. Without kwvk their first
+`vkCreateInstance` failed at once and they went on to GL; with it they
+find a device and go further before they give up on it. Measured
+2026-11-24 in headless Chromium with SwiftShader's WebGPU and WebGL,
+each program on the site before kwvk and on the site with it, the
+closure downloaded before the shell (`fetch=all`), from the command to
+the compositor's first frame:
+
+| program                           | boots | without kwvk       | with kwvk          | draws with              |
+| --------------------------------- | ----- | ------------------ | ------------------ | ----------------------- |
+| mpv 0.42, a 5 s H.264 file        | 6     | 4.5 s (4.3–4.8)    | 7.5 s (7.0–8.0)    | GL, after probing kwvk  |
+| gnome-calculator 51.1 (GTK 4.24)  | 6     | 16.8 s (16.2–17.4) | 16.8 s (16.5–17.6) | GL, after probing kwvk  |
+| firefox 160                       | 2     | 24.7–25.1 s        | 24.9–25.5 s        | GL; makes no VkInstance |
+| lbreakouthd (SDL 2 through SDL 3) | 2     | 6.0–6.4 s          | 6.1–6.3 s          | GL; makes no VkInstance |
+| es2gears_wayland                  | 2     | 2.13–2.16 s        | 2.13–2.14 s        | GL                      |
+| foot                              | 2     | 0.81 s             | 0.81 s             | shared memory           |
+| xterm                             | 2     | 3.2–3.6 s          | 3.2–3.5 s          | shared memory, by X11   |
+
+mpv is slower by 3 s with kwvk, and gains nothing. Its default
+output, gpu-next, asks libplacebo for Vulkan on Wayland, then Vulkan on
+X11, then GL. libplacebo requires the `timelineSemaphore` feature, which
+kwvk lacks, so both Vulkan attempts fail at the device. The X11 one
+opens display `:0` first, and that starts the X server, xwayland-satellite
+and Xwayland, with their closure downloaded on first use: 3.1 to 3.4 s
+in mpv's own log, for a server nothing then uses. mpv then draws with
+GL as it did before, at the same 29.5 frames a second. The Try link's
+mpv, `--vo=wlshm`, takes no part in this.
+
+GTK 4 makes an instance and a device on kwvk, logs `Not using Vulkan:
+no dmabuf support`, and draws with GL; its first frame did not move.
+Its instance stays open while the program runs: one stream to the
+renderer, and the renderer's WebGPU device kept on the page.
+
+Without an adapter (Chromium's WebGPU off, as Chromium on Linux has
+it) both fail at the instance, as before kwvk, no X server starts, and
+neither moved: mpv 4.3 and 5.0 s against 4.3 and 4.3 s,
+gnome-calculator 16.8 s against 16.7 and 16.8 s.
+
 ## Firefox and whole compositors
 
 nixpkgs' `firefox` runs in the guest, as a Wayland client, loading GL
@@ -730,12 +881,13 @@ cache.nixos.org over a home connection.
 
 What the site adds, fetched only when used:
 
-| file                         | raw     | gzip   | fetched                     |
-| ---------------------------- | ------- | ------ | --------------------------- |
-| wland modules and wasm       | 383 KB  | 109 KB | on the relay's first dial   |
-| relay (`wlandr`)             | 353 KB  | 149 KB | while the shell starts      |
-| DejaVu Sans and Sans Mono    | 1.10 MB | 587 KB | while the shell starts      |
-| `virgl.mjs` and `virgl.wasm` | 597 KB  | 216 KB | on the guest's first GL use |
+| file                         | raw     | gzip   | fetched                         |
+| ---------------------------- | ------- | ------ | ------------------------------- |
+| wland modules and wasm       | 383 KB  | 109 KB | on the relay's first dial       |
+| relay (`wlandr`)             | 353 KB  | 149 KB | while the shell starts          |
+| DejaVu Sans and Sans Mono    | 1.10 MB | 587 KB | while the shell starts          |
+| `virgl.mjs` and `virgl.wasm` | 597 KB  | 216 KB | on the guest's first GL use     |
+| `kwvk-naga.wasm` and chunks  | 1.39 MB | 442 KB | on the guest's first VkInstance |
 
 The closures, from the cache, for the paths the nixpkgs this flake
 locks builds (the page resolves names against the multiverse index,
@@ -830,7 +982,10 @@ compositor:
   headless: foot takes keys, and es2gears draws through virgl at
   60 FPS. With the X server and the driver in every guest, its foot,
   xterm and extremetuxracer cases passed in Chromium 152 and Firefox
-  155, and every case in Chromium 152. Safari has not been run.
+  155, and every case in Chromium 152. The vulkan case passed in
+  Chromium 152 with SwiftShader's WebGPU, and took its no-adapter path
+  in Chromium 152 without it and in Firefox 155 and 160, which had no
+  `navigator.gpu`. Safari has not been run.
 
 ## Testing
 
@@ -870,6 +1025,16 @@ own error and not a signal. The slowx case holds the X server's NARs
 back 35 s and checks that xterm waits through the hold for its window.
 The page records which NARs it fetches for these checks from a script
 the tool runs before the page's own.
+The vulkan case boots vulkan-tools, types `vulkaninfo --summary` at the
+page's shell and then starts `vkcube --wsi wayland`. With a WebGPU
+adapter vulkaninfo must name kwvk's device, and vkcube's window must
+draw through kwvk: 30 frames presented by the renderer and taken by
+the compositor, with no renderer error, and a picture with the LunarG
+logo's teal, no olive (red and blue swapped) and many colours. Without
+one, vulkaninfo must fail with `VK_ERROR_INCOMPATIBLE_DRIVER` and the
+guest must go on answering. `--webgpu` sets Chromium's WebGPU for
+every case: SwiftShader's (the default), which gives an adapter on any
+host, or `off`, which is Chromium on Linux as shipped.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
@@ -883,6 +1048,8 @@ the console, terminal and windows, at each step.
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
 page writes into the share and runs in the guest, offline, the
 environment every shell gets among it,
+[tests/site/unkernel.test.mjs](../tests/site/unkernel.test.mjs) that
+a shell that sources it has kwvk named and zink kept off,
 [tests/site/lazy.test.mjs](../tests/site/lazy.test.mjs) how a
 capability joins the store on its first lookup and stays out of the
 farm, and
@@ -907,9 +1074,10 @@ site next to the files:
   commit named in `nix/wlandr.nix`, unmodified.
 - unkernel's SDK is MIT and its kernel GPL-2.0
   (`vendor/unkernel/LICENSE`, `LICENSE-MIT`). `virgl.wasm` is
-  virglrenderer and parts of Mesa, both MIT; unkernel's releases after
-  the one pinned carry those notices in a `THIRD-PARTY.md`, which
-  should be shipped beside it once the pin moves past it.
+  virglrenderer and parts of Mesa, both MIT, and `kwvk-naga.wasm` is
+  naga and its Rust dependencies, MIT or Apache-2.0, each with
+  unkernel's glue under GPL-2.0-or-later; their notices are in
+  `vendor/unkernel/THIRD-PARTY.md`, which the package ships.
 - DejaVu fonts are Bitstream Vera's license with public-domain changes
   (`gui.<hash>/LICENSE-dejavu`).
 - The programs come from cache.nixos.org and keep nixpkgs' licenses,
