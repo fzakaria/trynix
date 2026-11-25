@@ -808,6 +808,42 @@ than on GLES either way; the renderer's shader translation is 38 to
 45 ms of that, and the rest was not traced. On the kernel's own kwvk
 Taisei draws nothing: its pipelines fail on `OpLine` among the types.
 
+### GZDoom on Vulkan
+
+The Doom link starts GZDoom 4.14.2 on its Vulkan renderer
+(`+vid_preferbackend 1`, with `vk=1`). Its GLES renderer
+(`+vid_preferbackend 2`) draws through virgl, which replays the guest's
+GL on the page's main thread; in a level that takes most of the
+thread, so dragging a window lags and the page's sound runs dry
+(unkernel#34). On Vulkan the frames come by external buffer and the
+thread stays free. Without a WebGPU adapter the driver answers
+`VK_ERROR_INCOMPATIBLE_DRIVER` and GZDoom falls back to GLES by
+itself.
+
+Measured 2026-11-25 on unkernel 0.2.0-261125-cec0a49, the laptop's
+Radeon 780M in headless Chromium 152 with its hardware adapter, three
+runs of each renderer alternated, `+map E1M1`. "In the level" is when
+GZDoom's window title names the level; page frames a second are the
+page's `requestAnimationFrame` rate:
+
+| GZDoom 4.14.2, E1M1                         | GLES               | Vulkan             |
+| ------------------------------------------- | ------------------ | ------------------ |
+| first commit                                | 12.1 s (12.1–12.4) | 11.9 s (11.9–12.1) |
+| in the level                                | 21.0 s (20.3–21.1) | 30.3 s (29.9–31.8) |
+| game frames a second                        | 15.1 (14.8–15.2)   | 19.7 (16.3–20.5)   |
+| page frames a second, at rest               | 30.5 (29.5–36.7)   | 60.0               |
+| page frames a second, dragging              | 55.9 (55.6–56.5)   | 60.0               |
+| pointer moves the page took in 10 s of drag | 332                | 587 (585–587)      |
+| sound underruns a second, at rest           | 2.9 (2.5–3.4)      | 0                  |
+| sound underruns a second, dragging          | 4.6 (2.9–4.8)      | 0                  |
+
+The 9 s it takes longer to reach the level is GZDoom compiling its
+GLSL to SPIR-V with glslang in the guest, on its one thread, before
+the level; the renderer meanwhile translated only a few shaders, in
+under 60 ms. GZDoom keeps no SPIR-V cache, only a `VkPipelineCache`
+file, and every page load is a new guest, so no cache would survive
+anyway; more guest CPUs do not help one thread.
+
 ### Which browsers have an adapter
 
 The renderer needs a WebGPU adapter. Chrome has one on macOS, Windows,

@@ -165,12 +165,15 @@
         >an LLM on your GPU</a
       >&nbsp;·
       <!-- GZDoom opens full screen unless told not to. The link picks
-           its GLES renderer, which needs no WebGPU adapter and reaches
-           the level about 9 s sooner than its Vulkan renderer: that one
-           compiles its shaders in the guest first, on one thread. -->
+           its Vulkan renderer (vk=1), which draws through the site's
+           kwvk on the page's WebGPU and leaves the page's main thread
+           free, so window drags and sound keep up; it reaches the level
+           about 9 s later than GLES, compiling its shaders in the guest
+           first (docs/gui.md, "GZDoom on Vulkan"). With no WebGPU
+           adapter GZDoom finds no Vulkan device and falls back to GLES. -->
       <a
-        href="?pkg=gzdoom&pkg=freedoom&engine=unkernel&run=gzdoom%20-iwad%20/nix/store/%2A-freedoom-%2A/share/games/doom/freedoom1.wad%20%2Bvid_fullscreen%200%20%2Bvid_preferbackend%202%20%26&boot=1"
-        title="Freedoom in GZDoom, drawn by your GPU"
+        href="?pkg=gzdoom&pkg=freedoom&engine=unkernel&vk=1&run=gzdoom%20-iwad%20/nix/store/%2A-freedoom-%2A/share/games/doom/freedoom1.wad%20%2Bvid_fullscreen%200%20%2Bvid_preferbackend%201%20%26&boot=1"
+        title="Freedoom in GZDoom, drawn by your GPU through Vulkan"
         >Doom</a
       >&nbsp;·
       <!-- A browser in the guest. 2 GiB because firefox runs the guest
