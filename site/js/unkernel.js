@@ -309,7 +309,9 @@ export async function startUnkernel({
 
   const console_ = consoleRecorder();
 
-  const { createKernel, MemoryFs } = await import(`../${engine.main}`);
+  const { createAudioOut, createKernel, MemoryFs } = await import(
+    `../${engine.main}`
+  );
   const files = new MemoryFs();
   const FS = memoryFsCalls(files);
   const share = storeShare(FS);
@@ -387,6 +389,7 @@ export async function startUnkernel({
         });
 
   const sound = createSoundOut({
+    createAudioOut,
     log,
     control: soundControl,
     position: soundPosition,
@@ -523,7 +526,11 @@ export async function startUnkernel({
     }),
     terminal: ui.terminal,
     kernel,
-    sound: sound.stats,
+    sound: () => ({
+      ...sound.stats(),
+      sink: sound.state,
+      muted: sound.muted,
+    }),
   };
   attachDesktop({
     kernel,

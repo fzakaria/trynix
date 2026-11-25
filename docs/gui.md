@@ -617,12 +617,12 @@ The guest has a sound card: unkernel's `kwsnd` driver, ALSA card 0,
 offered on every boot ([site/js/unkernel.js](../site/js/unkernel.js)).
 Nothing runs until a program opens it. While one plays, a kernel timer
 hands the page the frames due every 5 to 10 ms, and the page plays them
-with Web Audio ([site/js/sound.js](../site/js/sound.js)). The SDK stops
-at the samples, so the player is the page's, adapted from unkernel's
-own page (`web/src/audio.ts`, MIT): an AudioWorklet plays from a queue
-that starts once 60 ms is in, resamples to the device's rate, and
-steers by up to 1% to absorb the drift between the guest's clock and
-the audio device's ([site/js/sound-queue.js](../site/js/sound-queue.js)).
+with Web Audio. The player is the SDK's `createAudioOut`
+([pithings/unkernel#17](https://github.com/pithings/unkernel/issues/17)):
+an AudioWorklet plays from a queue that starts once 60 ms is in,
+resamples to the device's rate, and steers by up to 1% to absorb the
+drift between the guest's clock and the audio device's. The page adds
+the console bar's control ([site/js/sound.js](../site/js/sound.js)).
 
 Browsers start sound only after a click or key press on the page. A
 Try link boots and runs its command with no click on the new page, so
