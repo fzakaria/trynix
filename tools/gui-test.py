@@ -62,14 +62,21 @@ The cases:
            back 35 s from when the guest first asks for them. Checks
            that xterm waits for its server and opens its window after
            the hold.
-    vulkan vulkan-tools alone, with guest Vulkan on (vk=1, which no
-           other case sets): `vulkaninfo --summary` typed at the
+    vulkan vulkan-tools alone, with guest Vulkan on (vk=1, which only
+           this case and llm set): `vulkaninfo --summary` typed at the
            page's shell, then `vkcube --wsi wayland`. With a WebGPU
            adapter, vulkaninfo must name kwvk's device and vkcube's
            window must draw through kwvk: frames presented by the
            renderer and taken by the compositor, in the LunarG cube's
            colours. Without one, vulkaninfo must fail with
            VK_ERROR_INCOMPATIBLE_DRIVER and the guest go on answering.
+    llm    llama.cpp's Vulkan build with vk=1 and a 1 MB model the link
+           names by URL and hash (file=), as the page's LLM Try link
+           names its own: llama-completion typed at the shell
+           continues a prompt. It must exit 0 and print words past
+           the prompt. With a WebGPU adapter the renderer must have
+           run llama.cpp's compute work with no errors; without one,
+           llama.cpp runs on the guest's CPU and must still answer.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -91,14 +98,15 @@ offer (Chromium and Firefox below).
 
 --webgpu is Chromium's WebGPU: SwiftShader's, which gives the page an
 adapter on any host, or none, which is what Chromium on Linux gives
-without flags. Every case runs with it; only the vulkan case turns
-guest Vulkan on, so the others run as a reader's link does by default.
-Firefox has its own WebGPU, and the vulkan case takes either outcome
-there.
+without flags. Every case runs with it; only the vulkan and llm cases
+turn guest Vulkan on, so the others run as a reader's link does by
+default. Firefox has its own WebGPU, and those two cases take either
+outcome there.
 
-A boot needs the network: the closures come from cache.nixos.org, and
-the driver from the site's own cache (gl/), which a site with no
-published driver lacks; the gl case fails there.
+A boot needs the network: the closures come from cache.nixos.org, the
+llm case's model from Hugging Face, and the driver from the site's own
+cache (gl/), which a site with no published driver lacks; the gl case
+fails there.
 """
 
 import argparse
@@ -759,8 +767,36 @@ TINT_MARGIN = 30
 MIN_TEAL_FRACTION = 0.01
 MIN_COLOURS = 256
 
+# The llm case: the Vulkan build of llama.cpp the page's LLM Try link
+# boots, at the same version, with a model the link names by URL and
+# hash (file=) as that link names its own. The model is stories260K, a
+# 1.2 MB llama from the tinyllamas set, on Hugging Face at a commit,
+# whose CDN sends CORS headers; its store path is the one
+# `nix store prefetch-file` printed for it.
+LLM_PACKAGES = ["llama-cpp-vulkan@1.0.0"]
+LLM_MODEL_URL = (
+    "https://huggingface.co/ggml-org/models-moved/resolve/"
+    "499bc8821c6b12b4e53c5bffcb21ec206f212d81/tinyllamas/stories260K.gguf"
+)
+LLM_MODEL_HASH = "sha256-Jwy6G9UQn0LQM1D2BAYCRWBGTbFzwOOH2R8EJtO9JW0="
+LLM_MODEL_PATH = "/nix/store/mxkcjc93z0kyzrnh7hcky8bsd725yjrj-stories260K.gguf"
 
-CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx", "vulkan"]
+# llama-completion continues the prompt for LLM_TOKENS tokens with every
+# layer on the GPU, printing the prompt and then the continuation. Its
+# log goes to a file of its own, so the output file holds the text
+# alone.
+LLM_PROMPT = "Once upon a time"
+LLM_TOKENS = 24
+LLM_OUT = "/tmp/llm.out"
+LLM_STATUS = "/tmp/llm.status"
+LLM_COMMAND = (
+    f"llama-completion -m {LLM_MODEL_PATH} -ngl 99 -n {LLM_TOKENS} -no-cnv"
+    f" -p '{LLM_PROMPT}' > {LLM_OUT} 2> /tmp/llm.err; echo $? > {LLM_STATUS}\n"
+)
+LLM_LIMIT_SECONDS = 180
+
+
+CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx", "vulkan", "llm"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -788,12 +824,14 @@ class Vulkan(enum.Enum):
     ON = "1"
 
 
-def page_url(base, packages, fetch, run=None, vulkan=Vulkan.OFF):
+def page_url(base, packages, fetch, run=None, vulkan=Vulkan.OFF, files=()):
     """The link that boots `packages` on unkernel without a click,
     naming when the closure downloads if `fetch` is not None, the
-    command the page types at the shell if `run` is not None, and guest
-    Vulkan when `vulkan` turns it on."""
+    command the page types at the shell if `run` is not None, guest
+    Vulkan when `vulkan` turns it on, and each of `files`, a URL and a
+    hash with a space between, as a file= (site/js/files.js)."""
     query = [("pkg", name) for name in packages]
+    query += [("file", file) for file in files]
     query += [("engine", ENGINE)]
     if fetch is not None:
         query += [("fetch", fetch)]
@@ -820,14 +858,16 @@ def wait_for(browser, expression, limit, label):
     raise SystemExit(f"FAIL {label}: nothing after {limit} s\n{tail}")
 
 
-def boot(browser, base, packages, fetch, viewport, run=None, vulkan=Vulkan.OFF):
-    """Boot `packages` in a browser window of `viewport`'s size, with
-    guest Vulkan as `vulkan` says, and wait for the shell; returns the
-    seconds taken. The page records the NARs it fetches
+def boot(
+    browser, base, packages, fetch, viewport, run=None, vulkan=Vulkan.OFF, files=()
+):
+    """Boot `packages` and `files` in a browser window of `viewport`'s
+    size, with guest Vulkan as `vulkan` says, and wait for the shell;
+    returns the seconds taken. The page records the NARs it fetches
     (FETCH_RECORDER)."""
     browser.set_viewport(VIEWPORTS[viewport])
     browser.preload(FETCH_RECORDER)
-    browser.navigate(page_url(base, packages, fetch, run, vulkan))
+    browser.navigate(page_url(base, packages, fetch, run, vulkan, files))
     _, seconds = wait_for(
         browser,
         f"(window.trynix?.transcript?.() ?? '').includes({json.dumps(cpu.SHELL_MARKER)})",
@@ -1446,6 +1486,62 @@ def run_vulkan(browser, base, screenshots, fetch, viewport):
         raise SystemExit("FAIL vkcube's picture is not the LunarG cube's")
 
 
+def run_llm(browser, base, screenshots, fetch, viewport):
+    """llm: boot llama.cpp's Vulkan build with a model the link names
+    by URL and hash, and have llama-completion continue a prompt at the
+    page's shell. It must exit 0 and print words past the prompt. With
+    a WebGPU adapter the renderer must have run its compute work with
+    no errors; without one llama.cpp falls back to the guest's CPU and
+    must answer all the same."""
+    del screenshots  # the case draws no window
+    print("llm")
+    seconds = boot(
+        browser,
+        base,
+        LLM_PACKAGES,
+        fetch,
+        viewport,
+        vulkan=Vulkan.ON,
+        files=[f"{LLM_MODEL_URL} {LLM_MODEL_HASH}"],
+    )
+    print(f"  shell after {seconds:.1f} s")
+
+    # llama-completion, typed at the page's shell. Its status is
+    # written last, so a status means its output is all there.
+    started = time.monotonic()
+    browser.type(LLM_COMMAND)
+    status = int(read_when_written(browser, LLM_STATUS, LLM_LIMIT_SECONDS, "llama-completion"))
+    seconds = time.monotonic() - started
+    output = guest_shell(browser, f"cat {LLM_OUT}")["stdout"]
+    continuation = output.split(LLM_PROMPT, 1)[-1].strip()
+    print(f"  llama-completion exited {status} after {seconds:.2f} s: {output.strip()[:80]!r}")
+    if status != 0 or LLM_PROMPT not in output or not continuation:
+        log = guest_shell(browser, "tail -n 20 /tmp/llm.err")["stdout"]
+        raise SystemExit(f"FAIL llama-completion did not continue the prompt:\n{output}\n{log}")
+
+    # Where the work ran, against what the browser was launched to give.
+    renderer = vk_value(browser, "status")
+    has_adapter = renderer is not None and renderer["state"] == VK_READY
+    why = "no navigator.gpu" if renderer is None else renderer["error"]
+    if browser.adapter is Adapter.PRESENT and not has_adapter:
+        raise SystemExit(f"FAIL the browser was to give WebGPU an adapter and gave none: {why}")
+    if browser.adapter is Adapter.ABSENT and has_adapter:
+        raise SystemExit(f"FAIL the browser was to give WebGPU no adapter and gave {renderer['adapter']}")
+    if not has_adapter:
+        print(f"  no WebGPU adapter ({why}); llama.cpp answered on the guest's CPU")
+        return
+
+    stats = vk_value(browser, "stats")["renderer"]
+    print(
+        f"  renderer on {renderer['adapter']}: {stats['dispatches']} dispatches,"
+        f" {stats['pipelines']} pipelines, {stats['errors']} errors"
+    )
+    if stats["dispatches"] == 0:
+        raise SystemExit("FAIL llama.cpp answered without running anything on kwvk")
+    if stats["errors"] != 0:
+        raise SystemExit("FAIL the renderer reported errors for llama.cpp")
+
+
 RUNNERS = {
     "foot": run_foot,
     "gl": run_gl,
@@ -1455,6 +1551,7 @@ RUNNERS = {
     "oldgl": run_oldgl,
     "slowx": run_slowx,
     "vulkan": run_vulkan,
+    "llm": run_llm,
 }
 
 

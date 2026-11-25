@@ -12,6 +12,7 @@ import struct
 import sys
 import types
 import unittest
+import urllib.parse
 import zlib
 from unittest import mock
 
@@ -216,6 +217,32 @@ class PngReaderTest(unittest.TestCase):
         self.assertEqual(teal, pixels.count(TEAL) / len(pixels))
         self.assertEqual(olive, pixels.count(OLIVE) / len(pixels))
         self.assertEqual(colours, len(set(pixels)))
+
+
+# Two files as a link names them: a URL, a space, and an SRI hash.
+FILES = [
+    "https://example.org/a/model.gguf sha256-Jwy6G9UQn0LQM1D2BAYCRWBGTbFzwOOH2R8EJtO9JW0=",
+    "https://example.org/b/data.csv sha256-SS1epJYFbxpqZZIkEDL6t2TDIVljF5MLT6Dh6Lw7dHA=",
+]
+
+
+class PageUrlTest(unittest.TestCase):
+    """The link a case boots, as the page reads it back."""
+
+    def test_each_file_is_one_file_parameter(self):
+        """Builds a link with FILES and one with none, parses each query
+        as the page does, and checks that every file is one file=
+        holding its URL and hash, in order, and that the link without
+        files names none."""
+        tool = load_tool()
+        url = tool.page_url("http://site", ["hello"], None, files=FILES)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        self.assertEqual(query["file"], FILES)
+        self.assertEqual(query["pkg"], ["hello"])
+
+        bare = tool.page_url("http://site", ["hello"], None)
+        bare_query = urllib.parse.parse_qs(urllib.parse.urlsplit(bare).query)
+        self.assertNotIn("file", bare_query)
 
 
 if __name__ == "__main__":

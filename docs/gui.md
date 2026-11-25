@@ -1101,17 +1101,24 @@ own error and not a signal. The slowx case holds the X server's NARs
 back 35 s and checks that xterm waits through the hold for its window.
 The page records which NARs it fetches for these checks from a script
 the tool runs before the page's own.
-The vulkan case boots vulkan-tools with `vk=1`, which no other case
-sets, types `vulkaninfo --summary` at the page's shell and then starts
-`vkcube --wsi wayland`. With a WebGPU
+The vulkan case boots vulkan-tools with `vk=1`, which only it and the
+llm case set, types `vulkaninfo --summary` at the page's shell and then
+starts `vkcube --wsi wayland`. With a WebGPU
 adapter vulkaninfo must name kwvk's device, and vkcube's window must
 draw through kwvk: 30 frames presented by the renderer and taken by
 the compositor, with no renderer error, and a picture with the LunarG
 logo's teal, no olive (red and blue swapped) and many colours. Without
 one, vulkaninfo must fail with `VK_ERROR_INCOMPATIBLE_DRIVER` and the
-guest must go on answering. `--webgpu` sets Chromium's WebGPU for
-every case: SwiftShader's (the default), which gives an adapter on any
-host, or `off`, which is Chromium on Linux as shipped.
+guest must go on answering. The llm case boots `llama-cpp-vulkan@1.0.0`,
+the LLM Try link's build, with `vk=1` and stories260K, a 1.2 MB model
+named by `file=` from Hugging Face, and has llama-completion continue
+a prompt for 24 tokens: it must exit 0 and print words past the prompt,
+and with an adapter the renderer must have run its compute work with
+no error. On SwiftShader that took 19 s; with `--webgpu off` llama.cpp
+falls back to the guest's CPU, which answered in 3 s. `--webgpu` sets
+Chromium's WebGPU for every case: SwiftShader's (the default), which
+gives an adapter on any host, or `off`, which is Chromium on Linux as
+shipped.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
