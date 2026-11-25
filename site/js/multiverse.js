@@ -157,10 +157,9 @@ export async function versionsOf(attr) {
     return [];
   }
 
-  const order = versionOrder(Object.keys(entries));
   return Object.entries(entries)
     .map(([version, entry]) => built(attr, version, entry))
-    .sort((a, b) => order(b.version, a.version));
+    .sort((a, b) => compareVersions(b.version, a.version));
 }
 
 // The two indexes joined: every version nixpkgs ever shipped of this
@@ -178,14 +177,13 @@ export function mergeVersions(attr, indexed, entries) {
     ...Object.keys(entries ?? {}),
   ]);
 
-  const order = versionOrder(versions);
   return [...versions]
     .map((version) =>
       entries?.[version] === undefined
         ? unbuilt(attr, version)
         : built(attr, version, entries[version]),
     )
-    .sort((a, b) => order(b.version, a.version));
+    .sort((a, b) => compareVersions(b.version, a.version));
 }
 
 // The picker's list: every version, bootable or not. Both shards are
@@ -211,32 +209,8 @@ export async function versionRowsOf(attr) {
 // 3.15.0rc1 above 3.15.0a1, so a sort's answer hung on the order it
 // was handed the versions in.
 export function compareVersions(a, b) {
-  return compareKeyLists(versionKeys(a), versionKeys(b));
-}
-
-// The order of one attribute's versions, as compareVersions orders
-// them except where the attribute shipped the version up to a
-// prerelease letter: there the letter is the release's own, and the
-// version is a fix after that release. gnufdisk shipped 2.0.0a and then
-// 2.0.0a1, whose "a" reads as Python's alpha on its own and put it
-// below 2.0.0a. Python never ships a 3.15.0a, so its alphas stay below
-// their release. Each version's keys depend only on the version and on
-// the list, so the order on one list is still total.
-export function versionOrder(versions) {
-  const shipped = new Set(versions);
-  const keys = new Map();
-  const keysOf = (version) => {
-    if (!keys.has(version)) {
-      keys.set(version, versionKeys(version, shipped));
-    }
-    return keys.get(version);
-  };
-  return (a, b) => compareKeyLists(keysOf(a), keysOf(b));
-}
-
-// Two versions' key lists compared part by part, a missing part
-// counting as MISSING, as -1, 0 or 1.
-function compareKeyLists(ka, kb) {
+  const ka = versionKeys(a);
+  const kb = versionKeys(b);
   for (let i = 0; i < Math.max(ka.length, kb.length); i += 1) {
     const order = compareKeys(ka[i] ?? MISSING, kb[i] ?? MISSING);
     if (order !== 0) {
@@ -257,9 +231,7 @@ const VERSION_PART = /\d+|[^.\-\d]+/g;
 // release also shipped came before that release (57 alphas, 66
 // betas). The same letter ending a version is a release after it
 // (OpenSSL's 1.1.1a), and after a separator it starts a commit hash
-// (0.0.6-a31eadd7), so neither of those matches. An attribute that
-// also shipped the version up to the letter is the exception
-// (versionOrder).
+// (0.0.6-a31eadd7), so neither of those matches.
 const ALPHA_BETA = /(?<=\d)[ab](?=\d+(?:[.\-]|$))/g;
 
 // A milestone, as Java and Scala projects write one: an "M" after a
@@ -271,19 +243,13 @@ const MILESTONE = /(?<=[.\-])[Mm](?=\d+(?:[.\-]|$))/g;
 // The single letters that are a prerelease where they stand.
 const PRERELEASE_LETTERS = [ALPHA_BETA, MILESTONE];
 
-// No versions, for a comparison of two versions outside any list.
-const NONE_SHIPPED = new Set();
-
 // Each part of a version as the key it sorts by. A prerelease letter
 // sorts as its lowercase self among the prerelease words, where "m"
-// comes after "dev" and before "rc", unless `shipped` holds the version
-// up to and including that letter (versionOrder).
-function versionKeys(version, shipped = NONE_SHIPPED) {
+// comes after "dev" and before "rc".
+function versionKeys(version) {
   const letters = new Set(
     PRERELEASE_LETTERS.flatMap((pattern) =>
-      [...version.matchAll(pattern)]
-        .filter((match) => !shipped.has(version.slice(0, match.index + 1)))
-        .map((match) => match.index),
+      [...version.matchAll(pattern)].map((match) => match.index),
     ),
   );
   return [...version.matchAll(VERSION_PART)].map((match) =>

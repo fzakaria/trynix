@@ -245,38 +245,6 @@ test("versions sort the same from every input order", () => {
   }
 });
 
-// Checks that a fix to a lettered release sorts after it when the
-// attribute shipped both, from every input order: gnufdisk shipped
-// 2.0.0a and then 2.0.0a1, whose "a" reads as Python's alpha letter on
-// its own. Python's own alphas, in a list with no 3.15.0a, stay below
-// their release.
-test("a fix to a lettered release sorts after it", () => {
-  const gnufdisk = ["2.0.0a1", "2.0.0a", "1.1.9"];
-  for (const order of permutations(gnufdisk)) {
-    const rows = mergeVersions(
-      "gnufdisk",
-      Object.fromEntries(order.map((version, i) => [version, i])),
-      undefined,
-    );
-    assert.deepEqual(
-      rows.map((r) => r.version),
-      gnufdisk,
-      order.join(" "),
-    );
-  }
-
-  const python = ["3.15.0", "3.15.0rc1", "3.15.0a1"];
-  const rows = mergeVersions(
-    "python315",
-    Object.fromEntries(python.map((version, i) => [version, i])),
-    undefined,
-  );
-  assert.deepEqual(
-    rows.map((r) => r.version),
-    python,
-  );
-});
-
 // Checks that a range compares with the same order, by matching
 // OpenSSL's lettered releases against ">1.1.1": every one of them is a
 // release after 1.1.1, and 1.1.1 itself is not after itself.
