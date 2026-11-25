@@ -40,14 +40,17 @@ export async function cachedResponse(url) {
   }
 }
 
-// Keep bytes for next time. Failure is silent and harmless.
+// Keep bytes for next time, with their length as the Content-Length,
+// so reading them back can put them into one buffer (net.js). Failure
+// is silent and harmless.
 export async function storeInCache(url, bytes) {
   const cache = await openCache();
   if (cache === null) {
     return;
   }
   try {
-    await cache.put(url, new Response(bytes));
+    const headers = { "Content-Length": String(bytes.byteLength) };
+    await cache.put(url, new Response(bytes, { headers }));
   } catch {
     // out of quota, or storage denied: the next visit re-downloads
   }

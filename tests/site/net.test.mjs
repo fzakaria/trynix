@@ -146,3 +146,35 @@ test(
     assert.equal(calls.count, 1);
   },
 );
+
+// A response whose body is `bytes`, sent in chunks of `chunk` bytes,
+// with `length` as its Content-Length when given: a compressed
+// response's header names fewer bytes than its body decodes to, and a
+// body that ended early has fewer than its header names.
+function sized(bytes, chunk, length = null) {
+  const body = new ReadableStream({
+    start(controller) {
+      for (let at = 0; at < bytes.length; at += chunk) {
+        controller.enqueue(new Uint8Array(bytes.slice(at, at + chunk)));
+      }
+      controller.close();
+    },
+  });
+  const headers = length === null ? {} : { "Content-Length": String(length) };
+  return new Response(body, { headers });
+}
+
+// Checks that a body arrives whole and exact whatever its Content-Length
+// says: the same as the body, fewer bytes, more, or none at all; and
+// that the bytes handed back hold no room past the body.
+test("a body arrives whole whatever its Content-Length says", async () => {
+  const bytes = Array.from({ length: 10 }, (_, i) => i);
+  for (const length of [10, 4, 20, null]) {
+    globalThis.fetch = async () => sized(bytes, 3, length);
+    const got = await fetchWithProgress("https://example.org/f", {
+      idleMs: IDLE_MS,
+    });
+    assert.deepEqual([...got], bytes, `Content-Length ${length}`);
+    assert.equal(got.buffer.byteLength, bytes.length);
+  }
+});
