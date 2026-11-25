@@ -80,13 +80,19 @@ export const Tone = Object.freeze({
   BAD: "bad",
 });
 
-// A page that lists what this browser's WebGPU gives a page, from the
-// WebGPU group's own repository (github.com/webgpu/webgpureport), for a
-// reader whose adapter is missing or in software.
-export const WEBGPU_REPORT = "https://webgpureport.org/";
+// Where each browser ships WebGPU, by platform and GPU, with the flags
+// that turn it on where it is not on by default: the W3C GPU for the
+// Web working group's page, which engineers of every browser keep. The
+// status line links to it for a reader whose adapter is missing or in
+// software, by a label of its own, since its host is github.com.
+export const WEBGPU_STATUS = Object.freeze({
+  href: "https://github.com/gpuweb/gpuweb/wiki/Implementation-Status",
+  label: "WebGPU in each browser",
+});
 
 // What the Settings lane says about the probe's answer: { text, tone,
-// link }, the link null when the text, naming a GPU, says it all.
+// link }, the link a { href, label } or null when the text, naming a
+// GPU, says it all.
 export function adapterNote({ kind, name }) {
   switch (kind) {
     case Adapter.HARDWARE:
@@ -95,13 +101,13 @@ export function adapterNote({ kind, name }) {
       return {
         text: `WebGPU adapter: ${name}, in software, so Vulkan programs would be slow.`,
         tone: Tone.WARN,
-        link: WEBGPU_REPORT,
+        link: WEBGPU_STATUS,
       };
     default:
       return {
         text: "This browser has no WebGPU adapter, so programs would find no Vulkan device.",
         tone: Tone.BAD,
-        link: WEBGPU_REPORT,
+        link: WEBGPU_STATUS,
       };
   }
 }

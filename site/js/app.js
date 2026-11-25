@@ -823,8 +823,8 @@ let adapterSaid = null;
 let vulkanChanged = false;
 
 // The note on the adapter as the status line shows it: its text in its
-// tone, and its link, if any, by host name. The link opens a new tab so
-// that following it leaves a running guest running.
+// tone, and its link, if any, by the link's label. The link opens a new
+// tab so that following it leaves a running guest running.
 function adapterLine({ text, tone, link }) {
   const note = document.createElement("span");
   note.dataset.tone = tone;
@@ -834,10 +834,10 @@ function adapterLine({ text, tone, link }) {
   }
 
   const anchor = document.createElement("a");
-  anchor.href = link;
+  anchor.href = link.href;
   anchor.target = "_blank";
   anchor.rel = "noopener";
-  anchor.textContent = new URL(link).hostname;
+  anchor.textContent = link.label;
   return [note, " ", anchor];
 }
 
