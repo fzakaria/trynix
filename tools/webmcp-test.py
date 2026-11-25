@@ -90,7 +90,10 @@ LAST_BOOT_FAILED = "the last boot failed; "
 BOOT_PARAMETER = "boot=1"
 START_OVER = "Start over"
 BOOT_BUTTON = "document.getElementById('boot-button')"
-LINK_PROGRAM = "/bin/ln"
+# The guest's link of its store at /nix, which the page runs with the
+# links to the X server and the GL driver in one shell command
+# (site/js/unkernel.js): an exec whose command line holds it is refused.
+LINK_COMMAND = "ln -s /share/nix /nix"
 LINK_ERROR = "ln: refused by webmcp-test"
 
 # Set on a page before its button is clicked, and gone from the page the
@@ -197,7 +200,7 @@ REFUSE = (
 # Installed before the page's own scripts for the boot that fails after
 # its guest starts. The unkernel engine hands the page the guest's
 # kernel as window.trynix.kernel (site/js/unkernel.js), and once the
-# guest is started it runs LINK_PROGRAM in the guest to put the store at
+# guest is started it runs LINK_COMMAND in the guest to put the store at
 # /nix. This makes that run exit 1 with LINK_ERROR, and every other run
 # go through as it would.
 BREAK_LINK = (
@@ -214,15 +217,15 @@ BREAK_LINK = (
         return;
       }
       const exec = kernel.exec.bind(kernel);
-      kernel.exec = (path, ...rest) =>
-        path === LINK_PROGRAM
+      kernel.exec = (path, args = [], ...rest) =>
+        [path, ...args].join(" ").includes(LINK_COMMAND)
           ? Promise.resolve({ exitCode: 1, stdout: "", stderr: LINK_ERROR })
-          : exec(path, ...rest);
+          : exec(path, args, ...rest);
     },
   });
 })();
 """
-    .replace("LINK_PROGRAM", json.dumps(LINK_PROGRAM))
+    .replace("LINK_COMMAND", json.dumps(LINK_COMMAND))
     .replace("LINK_ERROR", json.dumps(LINK_ERROR))
 )
 

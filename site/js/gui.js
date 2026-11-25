@@ -18,14 +18,18 @@
 // buffer by its GPU resource and the compositor asks the renderer for
 // the resource's picture (gpuSource).
 //
-// The page loads wland only when the relay first dials, which it does
+// The relay starts in every guest, once the shell is at its prompt, and
+// the page loads wland only when the relay first dials, which it does
 // when the first program connects (--link-on-demand). A boot that runs
-// no GUI program fetches none of it.
+// no GUI program fetches no compositor.
 //
 // An X11 program connects to an X display the relay holds, and the
-// relay starts the X server, xwayland-satellite, for the first one
-// (x11.js). The satellite runs Xwayland rootless and hands each X11
-// window to the relay as a Wayland window of its own.
+// relay starts the X server, xwayland-satellite, for the first one. The
+// satellite runs Xwayland rootless and hands each X11 window to the
+// relay as a Wayland window of its own. The satellite and the GL driver
+// are linked into every guest at the boot (capabilityLinks) and fetched
+// the first time something looks inside them (lazy.js, capability), so
+// every shell's environment names the X display from the start.
 
 import { GUEST_STORE_DIR, SHARE_DIR } from "./share.js";
 import { GUI_DIR, GUI_FONTS, GUI_RELAY, GUI_WLAND } from "./config.js";
@@ -86,14 +90,15 @@ const RENDER_NODE = "/dev/dri/renderD128";
 const MACHINE_ID = "/etc/machine-id";
 const RANDOM_UUID = "/proc/sys/kernel/random/uuid";
 
-// X11 programs (x11.js). The relay claims an X display and runs the
-// launcher for the first X client that connects (wlandr --xwayland);
-// the launcher starts the X server the page linked into the guest, or
-// fails when there is none, and the relay then refuses X clients. The
-// launcher is there from the session's start so a relay already
-// running when an addition brings the X server serves X clients too.
+// X11 programs. The relay claims an X display and runs the launcher
+// for the first X client that connects (wlandr --xwayland); the
+// launcher starts the X server the page linked into the guest.
 const X11_LAUNCHER = `${GUI_SHARE_DIR}/start-x11`;
 const X11_SERVER_LINK = `${RUN_DIR}/x11-server`;
+
+// What the page writes into the share to let the X server draw with
+// glamor (enableGlamor), which the launcher looks for.
+const GLAMOR_MARKER = `${GUI_SHARE_DIR}/glamor`;
 
 // The program in the X server's store path: xwayland-satellite, which
 // nixpkgs wraps with Xwayland on its PATH.
@@ -120,8 +125,7 @@ const FONT_CACHE_DIR = "/tmp/fontconfig";
 const MODE_EXECUTABLE = 0o755;
 
 // The name of the libwayland package in nixpkgs. A closure holding it
-// has a program that speaks Wayland, and only then does the page set
-// up a session.
+// has a program that speaks Wayland (activity.js).
 const WAYLAND_PATH = /^[0-9a-z]{32}-wayland-\d/;
 
 // The file Mesa installs to register itself with libglvnd's EGL. A
@@ -135,11 +139,16 @@ const MESA_EGL_VENDOR = "share/glvnd/egl_vendor.d/50_mesa.json";
 // does not answer.
 const CANBERRA_DRIVER = "alsa";
 
-// The environment every guest shell gets, so a GUI program started
-// plainly finds the relay and picks its Wayland backend. Toolkits that
-// would otherwise look for X are told to use Wayland; each falls back
-// to X where it has no Wayland backend, which works only once the
-// closure holds an X server (x11Env). libcanberra is sent to ALSA.
+// The environment every guest shell gets, the same from the boot to the
+// end, so a GUI program started plainly finds the relay and picks its
+// Wayland backend. Toolkits that would otherwise look for X are told to
+// use Wayland; each falls back to the X display where it has no Wayland
+// backend. libcanberra is sent to ALSA.
+//
+// Java's AWT waits for its window manager to reparent each window into
+// a frame of its own, and the satellite, whose windows' frames are the
+// compositor's, does not: a Swing window opened blank and stayed so
+// until AWT was told.
 export function sessionEnv() {
   return {
     XDG_RUNTIME_DIR: RUNTIME_DIR,
@@ -152,47 +161,10 @@ export function sessionEnv() {
     ELECTRON_OZONE_PLATFORM_HINT: "wayland",
     FONTCONFIG_FILE: FONTS_CONF,
     CANBERRA_DRIVER,
-  };
-}
-
-// The environment a guest shell gets once the closure holds an X
-// server, so an X11 program started plainly finds the relay's display.
-// Shells get none without one: a program with both backends that tries
-// X11 first would find a display with no server behind it.
-//
-// Java's AWT waits for its window manager to reparent each window into
-// a frame of its own, and the satellite, whose windows' frames are the
-// compositor's, does not: a Swing window opened blank and stayed so
-// until AWT was told.
-export function x11Env() {
-  return {
     DISPLAY: X11_DISPLAY,
     XENVIRONMENT: X11_RESOURCES,
     _JAVA_AWT_WM_NONREPARENTING: "1",
   };
-}
-
-// What a shell started before an addition can lack: the addition
-// brought an X server, and the shell sourced its environment
-// (unkernel.js, manifest) before one was there. Each value is how the
-// reader is told what needs it.
-export const ShellUpdate = Object.freeze({
-  // DISPLAY and the rest of x11Env.
-  X11: "X11 programs",
-});
-
-// What the page tells the reader after an addition whose `updates`
-// (ShellUpdate) the shell already running lacks, or null for none. A
-// shell sources the file ENV names as it starts, so a new one has them,
-// and sourcing the file again brings the running one up to date.
-export function shellNote(updates) {
-  if (updates.length === 0) {
-    return null;
-  }
-  return (
-    `${updates.join(" and ")} work now in new shells (type sh for one), ` +
-    "or in this one after . $ENV"
-  );
 }
 
 // Whether a set of store basenames holds a Wayland program.
@@ -235,22 +207,27 @@ function fontsConf() {
 }
 
 // The launcher the relay runs for the first X client, with the
-// relay's arguments (the display and its listening sockets). With a GL
-// driver in the guest, Xwayland draws with glamor through that driver,
-// which is what gives it DRI3: a GLX program renders with the virgl
-// driver only through DRI3, and without it Mesa's GLX wants a software
-// driver, which the site's Mesa does not have. Without a GL driver,
-// Xwayland draws into shared memory, which the compositor reads through
-// kwshm like any other program's buffers: glamor needs the driver, and
-// xterm's first window took longer to open with it.
+// relay's arguments (the display and its listening sockets). Where the
+// page has allowed it (enableGlamor), Xwayland draws with glamor
+// through the GL driver, which is what gives it DRI3: a GLX program
+// renders with the virgl driver only through DRI3, and without it
+// Mesa's GLX wants a software driver, which the site's Mesa does not
+// have. Otherwise Xwayland draws into shared memory, which the
+// compositor reads through kwshm like any other program's buffers:
+// glamor fetches the driver's closure and loads the GL renderer, which
+// cost xterm's first window 2.5 s and 18 MB.
+//
+// The satellite passes both flags on to Xwayland. `-glamor none` is
+// read with Xwayland's command line, before it asks EGL whether glamor
+// could work, which loads the GL driver; XWAYLAND_NO_GLAMOR is read
+// after that, and xterm downloaded the driver with it set. Without
+// glamor the X server runs without GLX too: GLX's software path loads
+// the driver through Mesa's DRI loader, and serves no GLX program
+// without DRI3.
 function x11Launcher() {
   return [
     `#!/bin/sh`,
-    `[ -e ${X11_SERVER_LINK} ] || {`,
-    `  echo "trynix: no X server in this guest; select xwayland-satellite" >&2`,
-    `  exit 1`,
-    `}`,
-    `[ -e ${OPENGL_DRIVER} ] || export XWAYLAND_NO_GLAMOR=1`,
+    `[ -e ${GLAMOR_MARKER} ] || set -- "$@" -glamor none -extension GLX`,
     `exec ${X11_SERVER_LINK} "$@"`,
     ``,
   ].join("\n");
@@ -403,31 +380,31 @@ export function guestSession({ FS, exec }) {
   };
 }
 
-// Point the guest's GL driver link at a Mesa store path.
-export async function linkGlDriver(exec, basename) {
-  const target = `${GUEST_STORE_DIR}/${basename}`;
-  const result = await exec(
-    `mkdir -p ${RUN_DIR} && ln -sfn ${target} ${OPENGL_DRIVER}`,
-  );
-  if (result.exitCode !== 0) {
-    throw new Error(`could not link ${OPENGL_DRIVER}: ${result.stderr.trim()}`);
+// The shell command that points the guest's fixed names at store
+// paths: /run/opengl-driver at the GL driver `glDriver`, and the X11
+// launcher's /run/x11-server at the program of the X server
+// `x11Server`, each a basename; either may be left out, and a null
+// driver is no link. Making a link resolves nothing in the store, so
+// neither path is fetched until something looks inside it.
+export function capabilityLinks({ glDriver = null, x11Server = null }) {
+  const links = [];
+  if (glDriver !== null) {
+    links.push(`ln -sfn ${GUEST_STORE_DIR}/${glDriver} ${OPENGL_DRIVER}`);
   }
-  log(`gui: ${OPENGL_DRIVER} is ${target}`);
-}
-
-// Point the X11 launcher's link at an X server's store path
-// (x11.js, isX11Server).
-export async function linkX11Server(exec, basename) {
-  const target = `${GUEST_STORE_DIR}/${basename}/${X11_SERVER_PROGRAM}`;
-  const result = await exec(
-    `mkdir -p ${RUN_DIR} && ln -sfn ${target} ${X11_SERVER_LINK}`,
-  );
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `could not link ${X11_SERVER_LINK}: ${result.stderr.trim()}`,
+  if (x11Server !== null) {
+    links.push(
+      `ln -sfn ${GUEST_STORE_DIR}/${x11Server}/${X11_SERVER_PROGRAM} ${X11_SERVER_LINK}`,
     );
   }
-  log(`gui: ${X11_SERVER_LINK} is ${target}`);
+  return [`mkdir -p ${RUN_DIR}`, ...links].join(" && ");
+}
+
+// Let the X server draw with glamor (x11Launcher), for a selection that
+// may draw with GLX. Xwayland decides as it starts, so an X server
+// already running keeps what it started with.
+export function enableGlamor(FS) {
+  FS.mkdir(GUI_SHARE_DIR);
+  FS.writeFile(GLAMOR_MARKER, new Uint8Array());
 }
 
 // DRM fourccs of the formats with no alpha the relay offers: XR24

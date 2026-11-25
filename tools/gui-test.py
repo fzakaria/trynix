@@ -24,15 +24,17 @@ The cases:
            then presses the page's terminal, behind the window, and
            checks that keys typed next reach the page's shell and no
            window.
-    gl     es2gears from mesa-demos, selected alone, so the page adds
-           the site's GL driver itself (site/js/gldriver.js), rendered
-           by Mesa's virgl driver through the page's WebGL2
-           (SwiftShader by default, so the frame rate it prints is a
-           floor, not a measurement of a GPU).
-    x11    xterm, which speaks only X11, selected alone, so the page
-           adds the X server itself (site/js/x11.js) and no GL driver.
-           Waits for its window, then types into it and checks that
-           the keys reached xterm's shell.
+    gl     es2gears from mesa-demos, selected alone, rendered through
+           the site's GL driver, which every guest is linked to and
+           which arrives when es2gears first looks for it
+           (site/js/gldriver.js), by Mesa's virgl driver through the
+           page's WebGL2 (SwiftShader by default, so the frame rate it
+           prints is a floor, not a measurement of a GPU).
+    x11    xterm, which speaks only X11, selected alone: the X server
+           every guest is linked to arrives when xterm first connects,
+           and the GL driver does not. Waits for its window, then types
+           into it and checks that the keys reached xterm's shell, and
+           that the X server put none of its programs on PATH.
     feedback
            tools/gl-feedback.py, run in the guest with python3 through
            the site's GL driver: ten draws into textures, the second
@@ -44,6 +46,20 @@ The cases:
            with an incomplete texture or none on its unit. Checks that
            each draw read back its colour and that the renderer
            reported no context error.
+    glx    extremetuxracer, selected alone: an SFML 2 game that speaks
+           X11 alone and makes its GL context with GLX, with no X
+           server or driver selected. Waits for its window and checks
+           that its frames came through the page's GL renderer by GPU
+           resource, which GLX reaches by DRI3 on Xwayland with glamor.
+    oldgl  mesa-demos 8.5.0 (glibc 2.35), older than the site's GL
+           driver. Checks that /run/opengl-driver is the site's driver
+           and not the Mesa in the program's closure, that none of that
+           Mesa is downloaded, and that eglinfo and es2gears_wayland
+           exit with an error rather than a signal.
+    slowx  xterm alone, with the X server's and Xwayland's NARs held
+           back 35 s from when the guest first asks for them. Checks
+           that xterm waits for its server and opens its window after
+           the hold.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -496,12 +512,63 @@ class Firefox:
 
 DRIVERS = {CHROMIUM: Chromium, FIREFOX: Firefox}
 
-# The gl case: es2gears alone; the page adds the driver, and says so in
-# its log. es2gears prints its frame rate every five seconds, as "<n>
-# frames in 5.0 seconds = <fps> FPS"; two such lines are waited for,
-# since the first includes the renderer's load.
+# What the page's log says when the guest first looks inside the X
+# server or the GL driver, which is when their closures join its store
+# (site/js/app.js, serveCapabilities).
+SERVER_USED = re.compile(r"capability: (/nix/store/\S+-xwayland-satellite-\S+)")
+DRIVER_USED = re.compile(r"capability: (/nix/store/\S+-mesa-virgl-\S+)")
+
+# A function the page runs before its own scripts (preload) that
+# records the store paths whose NARs the page fetches, in
+# window.trynixFetched as { path, bytes } with the narinfo's FileSize,
+# from the narinfos it fetched before them. A NAR whose store path
+# matches window.trynixHold's pattern, when one is set, is held back
+# its `ms` the first time it is asked for: a download that sends
+# nothing for 30 s is abandoned and asked for again (site/js/net.js),
+# and the second attempt goes through.
+FETCH_RECORDER = """() => {
+  const fetched = [];
+  const narOf = new Map();
+  const held = new Set();
+  const original = window.fetch.bind(window);
+  window.trynixFetched = fetched;
+  window.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href).href;
+    const nar = narOf.get(url);
+    if (nar !== undefined) {
+      fetched.push(nar);
+      const hold = window.trynixHold;
+      if (hold && new RegExp(hold.pattern).test(nar.path) && !held.has(url)) {
+        held.add(url);
+        await new Promise((resolve) => setTimeout(resolve, hold.ms));
+      }
+    }
+    const res = await original(input, init);
+    if (url.endsWith(".narinfo") && res.ok) {
+      const text = await res.clone().text();
+      const path = /^StorePath: (.*)$/m.exec(text);
+      const narUrl = /^URL: (.*)$/m.exec(text);
+      const size = /^FileSize: (\\d+)$/m.exec(text);
+      if (path && narUrl) {
+        narOf.set(new URL(narUrl[1], url).href, {
+          path: path[1],
+          bytes: size ? Number(size[1]) : 0,
+        });
+      }
+    }
+    return res;
+  };
+}"""
+
+# The store paths whose NARs the page has fetched so far, with sizes.
+FETCHED = "JSON.parse(JSON.stringify(window.trynixFetched ?? []))"
+
+# The gl case: es2gears alone; the guest's first look for the driver
+# brings it in, and the page says so in its log. es2gears prints its
+# frame rate every five seconds, as "<n> frames in 5.0 seconds = <fps>
+# FPS"; two such lines are waited for, since the first includes the
+# renderer's load.
 GL_PACKAGES = ["mesa-demos"]
-DRIVER_ADDED = re.compile(r"gl: added (/nix/store/\S+-mesa-virgl-\S+)")
 # The gl case's link types the command itself (run=, site/js/url.js),
 # as the page's Try link does; the foot case types its own.
 GL_COMMAND = "LIBDECOR_PLUGIN_DIR= es2gears_wayland &"
@@ -510,13 +577,12 @@ FPS_LINES = 2
 FPS_LIMIT_SECONDS = 60
 
 
-# The x11 case: xterm alone; the page adds xwayland-satellite, and says
-# so in its log, and the link types the command. A line typed into the
-# window writes a file, as in the foot case.
+# The x11 case: xterm alone; xterm's first connection brings in the X
+# server, which the page says in its log, and the link types the
+# command. A line typed into the window writes a file, as in the foot
+# case.
 X11_PACKAGES = ["xterm"]
 X11_COMMAND = "xterm &"
-SERVER_ADDED = re.compile(r"x11: added (/nix/store/\S+-xwayland-satellite-\S+)")
-DRIVER_ADDED_ANY = re.compile(r"gl: added ")
 X11_TYPED_FILE = "/tmp/xterm-typed"
 X11_TYPED = f"touch {X11_TYPED_FILE}\r"
 
@@ -524,11 +590,19 @@ X11_TYPED = f"touch {X11_TYPED_FILE}\r"
 # from the X11 window's name.
 X11_TITLE = "xterm"
 
+# Programs of the X server's closure that must stay off PATH: the X
+# server itself, and, where the selection's own closure lacks them,
+# what libdbus's autolaunch would start a bus with. xterm's closure
+# holds neither dbus nor systemd; extremetuxracer's holds both, through
+# pipewire, and offers their programs as any selection does.
+SERVER_PROGRAMS = ["Xwayland", "xwayland-satellite"]
+BUS_PROGRAMS = ["dbus-launch", "systemctl"]
+
 
 # The feedback case: the guest program, where the case writes it, and
-# the python3 that runs it. mesa-demos is selected for its closure,
-# whose libglvnd and Wayland client are what make the page add its GL
-# driver; the driver's link in the guest is logged once it is made.
+# the python3 that runs it. mesa-demos is selected for its closure's
+# libglvnd, which the program loads GL through; the driver's link in the
+# guest is logged once it is made, at the boot.
 FEEDBACK_PACKAGES = ["python3", "mesa-demos"]
 FEEDBACK_SCRIPT = os.path.join(HERE, "gl-feedback.py")
 FEEDBACK_IN_GUEST = "/tmp/gl-feedback.py"
@@ -544,7 +618,60 @@ CONTEXT_ERROR = "context error reported"
 LOG_SETTLE_SECONDS = 2
 
 
-CASES = ["foot", "gl", "x11", "feedback"]
+# The glx case: extremetuxracer alone. It draws through SFML 2, which
+# speaks X11 alone and makes its GL context with GLX, and its closure
+# holds libwayland through pipewire. Without an X server SFML aborts;
+# with a server and no GLX in the driver it gets no context and
+# SIGSEGVs. The link types the command; the window's title is the
+# game's name and version.
+GLX_PACKAGES = ["extremetuxracer"]
+GLX_COMMAND = "etr &"
+GLX_TITLE = re.compile(r"^Extreme Tux Racer ")
+# How long the game's menu is watched for frames through the renderer.
+GLX_DRAW_SECONDS = 10
+# The page's GL renderer's counters, or null before it loads.
+GL_STATS = (
+    "window.trynix.kernel.gl?.stats"
+    " ? JSON.parse(JSON.stringify(window.trynix.kernel.gl.stats)) : null"
+)
+# Succeeds when the game runs with the guest's render node open, which
+# a GLX context on the virgl driver keeps.
+GLX_HOLDS_RENDER_NODE = (
+    "pid=$(pidof etr) && ls -l /proc/$pid/fd | grep -q /dev/dri/renderD128"
+)
+
+# The oldgl case: mesa-demos 8.5.0, from nixpkgs of early 2023, whose
+# glibc 2.35 is older than the site's driver's floor of 2.38, and whose
+# closure carries Mesa 22.3.7's drivers, the output with its EGL vendor
+# file (25 MB). The page used to take that output for a Mesa the reader
+# selected, fetch it with the selection and link it as the driver.
+# osmesa, which mesa-demos references itself, is fetched with it as any
+# selected package's references are. Each command runs in an
+# environment from the shells' manifest and with a limit, and its exit
+# status is checked: 1 is the program's own failure, and anything from
+# 128 up is a signal.
+OLDGL_PACKAGES = ["mesa-demos@8.5.0"]
+OLDGL_COMMANDS = [
+    "timeout 120 eglinfo",
+    "LIBDECOR_PLUGIN_DIR= timeout 120 es2gears_wayland",
+]
+OLDGL_OWN_MESA = re.compile(r"-mesa-22\.3\.7-drivers$")
+SHELL_ENVIRONMENT = ". /share/manifest"
+COMMAND_NOT_FOUND = 127
+SIGNAL_STATUS = 128
+DRIVER_LINK = "/run/opengl-driver"
+SITE_DRIVER = re.compile(r"-mesa-virgl-")
+
+# The slowx case: xterm alone, with the NARs of the X server and of
+# Xwayland held back from when the page first asks for them. xterm is
+# looked at every HOLD_CHECK_SECONDS while it waits.
+HOLD_PATTERN = r"-xwayland-satellite-\d|-xwayland-\d"
+HOLD_MS = 35000
+HOLD_CHECK_SECONDS = 10
+XTERM_RUNNING = "pidof xterm > /dev/null"
+
+
+CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -588,8 +715,10 @@ def wait_for(browser, expression, limit, label):
 
 def boot(browser, base, packages, fetch, viewport, run=None):
     """Boot `packages` in a browser window of `viewport`'s size and wait
-    for the shell; returns the seconds taken."""
+    for the shell; returns the seconds taken. The page records the NARs
+    it fetches (FETCH_RECORDER)."""
     browser.set_viewport(VIEWPORTS[viewport])
+    browser.preload(FETCH_RECORDER)
     browser.navigate(page_url(base, packages, fetch, run))
     _, seconds = wait_for(
         browser,
@@ -740,15 +869,13 @@ def run_gl(browser, base, screenshots, fetch, viewport):
     print("gl")
     seconds = boot(browser, base, GL_PACKAGES, fetch, viewport, run=GL_COMMAND)
     print(f"  shell after {seconds:.1f} s; the link types {GL_COMMAND!r}")
-    added = DRIVER_ADDED.search(
-        browser.evaluate("document.getElementById('debug-log').textContent")
-    )
-    if added is None:
-        raise SystemExit("FAIL the page added no GL driver for es2gears")
-    print(f"  driver added: {added.group(1)}")
 
     seconds = first_frame(browser)
     print(f"  first frame {seconds:.2f} s after the shell")
+    used = DRIVER_USED.search(debug_log(browser))
+    if used is None:
+        raise SystemExit("FAIL es2gears drew without the site's GL driver arriving")
+    print(f"  driver arrived on first use: {used.group(1)}")
 
     started = time.monotonic()
     rates = []
@@ -789,13 +916,6 @@ def run_x11(browser, base, screenshots, fetch, viewport):
     print("x11")
     seconds = boot(browser, base, X11_PACKAGES, fetch, viewport, run=X11_COMMAND)
     print(f"  shell after {seconds:.1f} s; the link types {X11_COMMAND!r}")
-    log = browser.evaluate("document.getElementById('debug-log').textContent")
-    added = SERVER_ADDED.search(log)
-    if added is None:
-        raise SystemExit("FAIL the page added no X server for xterm")
-    print(f"  X server added: {added.group(1)}")
-    if DRIVER_ADDED_ANY.search(log) is not None:
-        raise SystemExit("FAIL the page added a GL driver for xterm")
 
     seconds = first_frame(browser)
     print(f"  first frame {seconds:.2f} s after the shell")
@@ -804,6 +924,15 @@ def run_x11(browser, base, screenshots, fetch, viewport):
     )
     if X11_TITLE not in titles:
         raise SystemExit(f"FAIL no window titled {X11_TITLE!r}: {titles}")
+    check_x11_server(browser, SERVER_PROGRAMS + BUS_PROGRAMS)
+    fetched = browser.evaluate(FETCHED)
+    drivers = [nar["path"] for nar in fetched if SITE_DRIVER.search(nar["path"])]
+    if drivers:
+        raise SystemExit(f"FAIL xterm downloaded the GL driver: {drivers}")
+    print(
+        f"  {len(fetched)} NARs, {sum(nar['bytes'] for nar in fetched) / 1e6:.1f} MB"
+        " fetched by the first window, none of the GL driver"
+    )
 
     # Give xterm's shell its first prompt before the picture is taken
     # and before keys go to it.
@@ -815,6 +944,24 @@ def run_x11(browser, base, screenshots, fetch, viewport):
         raise SystemExit("FAIL keys typed into xterm's window never reached it")
     print(f"  keys reached xterm: {X11_TYPED_FILE} written")
     screenshot(browser, screenshots, "xterm-typed", viewport)
+
+
+def debug_log(browser):
+    """The page's log, as the Debug section shows it."""
+    return browser.evaluate("document.getElementById('debug-log').textContent")
+
+
+def check_x11_server(browser, programs):
+    """Fail unless the X server arrived on the guest's first use of it
+    and left none of `programs`, from its closure, on PATH."""
+    used = SERVER_USED.search(debug_log(browser))
+    if used is None:
+        raise SystemExit("FAIL the X server never arrived")
+    print(f"  X server arrived on first use: {used.group(1)}")
+    on_path = [name for name in programs if guest_has(browser, f"/share/bin/{name}")]
+    if on_path:
+        raise SystemExit(f"FAIL the X server's programs are on PATH: {on_path}")
+    print(f"  none of {', '.join(programs)} on PATH")
 
 
 def run_feedback(browser, base, screenshots, fetch, viewport):
@@ -861,7 +1008,138 @@ def run_feedback(browser, base, screenshots, fetch, viewport):
     print("  every draw read back its colour; no context error")
 
 
-RUNNERS = {"foot": run_foot, "gl": run_gl, "x11": run_x11, "feedback": run_feedback}
+def run_glx(browser, base, screenshots, fetch, viewport):
+    """glx: boot extremetuxracer alone, let the link start it, wait for
+    its window, and check that its frames came through the GL renderer
+    by GPU resource, which GLX reaches only by DRI3 on a glamor
+    Xwayland."""
+    print("glx")
+    seconds = boot(browser, base, GLX_PACKAGES, fetch, viewport, run=GLX_COMMAND)
+    print(f"  shell after {seconds:.1f} s; the link types {GLX_COMMAND!r}")
+
+    # A window is waited for by its title rather than by the first
+    # frame alone, so that a game that died is told apart from one
+    # still loading: SFML's abort and SIGSEGV are in the transcript.
+    started = time.monotonic()
+    titles = []
+    while time.monotonic() - started < FRAME_LIMIT_SECONDS:
+        titles = browser.evaluate(
+            "window.trynix.desktop?.windows().map((w) => w.title) ?? []"
+        )
+        if any(GLX_TITLE.search(title) for title in titles):
+            break
+        time.sleep(POLL_SECONDS * 5)
+    else:
+        print(browser.transcript()[-2000:])
+        raise SystemExit(f"FAIL no window titled {GLX_TITLE.pattern!r}: {titles}")
+    print(f"  window {titles} {time.monotonic() - started:.1f} s after the shell")
+    check_x11_server(browser, SERVER_PROGRAMS)
+    used = DRIVER_USED.search(debug_log(browser))
+    if used is None:
+        raise SystemExit("FAIL the game drew without the site's GL driver arriving")
+    print(f"  driver arrived on first use: {used.group(1)}")
+
+    # Frames by GPU resource keep coming while the game draws its menu.
+    # Xwayland's glamor submits work to the renderer too, so the game's
+    # own use of the GPU is read from the guest: a GLX context rendering
+    # through virgl holds the render node open.
+    first = browser.evaluate(GL_STATS)
+    time.sleep(GLX_DRAW_SECONDS)
+    stats = browser.evaluate(GL_STATS)
+    if first is None or stats is None:
+        raise SystemExit("FAIL the page's GL renderer never loaded")
+    submits = stats["renderer"]["submits"] - first["renderer"]["submits"]
+    images = stats["gpu"]["images"] - first["gpu"]["images"]
+    print(
+        f"  in {GLX_DRAW_SECONDS} s: virgl submits {submits},"
+        f" frames taken by GPU resource {images}"
+    )
+    screenshot(browser, screenshots, "extremetuxracer", viewport)
+    if submits == 0 or images == 0:
+        raise SystemExit("FAIL extremetuxracer did not draw through the page's renderer")
+    holds = guest_shell(browser, GLX_HOLDS_RENDER_NODE)
+    if holds["exitCode"] != 0:
+        print(browser.transcript()[-2000:])
+        raise SystemExit(
+            "FAIL extremetuxracer is not running with the render node open:"
+            f" {holds['stdout']}{holds['stderr']}"
+        )
+    print("  extremetuxracer holds the render node")
+
+
+def run_oldgl(browser, base, screenshots, fetch, viewport):
+    """oldgl: boot mesa-demos 8.5.0, older than the site's driver, and
+    check that the guest links the site's driver rather than the Mesa in
+    the program's closure, downloads none of that Mesa, and that each
+    GL program fails with an exit status rather than a signal."""
+    del screenshots  # The programs open no window.
+    print("oldgl")
+    seconds = boot(browser, base, OLDGL_PACKAGES, fetch, viewport)
+    print(f"  shell after {seconds:.1f} s")
+
+    link = guest_shell(browser, f"readlink {DRIVER_LINK}")["stdout"].strip()
+    if not SITE_DRIVER.search(link):
+        raise SystemExit(f"FAIL {DRIVER_LINK} is {link!r}, not the site's driver")
+    print(f"  {DRIVER_LINK} is {link}")
+
+    for command in OLDGL_COMMANDS:
+        result = guest_shell(browser, f"{SHELL_ENVIRONMENT}; {command} 2>&1")
+        status = result["exitCode"]
+        last = result["stdout"].strip().splitlines()[-1:] or [""]
+        print(f"  {command}: exit {status}, {last[0]!r}")
+        if status in (0, COMMAND_NOT_FOUND) or status >= SIGNAL_STATUS:
+            raise SystemExit(f"FAIL {command} exited {status}, not with its own error")
+
+    own = [
+        nar["path"]
+        for nar in browser.evaluate(FETCHED)
+        if OLDGL_OWN_MESA.search(nar["path"])
+    ]
+    if own:
+        raise SystemExit(f"FAIL the program's own Mesa was downloaded: {own}")
+    print("  none of the program's own Mesa downloaded")
+
+
+def run_slowx(browser, base, screenshots, fetch, viewport):
+    """slowx: boot xterm alone with the X server's NARs held back, start
+    xterm, and check that it waits through the hold for its window."""
+    del screenshots  # The window is the x11 case's.
+    print("slowx")
+    browser.preload(
+        f"() => {{ window.trynixHold = {{ pattern: {json.dumps(HOLD_PATTERN)}, ms: {HOLD_MS} }}; }}"
+    )
+    seconds = boot(browser, base, X11_PACKAGES, fetch, viewport)
+    print(f"  shell after {seconds:.1f} s; X server held back {HOLD_MS / 1000:g} s")
+
+    browser.type(f"{X11_COMMAND}\n")
+    started = time.monotonic()
+    checked = 0
+    while browser.evaluate("window.trynix?.desktopStats?.firstCommitAt == null"):
+        waited = time.monotonic() - started
+        if waited > HOLD_MS / 1000 + FRAME_LIMIT_SECONDS:
+            raise SystemExit(f"FAIL no window {waited:.0f} s after the command")
+        if waited >= (checked + 1) * HOLD_CHECK_SECONDS:
+            checked += 1
+            if guest_shell(browser, XTERM_RUNNING)["exitCode"] != 0:
+                print(browser.transcript()[-2000:])
+                raise SystemExit(f"FAIL xterm gave up waiting after {waited:.0f} s")
+            print(f"  xterm still waiting at {waited:.0f} s")
+        time.sleep(POLL_SECONDS)
+    waited = time.monotonic() - started
+    print(f"  window {waited:.1f} s after the command")
+    if waited < HOLD_MS / 1000:
+        raise SystemExit("FAIL the window came before the hold ended")
+
+
+RUNNERS = {
+    "foot": run_foot,
+    "gl": run_gl,
+    "x11": run_x11,
+    "feedback": run_feedback,
+    "glx": run_glx,
+    "oldgl": run_oldgl,
+    "slowx": run_slowx,
+}
 
 
 def main():

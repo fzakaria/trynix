@@ -106,6 +106,20 @@ export const GUI_WLAND = "client.mjs";
 export const GUI_RELAY = "wlandr";
 export const GUI_FONTS = ["DejaVuSansMono.ttf", "DejaVuSans.ttf"];
 
+// The X server every unkernel guest is linked to (gui.js): the
+// multiverse index's newest aarch64-linux xwayland-satellite on
+// 2026-11-24, which nixpkgs wraps with its Xwayland 24.1.15, built by
+// Hydra and served by cache.nixos.org. The guest fetches it the first
+// time an X client connects (lazy.js, capability). Programs selected by
+// name resolve to their newest builds too, so the pin shares glibc and
+// the X client libraries with them while both are recent: for xeyes,
+// xterm and wish in November 2026, 12 to 23 of its 129 paths were in
+// the program's closure already, where the build from the nixpkgs this
+// flake locks shared none. Moving it is a manual edit, after checking
+// that the new path's closure is on cache.nixos.org.
+export const X11_SERVER =
+  "/nix/store/y1hdkpj1rrfvd8vnggafah85zil89a3z-xwayland-satellite-0.8.3";
+
 // The CA certificates the unkernel guest checks HTTPS servers against
 // when its network is on (network.js): nixpkgs' cacert, in a directory
 // nix/site.nix renames after a hash of its contents, as it does the GUI

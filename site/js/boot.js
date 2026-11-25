@@ -329,10 +329,6 @@ export async function startVM({
     // guest's PATH stay as it was: `roots`, the basenames of the
     // packages this addition selects, replace any link of the same
     // name, so the package added last wins.
-    //
-    // Returns what the unkernel engine's add returns (unkernel.js). This
-    // guest gets no X server from the page, so an addition brings its
-    // shell nothing.
     add(unpacked, roots) {
       const basenames = [];
       while (unpacked.length > 0) {
@@ -341,7 +337,6 @@ export async function startVM({
         basenames.push(basename);
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
-      return { shellUpdates: [] };
     },
 
     // The programs a written path offers, by basename.

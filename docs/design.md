@@ -150,6 +150,16 @@ waits while the path's NAR downloads. The farm below takes every
 path's programs from the listings, so it is the same as with the
 whole closure downloaded.
 
+The unkernel guest's store also answers for paths outside the
+closure, by name: the X server and the GL driver every guest is linked
+to (`/run/x11-server`, `/run/opengl-driver`; [gui.md](./gui.md)). The
+page knows only their store paths at the boot, so the store does not
+list them and nothing of them is fetched. The first lookup inside one
+starts the walk of its closure, each path joining the store as the
+walk finds it, and is answered once the root has joined; its files
+download as they are opened. Their programs stay out of the farm
+below.
+
 `/share/bin` is a farm of symlinks, one per program in the closure, and
 the one directory the guest keeps on PATH. What the reader selected is
 linked first, in the order selected, and the first to take a name keeps

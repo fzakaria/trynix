@@ -1,12 +1,13 @@
 // Tests the narinfo parser in site/js/closure.js against a fixture that
 // mirrors what cache.nixos.org serves: every field the walk reads comes
 // back typed, references split into basenames, and the digest helper
-// takes the leading 32 characters.
+// takes the leading 32 characters. And what part of a walked closure
+// one program reaches, from a closure built by hand.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-import { parseNarinfo, digestOf } from "../../site/js/closure.js";
+import { parseNarinfo, digestOf, reachable } from "../../site/js/closure.js";
 
 const fixture = new URL("../fixtures/hello.narinfo", import.meta.url);
 
@@ -54,4 +55,60 @@ test("digestOf takes the digest half of a store basename", () => {
     digestOf("wx1vk75bpdr65g6xwxbj4rw0pk04v5j3-glibc-2.27"),
     "wx1vk75bpdr65g6xwxbj4rw0pk04v5j3",
   );
+});
+
+// A digest per name, from a hash of the name, so two packages in one
+// closure do not share one.
+const ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz";
+const DIGEST_LENGTH = 32;
+function digestFor(name) {
+  let hash = 0;
+  let digest = "";
+  for (let i = 0; i < DIGEST_LENGTH; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i % name.length) + i) >>> 0;
+    digest += ALPHABET[hash % ALPHABET.length];
+  }
+  return digest;
+}
+const basenameFor = (name) => `${digestFor(name)}-${name}`;
+
+// A closure as the walk returns it, from { name: [references] }.
+function closureOf(graph) {
+  return new Map(
+    Object.entries(graph).map(([name, refs]) => [
+      digestFor(name),
+      {
+        storePath: `/nix/store/${basenameFor(name)}`,
+        references: refs.map(basenameFor),
+      },
+    ]),
+  );
+}
+
+// Checks that reachability follows references from the given roots
+// only, which is how the page asks what one selected program's own
+// closure holds (activity.js, opensWindows): of an X11 program and a
+// Wayland program selected together, the X11 program's closure holds
+// no libwayland, and the Wayland program's holds GTK and libX11.
+test("reachable follows references from the roots alone", () => {
+  const closure = closureOf({
+    "xeyes-1.3.1": ["libx11-1.8.14", "glibc-2.44"],
+    "galculator-2.1.4": ["gtk+3-3.24.52", "glibc-2.44"],
+    "gtk+3-3.24.52": ["libx11-1.8.14", "wayland-1.26.0", "glibc-2.44"],
+    "libx11-1.8.14": ["libxcb-1.17.0", "glibc-2.44"],
+    "libxcb-1.17.0": ["glibc-2.44"],
+    "wayland-1.26.0": ["glibc-2.44"],
+    "glibc-2.44": [],
+  });
+  const names = (digests) =>
+    [...reachable(closure, digests).values()].map((info) =>
+      info.storePath.slice("/nix/store/".length + DIGEST_LENGTH + 1),
+    );
+  assert.deepEqual(names([digestFor("xeyes-1.3.1")]).sort(), [
+    "glibc-2.44",
+    "libx11-1.8.14",
+    "libxcb-1.17.0",
+    "xeyes-1.3.1",
+  ]);
+  assert.ok(names([digestFor("galculator-2.1.4")]).includes("wayland-1.26.0"));
 });

@@ -19,7 +19,7 @@ import {
 } from "./analytics.js";
 import { reachable, walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
-import { lazyStore, Priority, References } from "./lazy.js";
+import { lazyStore, PathOrigin, Priority, References } from "./lazy.js";
 import {
   fetchListing,
   forgetListing,
@@ -56,7 +56,6 @@ import {
   multiverseUrl,
   searchAttrs,
   versionRowsOf,
-  versionsOf,
 } from "./multiverse.js";
 import { registerTools } from "./webmcp.js";
 import { RangeComplete } from "./complete.js";
@@ -88,6 +87,7 @@ import {
   UNKERNEL_GL,
   UNKERNEL_KERNEL,
   UNKERNEL_MAIN,
+  X11_SERVER,
 } from "./config.js";
 import { asset, assets, manifest } from "./assets.js";
 import { buildReport } from "./report.js";
@@ -109,13 +109,10 @@ import {
 } from "./cpus.js";
 import {
   chooseDriver,
-  DriverChoice,
   driverNote,
-  isGlDriverPath,
+  drawsWithGl,
   publishedDrivers,
 } from "./gldriver.js";
-import { chooseX11Server, X11_SERVER_ATTR, X11Choice, x11Note } from "./x11.js";
-import { shellNote } from "./gui.js";
 import { Downloads, pickDownloads } from "./downloads.js";
 import {
   DEFAULT_RELAY,
@@ -1041,113 +1038,66 @@ function reportSilent(vm, closure, roots) {
     `their binaries live in a separate output, and the index publishes the default one`;
 }
 
-// The GL driver a closure's GL programs need, on the unkernel engine
-// (gldriver.js): the driver's own closure, walked past what `known`
-// already holds, and the choice, for reportGl. Nothing is added on the
-// qemu engine, whose guest has no GPU to drive.
-//
-// The programs are the selected ones (`rootDigests`) with their
-// closures. What the page added beside them is left out: the X server
-// links libglvnd and Wayland, and Xwayland draws with GL only when a
-// selected program brought the driver (gui.js), so a guest with X11
-// programs would otherwise get the driver on every later addition. The site's driver is held to that
-// closure (gldriver.js), an added program's glibc and gcc included,
-// even where the guest has had the driver since its boot.
-async function glDriverPaths(known, rootDigests, onProgress) {
-  if (ENGINE !== Engine.UNKERNEL) {
-    return { added: new Map(), result: { choice: DriverChoice.NOT_NEEDED } };
-  }
-  const basenames = [...reachable(known, rootDigests).values()].map(basenameOf);
+// The site's GL driver for the selection so far, `closure` (digest ->
+// narinfo) with `rootDigests` its roots, and what the reader is told
+// about it (gldriver.js): { driver, note }, driver a store path or null.
+// Every unkernel guest links a driver; it is fetched only once a program
+// looks inside it.
+async function glDriverFor(closure, rootDigests) {
+  const basenames = [...closure.values()].map(basenameOf);
   const result = chooseDriver(basenames, await publishedDrivers());
-  if (result.choice !== DriverChoice.ADD) {
-    return { added: new Map(), result };
-  }
-
-  // A running guest the page gave the driver at its boot, or at an
-  // earlier addition, has it in `known`, outside the selection's
-  // closure, and needs nothing more.
-  const digest = result.driver.storePath
-    .slice(STORE_PREFIX.length)
-    .slice(0, DIGEST_LENGTH);
-  if (known.has(digest)) {
-    return { added: new Map(), result };
-  }
-  const added = await walkRoots([digest], onProgress, known);
-  log(
-    `gl: added ${result.driver.storePath} (${added.size} paths) for GL programs`,
-  );
-  return { added, result };
-}
-
-// The newest build of the X server the index has for the guest's
-// system, or undefined when it has none or cannot be reached.
-async function newestX11Server() {
-  try {
-    return (await versionsOf(X11_SERVER_ATTR)).find(bootable);
-  } catch (err) {
-    log(
-      `x11: the index could not be asked for ${X11_SERVER_ATTR}: ${err.message}`,
-    );
-    return undefined;
-  }
-}
-
-// The X server a closure's X11 programs need, on the unkernel engine
-// (x11.js): the server's own closure, walked past what `known` already
-// holds, and the choice, for reportX11. Nothing is added on the qemu
-// engine, whose guest has no compositor to show X11 windows in.
-async function x11ServerPaths(known, rootDigests, onProgress) {
-  if (ENGINE !== Engine.UNKERNEL) {
-    return { added: new Map(), result: { choice: X11Choice.NOT_NEEDED } };
-  }
-  const result = chooseX11Server(known, rootDigests);
-  if (result.choice !== X11Choice.ADD) {
-    return { added: new Map(), result };
-  }
-
-  const server = await newestX11Server();
-  if (server === undefined) {
-    return {
-      added: new Map(),
-      result: { choice: X11Choice.UNAVAILABLE },
-    };
-  }
-  const added = await walkRoots([server.digest], onProgress, known);
-  log(
-    `x11: added ${server.storePath} (${added.size} paths) for ${result.programs.join(", ")}`,
-  );
-  return { added, result };
-}
-
-// Say what the selection's X11 programs lack (x11.js, x11Note), unless
-// the status names silent selections.
-function reportX11(result) {
-  const note = x11Note(result);
-  if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
-    return;
-  }
-  status.textContent = note;
-}
-
-// Say how the shell already running gets what an addition brought it,
-// an X server (`added`, what the engine's add resolved to; gui.js,
-// shellNote), unless the status names silent selections.
-function reportShell(added) {
-  const note = shellNote(added.shellUpdates);
-  if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
-    return;
-  }
-  status.textContent = note;
+  return {
+    driver: result.driver?.storePath ?? null,
+    note: driverNote(result, basenames, basenamesOf(closure, rootDigests)),
+  };
 }
 
 // Say what the selection's GL programs lack (gldriver.js, driverNote),
 // unless the status names silent selections.
-function reportGl(result) {
-  const note = driverNote(result);
+function reportGl(note) {
   if (note === null || status.textContent.startsWith(SILENT_PREFIX)) {
     return;
   }
   status.textContent = note;
+}
+
+// Let the guest's X server draw with glamor when the selection so far,
+// `closure`, may draw with GLX (gldriver.js, drawsWithGl), which needs
+// it. Only the unkernel guest has an X server.
+function allowGlamorFor(closure) {
+  if (ENGINE !== Engine.UNKERNEL) {
+    return;
+  }
+  if (drawsWithGl([...closure.values()].map(basenameOf))) {
+    vm.allowGlamor();
+  }
+}
+
+// Name the capabilities of an unkernel guest's store (lazy.js,
+// capability): the X server, and `glDriver`, the site's GL driver's
+// store path or null. Each one's closure is walked the first time the
+// guest looks inside it, and never before. Each path joins the store,
+// its listing on its way, the moment the walk finds it.
+function serveCapabilities(store, glDriver) {
+  const roots = glDriver === null ? [X11_SERVER] : [X11_SERVER, glDriver];
+  for (const storePath of roots) {
+    store.capability(storePath.slice(STORE_PREFIX.length), async (join) => {
+      const started = performance.now();
+      const digest = digestOfInfo({ storePath });
+      const walked = await walkRoots(
+        [digest],
+        (n, info) => {
+          served.listings.of(info);
+          join([info]);
+        },
+        mounted,
+      );
+      const ms = Math.round(performance.now() - started);
+      log(
+        `capability: ${storePath} (${walked.size} paths, walked in ${ms} ms) on first use`,
+      );
+    });
+  }
 }
 
 // The union of every selected root's runtime closure, in one map. Roots
@@ -1290,9 +1240,9 @@ const FIRST_USE_ROW = [
   },
 ];
 
-// The closure a guest is served lazily (lazy.js, downloads.js), for the
-// life of the guest it booted with; null for a guest that booted with
-// its whole closure downloaded.
+// The closure an unkernel guest is served through the lazy store
+// (lazy.js, downloads.js), for the life of the guest it booted with;
+// null for a qemu guest, which booted with its whole closure written.
 let served = null;
 
 // The digests selected so far, which a lazily fetched path is checked
@@ -1302,28 +1252,28 @@ let selectedDigests = [];
 
 const digestOfInfo = (info) => basenameOf(info).slice(0, DIGEST_LENGTH);
 
-// The paths a lazily served boot or addition fetches before it is
-// done: the selected ones, whose programs are linked onto PATH from
-// their listings, and any Mesa, which the guest takes as its GL driver
-// only once it has seen the driver's files (gui.js).
+// The paths a boot or addition fetches before it is done: the selected
+// ones, whose programs are linked onto PATH from their listings and
+// whose NARs say whether one is a GL driver of the reader's own
+// (unkernel.js); with downloads set to all, every path the selection
+// brought. A capability's paths are never among them.
 function eagerOf(infos, rootDigests) {
-  return infos.filter(
-    (info) =>
-      rootDigests.includes(digestOfInfo(info)) ||
-      isGlDriverPath(basenameOf(info)),
-  );
+  if (downloads.mode === Downloads.ALL) {
+    return infos;
+  }
+  return infos.filter((info) => rootDigests.includes(digestOfInfo(info)));
 }
 
 // Fetch the eager paths through the store. A selected path is touched,
 // which starts all its references in the background as well, since the
-// reader is about to run it; a driver's references wait until a GL
-// program loads the driver.
+// reader is about to run it; the rest of a closure downloaded whole
+// waits for room like any background fetch.
 function fetchEager(store, eager, rootDigests) {
   return Promise.all(
     eager.map((info) =>
       rootDigests.includes(digestOfInfo(info))
         ? store.touch(basenameOf(info), References.ALL)
-        : store.ensure(basenameOf(info), Priority.DEMAND),
+        : store.ensure(basenameOf(info), Priority.PREFETCH),
     ),
   );
 }
@@ -1352,28 +1302,37 @@ function newListings() {
 // gives the store each path's NAR listing.
 function serveLazily(vmPromise, listings) {
   // { selected, closure, eager: Set of basenames }: the row of what the
-  // boot or addition waits for, the row of the whole closure, and the
-  // basenames that count into the first.
+  // boot or addition waits for, the row of the selection's whole
+  // closure or null for none, and the basenames that count into the
+  // first.
   let rows = null;
   let telemetry = null;
   // Compressed bytes read for the closure, from the network or the
   // Cache API, retries taken back.
   let streamed = 0;
 
-  // Every download counts into the closure's row, and the eager ones
-  // into the row the boot waits on as well.
+  // Every download of the selection's counts into the closure's row,
+  // and the eager ones into the row the boot waits on as well. A
+  // capability's downloads count into neither: they show on the strip
+  // under the terminal.
   function count(info, bytes) {
     streamed += bytes;
-    rows.closure.add(bytes);
-    if (rows.eager.has(basenameOf(info))) {
+    const basename = basenameOf(info);
+    if (store.origin(basename) === PathOrigin.SELECTION) {
+      rows.closure?.add(bytes);
+    }
+    if (rows.eager.has(basename)) {
       rows.selected.add(bytes);
     }
   }
 
-  // The closure's row is done once every path is in: called as each
-  // path is written, and when the rows are shown.
+  // The closure's row is done once every path of the selection is in:
+  // called as each path is written, and when the rows are shown.
   function finished() {
-    const { paths, writtenPaths } = store.stats();
+    if (rows.closure === null) {
+      return;
+    }
+    const { paths, writtenPaths } = store.stats(PathOrigin.SELECTION);
     if (writtenPaths === paths) {
       rows.closure.done(`all ${paths} paths`);
     }
@@ -1430,8 +1389,9 @@ function serveLazily(vmPromise, listings) {
       );
     },
     // Count into these rows from now on: `selected` for the `eager`
-    // infos, `closure` for everything, which starts at what has been
-    // downloaded already. `loadTelemetry` hears cache reads.
+    // infos, `closure` for everything the selection brought, which
+    // starts at what has been downloaded already, or null for no such
+    // row. `loadTelemetry` hears cache reads.
     show({ selected, closure, eager, loadTelemetry }) {
       rows = {
         selected,
@@ -1440,8 +1400,11 @@ function serveLazily(vmPromise, listings) {
       };
       telemetry = loadTelemetry;
       selected.setTotal(eager.reduce((sum, info) => sum + info.fileSize, 0));
-      closure.setTotal(store.stats().bytes);
-      closure.add(streamed);
+      if (closure !== null) {
+        const { bytes, writtenBytes } = store.stats(PathOrigin.SELECTION);
+        closure.setTotal(bytes);
+        closure.add(writtenBytes);
+      }
       finished();
     },
   };
@@ -1449,13 +1412,14 @@ function serveLazily(vmPromise, listings) {
 
 // What the guest's closure has cost so far, for the tools in tools/
 // (window.trynix.downloads): the closure in paths and compressed bytes,
-// what of it has been written, and the compressed bytes read for it,
-// from the network or, on a return visit, the Cache API. A guest that
-// booted with everything downloaded has written all of it.
+// capabilities the guest has looked inside included, what of it has
+// been written, and the compressed bytes read for it, from the network
+// or, on a return visit, the Cache API. A qemu guest booted with
+// everything downloaded and has written all of it.
 function downloadStats() {
   if (served !== null) {
     return {
-      mode: Downloads.LAZY,
+      mode: downloads.mode,
       ...served.store.stats(),
       streamedBytes: served.streamed(),
       listedPaths: served.listings.count(),
@@ -1722,7 +1686,11 @@ async function boot() {
   // Served lazily, the boot waits for the selected packages alone and
   // the rest of the closure arrives as the guest asks for it; the last
   // row counts the whole closure, and goes on after the shell is up.
+  // The unkernel guest's store is served through the lazy store either
+  // way, since its capabilities arrive on first use whatever the
+  // setting (serveCapabilities).
   const lazily = downloads.mode === Downloads.LAZY;
+  const throughStore = ENGINE === Engine.UNKERNEL;
   log(`downloads: ${downloads.mode} (${downloads.why})`);
 
   const walkRow = panel.row("closure walk");
@@ -1741,27 +1709,18 @@ async function boot() {
     guestRoots.push(...rootDigests);
 
     // Served lazily, each path's listing is on its way the moment the
-    // walk finds the path.
-    const listings = lazily ? newListings() : null;
-    const found = (info) => listings?.of(info);
+    // walk finds the path. With downloads set to all, the listings are
+    // the capabilities' alone.
+    const listings = throughStore ? newListings() : null;
+    const found = (info) => {
+      if (lazily) {
+        listings?.of(info);
+      }
+    };
     const closure = await walkRoots(rootDigests, (n, info) => {
       walkRow.note(`${n} narinfos`);
       found(info);
     });
-    const gl = await glDriverPaths(closure, rootDigests, (n, info) => {
-      walkRow.note(`${closure.size + n} narinfos`);
-      found(info);
-    });
-    for (const [digest, info] of gl.added) {
-      closure.set(digest, info);
-    }
-    const x11 = await x11ServerPaths(closure, rootDigests, (n, info) => {
-      walkRow.note(`${closure.size + n} narinfos`);
-      found(info);
-    });
-    for (const [digest, info] of x11.added) {
-      closure.set(digest, info);
-    }
     log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
     walkRow.done(`${closure.size} paths`);
     renderClosure(closure);
@@ -1802,13 +1761,18 @@ async function boot() {
     const infos = [...closure.values()];
     let closurePromise;
     let offered = null;
-    if (lazily) {
+    let gl = { driver: null, note: null };
+    if (throughStore) {
       // The selected packages now, and the rest of the closure as the
-      // guest touches it (lazy.js).
+      // guest touches it (lazy.js), or before the shell with downloads
+      // set to all. The X server and the GL driver are named, and
+      // nothing of them is fetched.
       selectedDigests = rootDigests;
       served = serveLazily(vmPromise, listings);
       served.store.add(infos);
-      offered = served.offer(infos);
+      gl = await glDriverFor(closure, rootDigests);
+      serveCapabilities(served.store, gl.driver);
+      offered = lazily ? served.offer(infos) : null;
       const eager = eagerOf(infos, rootDigests);
       served.show({
         selected: closureRow,
@@ -1858,13 +1822,15 @@ async function boot() {
     mounted = closure;
 
     stage = LoadStage.GUEST;
+    allowGlamorFor(closure);
     const ready = vm.run(basenamesOf(closure, rootDigests), {
-      store: served?.store ?? null,
+      store: served?.store,
+      x11Server: X11_SERVER.slice(STORE_PREFIX.length),
+      glDriver: gl.driver?.slice(STORE_PREFIX.length) ?? null,
     });
     log("virtual machine running");
     reportSilent(vm, closure, roots);
-    reportGl(gl.result);
-    reportX11(x11.result);
+    reportGl(gl.note);
     refreshBootButton();
 
     await ready;
@@ -1987,22 +1953,6 @@ async function addToRunningVM() {
       (n) => row.note(`${n} narinfos`),
       mounted,
     );
-    const gl = await glDriverPaths(
-      new Map([...mounted, ...fresh]),
-      rootDigests,
-      (n) => row.note(`${fresh.size + n} narinfos`),
-    );
-    for (const [digest, info] of gl.added) {
-      fresh.set(digest, info);
-    }
-    const x11 = await x11ServerPaths(
-      new Map([...mounted, ...fresh]),
-      rootDigests,
-      (n) => row.note(`${fresh.size + n} narinfos`),
-    );
-    for (const [digest, info] of x11.added) {
-      fresh.set(digest, info);
-    }
     if (fresh.size === 0 && unfetchedSelections(rootDigests).length === 0) {
       telemetry.finish(LoadStage.READY);
       row.done("already there");
@@ -2017,8 +1967,6 @@ async function addToRunningVM() {
         roots,
         rootDigests,
         newRootDigests,
-        gl,
-        x11,
         panel,
         row,
         telemetry,
@@ -2044,11 +1992,8 @@ async function addToRunningVM() {
     for (const [digest, info] of fresh) {
       mounted.set(digest, info);
     }
-    const added = await vm.add(unpacked, basenamesOf(mounted, newRootDigests));
+    await vm.add(unpacked, basenamesOf(mounted, newRootDigests));
     reportSilent(vm, mounted, roots);
-    reportGl(gl.result);
-    reportX11(x11.result);
-    reportShell(added);
     telemetry.finish(LoadStage.READY);
     row.done(`${fresh.size} paths added`);
     renderClosure(mounted);
@@ -2095,50 +2040,48 @@ function unfetchedSelections(rootDigests) {
     );
 }
 
-// Add to a guest whose closure is served lazily. What the addition
-// brings joins the closure the guest lists at once; the new selections
-// are fetched before the page says they were added, and the rest
-// arrives on first use, as at the boot. `newRootDigests` are the roots
-// the guest did not have, whose programs take their names
-// (addToRunningVM).
+// Add to a guest whose closure is served through the lazy store, the
+// unkernel guest. What the addition brings joins the closure the guest
+// lists at once; the new selections are fetched before the page says
+// they were added, and the rest arrives on first use, as at the boot,
+// or before the page says so with downloads set to all.
+// `newRootDigests` are the roots the guest did not have, whose programs
+// take their names (addToRunningVM).
 async function addLazily({
   fresh,
   roots,
   rootDigests,
   newRootDigests,
-  gl,
-  x11,
   panel,
   row,
   telemetry,
 }) {
+  const lazily = downloads.mode === Downloads.LAZY;
   const waiting = unfetchedSelections(rootDigests);
   served.store.add(fresh.values());
   for (const [digest, info] of fresh) {
     mounted.set(digest, info);
   }
-  const offered = served.offer([...fresh.values()]);
+  const offered = lazily ? served.offer([...fresh.values()]) : null;
 
   selectedDigests = rootDigests;
   const eager = [...eagerOf([...fresh.values()], rootDigests), ...waiting];
   served.show({
     selected: row,
-    closure: panel.row(...FIRST_USE_ROW),
+    closure: lazily ? panel.row(...FIRST_USE_ROW) : null,
     eager,
     loadTelemetry: telemetry,
   });
   await fetchEager(served.store, eager, rootDigests);
   await listed(offered);
 
-  const added = await vm.add(
-    [],
-    basenamesOf(mounted, newRootDigests),
-    eager.map(basenameOf),
-  );
+  // The X server may draw with glamor from now on if the selection may
+  // draw with GLX, and the reader hears whether the site's GL driver
+  // fits what was added.
+  allowGlamorFor(mounted);
+  await vm.add([], basenamesOf(mounted, newRootDigests), eager.map(basenameOf));
   reportSilent(vm, mounted, roots);
-  reportGl(gl.result);
-  reportX11(x11.result);
-  reportShell(added);
+  reportGl((await glDriverFor(mounted, guestRoots)).note);
   telemetry.finish(LoadStage.READY);
   row.done(`${fresh.size} paths added, ${eager.length} fetched`);
   renderClosure(mounted);

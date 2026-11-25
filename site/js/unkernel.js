@@ -31,7 +31,7 @@ import {
   storeShare,
 } from "./share.js";
 import { Precedence } from "./store.js";
-import { lazyFs } from "./lazy.js";
+import { lazyFs, PathOrigin } from "./lazy.js";
 import { openTerminal } from "./terminal.js";
 import { consoleFrame } from "./frame.js";
 import { guestDriver } from "./agent.js";
@@ -42,16 +42,12 @@ import { consoleRecorder, pause } from "./console.js";
 import { log } from "./log.js";
 import {
   attachDesktop,
+  capabilityLinks,
+  enableGlamor,
   guestSession,
   isGlDriver,
-  linkGlDriver,
-  linkX11Server,
   sessionEnv,
-  ShellUpdate,
-  speaksWayland,
-  x11Env,
 } from "./gui.js";
-import { x11ServerIn } from "./x11.js";
 
 // Where the page writes the CA certificates when the guest has a
 // network (network.js), the same path on both sides of the share.
@@ -173,17 +169,15 @@ async function visible(kernel, paths) {
 // The shell fragment the guest's shell sources: PATH with the farm in
 // front, and the same TERM and LANG the qemu guest gets (boot.js says
 // why each is what it is, and why there is no LD_LIBRARY_PATH). Every
-// shell gets the Wayland session's environment too (gui.js), so a GUI
-// program added after the boot finds the relay from the shell it is
-// typed into, and the X display once the closure holds an X server
-// (`x11Server`, its basename, or null). With a network, TLS clients are
-// pointed at the CA bundle in the share (`caBundle`, or null without
-// one).
-function manifest({ caBundle, x11Server }) {
-  const session = Object.entries({
-    ...sessionEnv(),
-    ...(x11Server === null ? {} : x11Env()),
-  }).map(([name, value]) => `export ${name}="${value}"`);
+// shell gets the GUI session's environment too (gui.js), the Wayland
+// socket and the X display alike, so a GUI program added after the boot
+// finds the relay from the shell it is typed into. With a network, TLS
+// clients are pointed at the CA bundle in the share (`caBundle`, or
+// null without one).
+function manifest({ caBundle }) {
+  const session = Object.entries(sessionEnv()).map(
+    ([name, value]) => `export ${name}="${value}"`,
+  );
   return [
     `export PATH="${GUEST_BIN_DIR}:$PATH"`,
     "export TERM=xterm-256color",
@@ -309,32 +303,29 @@ export async function startUnkernel({
   const share = storeShare(FS);
 
   // The closure's lazily served paths (lazy.js), once run() is given
-  // them; null when every path is written before the shell starts. From
-  // then on, a path that arrives is linked as it is written.
+  // them. From then on, a path of the selection that arrives is linked
+  // as it is written.
   let lazyStore = null;
   let linkArrivals = false;
 
-  // Watch the paths as they are written. A Wayland library in the
-  // closure starts the download of the GUI session's files, while the
-  // rest of the closure is still arriving, and a Mesa store path
-  // becomes the guest's /run/opengl-driver once the guest is up.
+  // Watch the paths as they are written. One that holds Mesa's EGL
+  // vendor file is a GL driver, which becomes the guest's
+  // /run/opengl-driver over the site's when the reader selected it
+  // (ownGlDriver).
   //
-  // A path served lazily that arrives after the shell started offers
-  // its programs at once, behind any program of the same name already
-  // there, so a dependency never shadows a selection.
+  // A path that arrives after the shell started offers its programs at
+  // once, behind any program of the same name already there, so a
+  // dependency never shadows a selection. A capability's paths offer
+  // none: Xwayland and the X server's dbus-launch and systemctl stay off
+  // PATH.
   const glDrivers = [];
   const write = share.write.bind(share);
   share.write = (basename, entries) => {
-    // A download that fails here is tried again, and reported, by the
-    // session's start.
-    if (speaksWayland([basename])) {
-      session.prepare().catch(() => {});
-    }
     if (isGlDriver(entries)) {
       glDrivers.push(basename);
     }
     write(basename, entries);
-    if (linkArrivals) {
+    if (linkArrivals && lazyStore.origin(basename) !== PathOrigin.CAPABILITY) {
       share.link(basename, Precedence.KEEP);
     }
   };
@@ -429,55 +420,23 @@ export async function startUnkernel({
   const sh = (command) => kernel.exec(SHELL, ["-c", command]);
   const session = guestSession({ FS, exec: sh });
 
-  // Every path of the closure the guest sees: the written ones, and on a
-  // lazily served share the ones still to come.
-  const closure = () => [
-    ...share.written(),
-    ...(lazyStore === null ? [] : lazyStore.pending()),
-  ];
+  // The last GL driver written among `roots`, the basenames the reader
+  // selected, or null: a Mesa the reader selected, which the guest uses
+  // over the site's. A Mesa that is only in a program's closure, as
+  // mesa-demos 8.5.0 carries mesa-22.3.7-drivers, is not one.
+  const ownGlDriver = (roots) =>
+    glDrivers.filter((basename) => roots.includes(basename)).at(-1) ?? null;
 
-  // The X server the closure holds (x11.js), from the first time one
-  // is seen: shells started from then on are told of its display
-  // (manifest), and the relay's X11 launcher runs it (guiSetup links
-  // it). The first one seen stays.
-  let x11Server = null;
-  let x11Linked = null;
-
-  // The shell fragment, written into the share for every shell that
-  // starts from now on.
-  async function writeManifest() {
-    FS.writeFile(
-      MANIFEST_FILE,
-      manifest({
-        caBundle: await caBundle,
-        x11Server,
-      }),
-    );
-  }
-
-  // Start the GUI session where `basenames` hold a Wayland program,
-  // link the newest GL driver written, and link the X server once the
-  // closure holds one. Resolves once all are done, so a GUI program
-  // typed at the prompt finds the relay running. A failure is logged
-  // rather than thrown: the shell works without any of them.
-  async function guiSetup(basenames) {
-    const steps = [];
-    if (speaksWayland(basenames)) {
-      steps.push(session.start());
+  // Point /run/opengl-driver at a GL driver an addition brought. A
+  // program already running keeps the driver it loaded.
+  async function relinkGlDriver(basename) {
+    const result = await sh(capabilityLinks({ glDriver: basename }));
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `could not link /run/opengl-driver: ${result.stderr.trim()}`,
+      );
     }
-    const driver = glDrivers.at(-1);
-    if (driver !== undefined) {
-      glDrivers.length = 0;
-      steps.push(linkGlDriver(sh, driver));
-    }
-    x11Server ??= x11ServerIn(basenames);
-    if (x11Server !== null && x11Linked === null) {
-      x11Linked = x11Server;
-      steps.push(linkX11Server(sh, x11Server));
-    }
-    await Promise.all(steps).catch((err) =>
-      log(`gui: setup failed: ${err.message ?? err}`),
-    );
+    log(`gui: /run/opengl-driver is ${basename}`);
   }
 
   // The handle everything outside the page reaches the guest through
@@ -520,53 +479,56 @@ export async function startUnkernel({
     // basenames the reader selected, in selection order. Resolves when
     // the guest is at its prompt.
     //
-    // `store` is the closure served lazily (lazy.js), or null when every
-    // path has been written. Served lazily, the guest sees every path of
-    // the closure in its store, and a lookup inside one that has not
-    // arrived waits for it.
-    async run(roots, { store = null } = {}) {
-      share.linkAll(share.known(), roots, Precedence.KEEP);
+    // `store` is the closure (lazy.js): the guest sees every path of it
+    // in its store, and a lookup inside one that has not arrived waits
+    // for it. `x11Server` and `glDriver` are the basenames of the X
+    // server and the site's GL driver (null for none), capabilities of
+    // the store that the guest's fixed names point at from the boot.
+    async run(roots, { store, x11Server, glDriver }) {
+      // The GUI session's files download while the shell comes up, so
+      // the relay listens soon after the prompt. A download that fails
+      // here is tried again, and reported, by the session's start.
+      session.prepare().catch(() => {});
 
-      // The closure from here on counts the paths still to come, before
-      // the manifest is written: an X server the closure holds is in the
-      // shells' environment even while its path has not arrived.
+      share.linkAll(share.known(), roots, Precedence.KEEP);
       lazyStore = store;
-      x11Server = x11ServerIn(closure());
-      await writeManifest();
+      FS.writeFile(MANIFEST_FILE, manifest({ caBundle: await caBundle }));
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.
-      if (store === null) {
-        await kernel.mount(SHARE_DIR, files, { readOnly: true });
-      } else {
-        linkArrivals = true;
-        FS.mkdir(STORE_DIR);
-        await kernel.mount(
-          SHARE_DIR,
-          lazyFs(files, store, {
-            storeDir: MEMORY_FS_STORE_DIR,
-            shareDir: SHARE_DIR,
-          }),
-          {
-            readOnly: true,
-            requestTimeout: LAZY_REQUEST_TIMEOUT_MS,
-          },
-        );
-      }
+      linkArrivals = true;
+      FS.mkdir(STORE_DIR);
+      await kernel.mount(
+        SHARE_DIR,
+        lazyFs(files, store, {
+          storeDir: MEMORY_FS_STORE_DIR,
+          shareDir: SHARE_DIR,
+        }),
+        {
+          readOnly: true,
+          requestTimeout: LAZY_REQUEST_TIMEOUT_MS,
+        },
+      );
 
       // Every nix binary names its loader and libraries by /nix/store
       // paths, so the guest needs the store at /nix as well as where
-      // the share is mounted.
-      const linked = await kernel.exec("/bin/ln", [
-        "-s",
-        `${SHARE_DIR}/nix`,
-        "/nix",
+      // the share is mounted. The same command points the guest's fixed
+      // names at the X server and the GL driver, a GL driver the reader
+      // selected over the site's.
+      const driver = ownGlDriver(roots) ?? glDriver;
+      const links = capabilityLinks({ glDriver: driver, x11Server });
+      const linked = await kernel.exec(SHELL, [
+        "-c",
+        `ln -s ${SHARE_DIR}/nix /nix && ${links}`,
       ]);
       if (linked.exitCode !== 0) {
         throw new Error(
-          `could not link /nix in the guest: ${linked.stderr.trim()}`,
+          `could not link /nix and /run in the guest: ${linked.stderr.trim()}`,
         );
       }
+      log(
+        `gui: /run/opengl-driver is ${driver}, /run/x11-server is ${x11Server}`,
+      );
 
       shells().catch((err) => log(`guest shell failed: ${err.message ?? err}`));
 
@@ -578,12 +540,13 @@ export async function startUnkernel({
       // first. The read runs at the lowest priority and is not waited
       // for, so a command typed at once still goes ahead of it.
       //
-      // On a lazily served share the farm also links the programs of
-      // paths still to come, and reading one downloads its path, so
-      // only the selected packages' own programs are read. Reading the
-      // whole farm downloaded gcc for solitaire.
+      // While paths are still to come the farm also links their
+      // programs, and reading one downloads its path, so only the
+      // selected packages' own programs are read. Reading the whole farm
+      // downloaded gcc for solitaire. A closure downloaded whole has
+      // nothing left to fetch, and its whole farm is read.
       const readahead =
-        store === null
+        store.pending().length === 0
           ? `${GUEST_BIN_DIR}/*`
           : share
               .programFiles(roots)
@@ -597,21 +560,33 @@ export async function startUnkernel({
 
       // The shell is ready once it has sourced the manifest, taken the
       // handshake and redrawn its prompt on a cleared screen (see
-      // HANDSHAKE for why that moment and no earlier one). The GUI
-      // session comes up meanwhile, and is waited for as well.
-      const gui = guiSetup(closure());
+      // HANDSHAKE for why that moment and no earlier one).
       await console_.waitFor(MOUNTED_MARKER);
       await console_.waitFor(REDRAWN);
-      await gui;
+
+      // The GUI session comes up behind the prompt, so the shell never
+      // waits for it. A failure is logged rather than thrown: the shell
+      // works without it, and the next addition tries again.
+      const prompted = performance.now();
+      session.start().then(
+        () =>
+          log(
+            `gui: the relay listens ${Math.round(performance.now() - prompted)} ms after the prompt`,
+          ),
+        (err) => log(`gui: setup failed: ${err.message ?? err}`),
+      );
     },
+
+    // Let the X server draw with glamor, for a selection that may draw
+    // with GLX (gui.js, enableGlamor). An X server already running
+    // keeps what it started with.
+    allowGlamor: () => enableGlamor(FS),
 
     // Add store paths to a guest that is already running. The share is
     // page-side memory the guest reads through 9p, so writing a path
     // here is enough: no remount, no reboot. Resolves once the guest
     // sees the new paths and the roots' programs (see visible), so
-    // "added" is true by the time the page says so, to
-    // { shellUpdates }: what this addition brought that the shell
-    // already running lacks (gui.js, ShellUpdate).
+    // "added" is true by the time the page says so.
     //
     // `roots` are the basenames of the packages this addition selects,
     // which replace any link of the same name, so the package added
@@ -629,19 +604,17 @@ export async function startUnkernel({
       }
       share.linkAll(basenames, roots, Precedence.REPLACE);
 
-      // Whether an X server was there before this addition: a shell
-      // already running was not told of one otherwise.
-      const hadX11Server = x11Server !== null;
-      await guiSetup(lazyStore === null ? basenames : closure());
-
-      // Every shell from now on is told of what this addition brought,
-      // and the reader is told how to bring the one already running up
-      // to date.
-      await writeManifest();
-      const shellUpdates = [];
-      if (!hadX11Server && x11Server !== null) {
-        shellUpdates.push(ShellUpdate.X11);
+      // A GL driver the reader selected takes the guest's driver link,
+      // and a session whose start failed is tried again. Either failing
+      // is logged: the shell works without them.
+      const steps = [session.start()];
+      const ownDriver = ownGlDriver(roots);
+      if (ownDriver !== null) {
+        steps.push(relinkGlDriver(ownDriver));
       }
+      await Promise.all(steps).catch((err) =>
+        log(`gui: setup failed: ${err.message ?? err}`),
+      );
 
       const added = roots.filter((basename) => basenames.includes(basename));
       await visible(kernel, [
@@ -650,7 +623,6 @@ export async function startUnkernel({
           share.programsOf(basename).map((name) => `${GUEST_BIN_DIR}/${name}`),
         ),
       ]);
-      return { shellUpdates };
     },
 
     // The memory the guest booted with, in MiB: the size asked for, or

@@ -25,7 +25,7 @@ import { speaksWayland } from "./gui.js";
 const DIGEST_PREFIX = /^[0-9a-z]{32}-/;
 
 // The X11 client libraries: a package whose own closure holds one can
-// open windows through the X server (x11.js).
+// open windows through the X server (gui.js).
 const X11_CLIENT_PATH = /^[0-9a-z]{32}-lib(x11|X11|xcb)-\d/;
 
 // A variable assignment before a command (VAR=value).

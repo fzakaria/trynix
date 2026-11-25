@@ -36,8 +36,9 @@ export const Trust = Object.freeze({
   SITE: "site",
 });
 
-// The site's own binary cache, which serves the GL driver the page
-// adds for GL programs (gldriver.js) and nothing cache.nixos.org has.
+// The site's own binary cache, which serves the GL driver every
+// unkernel guest is linked to (gldriver.js) and nothing cache.nixos.org
+// has.
 // An absolute URL, since it is joined to NAR paths and kept as a key
 // in the Cache API.
 export const SITE_CACHE_URL = globalThis.location

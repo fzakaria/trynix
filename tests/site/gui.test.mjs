@@ -1,6 +1,8 @@
-// Tests the guest half of a GUI session (site/js/gui.js): which
-// closures start one, which store path is taken for the GL driver, and
-// what the page writes into the share and runs in the guest. The share
+// Tests the guest half of a GUI session (site/js/gui.js): the
+// environment every shell gets, which store path is taken for a
+// selected GL driver, how the guest's fixed names are linked to the X
+// server and the GL driver, and what the page writes into the share
+// and runs in the guest. The share
 // is a Map behind the few file calls gui.js makes, the site's files come
 // from a stubbed fetch, and the guest's shell is a function that records
 // what it was asked to run.
@@ -8,15 +10,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  capabilityLinks,
+  enableGlamor,
   guestSession,
   isGlDriver,
-  linkX11Server,
   sessionEnv,
-  ShellUpdate,
-  shellNote,
   speaksWayland,
   X11_DISPLAY,
-  x11Env,
 } from "../../site/js/gui.js";
 import { GUI_FONTS, GUI_RELAY } from "../../site/js/config.js";
 
@@ -257,9 +257,9 @@ test("a session that failed to start tries again when asked", async () => {
   );
 });
 
-// Checks that the relay is started ready for X clients whether or not
-// the closure has an X server yet: it runs the launcher the session
-// writes into the share, as an executable, for the first X client.
+// Checks that the relay is started ready for X clients: it runs the
+// launcher the session writes into the share, as an executable, for
+// the first X client.
 test("a session starts the relay with the X11 launcher", async () => {
   stubFetch();
   const share = fakeShare();
@@ -280,12 +280,16 @@ test("a session starts the relay with the X11 launcher", async () => {
 });
 
 // Checks what the launcher does: start the X server the page linked
-// into the guest, with the relay's arguments passed on; without a
-// linked server, say so and fail, which the relay takes as no X server.
-// Xwayland draws with glamor when the guest has a GL driver, which is
-// what gives GLX programs DRI3 and so the virgl driver, and in shared
-// memory otherwise.
-test("the X11 launcher uses glamor only with a GL driver", async () => {
+// into the guest, with the relay's arguments passed on. The link is
+// there from the boot, so the launcher has no case without a server.
+// Xwayland draws with glamor only where the page has allowed it, for a
+// selection that may draw with GLX, which needs glamor for DRI3 and so
+// the virgl driver. Otherwise it is told so on its command line, which
+// it reads before it asks EGL whether glamor could work (asking loads
+// the GL driver; XWAYLAND_NO_GLAMOR is read after, and xterm downloaded
+// the driver with it set), and it runs without GLX, whose software path
+// loads the driver too and serves no GLX program without DRI3.
+test("the X11 launcher uses glamor only where the page allows it", async () => {
   stubFetch();
   const share = fakeShare();
   const session = guestSession({
@@ -298,49 +302,58 @@ test("the X11 launcher uses glamor only with a GL driver", async () => {
     share.files.get("/share/gui/start-x11").data,
   );
   assert.match(script, /^#!\/bin\/sh\n/);
-  assert.match(script, /\[ -e \/run\/x11-server \] \|\|/);
-  assert.match(script, /exit 1/);
+  assert.doesNotMatch(script, /exit 1/);
+  assert.doesNotMatch(script, /opengl-driver/);
   assert.match(
     script,
-    /\n\[ -e \/run\/opengl-driver \] \|\| export XWAYLAND_NO_GLAMOR=1\n/,
+    /\n\[ -e \/share\/gui\/glamor \] \|\| set -- "\$@" -glamor none -extension GLX\n/,
   );
   assert.match(script, /\nexec \/run\/x11-server "\$@"\n/);
+
+  assert.equal(share.files.has("/share/gui/glamor"), false);
+  enableGlamor(share);
+  assert.equal(share.files.has("/share/gui/glamor"), true);
 });
 
-// Checks how the page gives the guest its X server: a link from the
-// launcher's fixed path to the satellite's program in the store, made
-// by the guest's shell, and an error when the link cannot be made.
-test("the X server is linked from the store into /run", async () => {
-  const commands = [];
-  const basename = `${DIGEST}-xwayland-satellite-0.8.2`;
-  await linkX11Server(async (command) => {
-    commands.push(command);
-    return { exitCode: 0 };
-  }, basename);
-  assert.deepEqual(commands, [
-    `mkdir -p /run && ln -sfn /nix/store/${basename}/bin/xwayland-satellite /run/x11-server`,
-  ]);
-
-  await assert.rejects(
-    linkX11Server(
-      async () => ({ exitCode: 1, stderr: "ln: read-only\n" }),
-      basename,
-    ),
-    /could not link \/run\/x11-server: ln: read-only/,
+// Checks the command that gives the guest its fixed names at the boot:
+// /run/opengl-driver at the GL driver's store path and /run/x11-server
+// at the satellite's program. Making a link resolves nothing, so the
+// command fetches neither; a guest with no driver gets the X server's
+// link alone.
+test("the guest's fixed names are linked to the capabilities", () => {
+  const driver = `${DIGEST}-mesa-virgl-26.2.2`;
+  const server = `${DIGEST}-xwayland-satellite-0.8.3`;
+  assert.equal(
+    capabilityLinks({ glDriver: driver, x11Server: server }),
+    "mkdir -p /run" +
+      ` && ln -sfn /nix/store/${driver} /run/opengl-driver` +
+      ` && ln -sfn /nix/store/${server}/bin/xwayland-satellite /run/x11-server`,
+  );
+  assert.equal(
+    capabilityLinks({ glDriver: null, x11Server: server }),
+    "mkdir -p /run" +
+      ` && ln -sfn /nix/store/${server}/bin/xwayland-satellite /run/x11-server`,
+  );
+  assert.equal(
+    capabilityLinks({ glDriver: driver }),
+    `mkdir -p /run && ln -sfn /nix/store/${driver} /run/opengl-driver`,
   );
 });
 
-// Checks the X display shells are told of, which is the first one the
-// relay claims in a fresh guest, the X resources file they are pointed
-// at, and that Java's AWT is told its window manager does not reparent,
-// without which a Swing window opened blank.
-test("the X11 environment names display :0, the resources and AWT's flag", () => {
+// Checks that every shell gets the X display, from the boot on, beside
+// the Wayland socket: the X server is always there behind the relay's
+// display, so nothing an addition brings changes a shell's
+// environment. The display is the first one the relay claims in a
+// fresh guest, the X resources file is the session's, and Java's AWT
+// is told its window manager does not reparent, without which a Swing
+// window opened blank.
+test("every shell gets the X display, the resources and AWT's flag", () => {
+  const env = sessionEnv();
   assert.equal(X11_DISPLAY, ":0");
-  assert.deepEqual(x11Env(), {
-    DISPLAY: ":0",
-    XENVIRONMENT: "/share/gui/Xresources",
-    _JAVA_AWT_WM_NONREPARENTING: "1",
-  });
+  assert.equal(env.DISPLAY, ":0");
+  assert.equal(env.XENVIRONMENT, "/share/gui/Xresources");
+  assert.equal(env._JAVA_AWT_WM_NONREPARENTING, "1");
+  assert.equal(env.WAYLAND_DISPLAY, "wayland-0");
 });
 
 // Checks that every shell sends libcanberra to ALSA, through the
@@ -364,22 +377,8 @@ test("a session writes X resources that give xterm a font", async () => {
   await session.start();
 
   const resources = new TextDecoder().decode(
-    share.files.get(x11Env().XENVIRONMENT).data,
+    share.files.get(sessionEnv().XENVIRONMENT).data,
   );
   assert.match(resources, /^XTerm\*faceName: monospace$/m);
   assert.match(resources, /^XTerm\*faceSize: \d+$/m);
-});
-
-// Checks what the reader is told after an addition that changed the
-// shells' environment: nothing when it changed nothing, and otherwise
-// one line naming everything that works now, with the command that
-// brings the shell already running up to date. That command sources
-// again the file the shell's ENV names, which every shell sources as it
-// starts, so it carries whatever the addition brought.
-test("one note names what an addition brought the running shell", () => {
-  assert.equal(shellNote([]), null);
-  assert.equal(
-    shellNote([ShellUpdate.X11]),
-    "X11 programs work now in new shells (type sh for one), or in this one after . $ENV",
-  );
 });

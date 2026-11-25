@@ -309,14 +309,16 @@ opens. aisleriot's is 168 paths and 297 MiB compressed, and solitaire
 never opens gcc (87 MiB, which guile references as its compiler).
 firefox's is 322 paths and 450 MiB.
 
-So on unkernel a boot now fetches the selected packages, and any Mesa
-the guest may take as its GL driver, and starts the shell. Every other
+So on unkernel a boot now fetches the selected packages and starts
+the shell. Every other
 path of the closure is listed in the guest's store from its narinfo,
 its files are described from the cache's listing of the path, and its
 NAR is fetched the first time the guest reads one of its files. Settings has
 the choice as "Downloads"; a link names it as `fetch=lazy` (the
-default) or `fetch=all`, which is the old behaviour. The qemu engine
-always downloads everything first. Its share is read by QEMU's own 9p
+default) or `fetch=all`, which fetches the selected closure before the
+shell. Either way the guest's X server and GL driver are fetched only
+when the guest first looks inside them ([gui.md](./gui.md)). The qemu
+engine always downloads everything first. Its share is read by QEMU's own 9p
 code inside the engine, synchronously, and nothing there can wait for
 a download.
 

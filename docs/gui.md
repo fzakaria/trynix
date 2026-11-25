@@ -80,10 +80,10 @@ terminal. A floating window moved past the frame's edge, or left there
 when the frame shrank on leaving full screen, is pulled back until a
 40 by 24 px corner of it is inside, enough to drag it by.
 
-GL programs need a driver, and the page adds one: when the closure
-holds a Wayland or X11 program that links libglvnd and no Mesa, the
-page walks in the site's own Mesa, built with the virgl driver alone
-(see [The GL driver](#the-gl-driver)).
+GL programs need a driver, and every guest has one: the site's own
+Mesa, built with the virgl driver alone, is linked at
+`/run/opengl-driver` from the boot and downloaded the first time a
+program looks inside it (see [The GL driver](#the-gl-driver)).
 
 The gears demo sets `LIBDECOR_PLUGIN_DIR=` for that command so it can
 draw its first frame without downloading GTK for the window decorations.
@@ -93,15 +93,15 @@ https://trynix.dev/?pkg=mesa-demos&boot=1&run=LIBDECOR_PLUGIN_DIR%3D+es2gears_wa
 ```
 
 Selecting a Mesa is how to opt out: with `pkg=mesa` in the link the
-page adds nothing, and the guest uses nixpkgs' Mesa (380 MB with its
-closure). When no driver the site serves fits the program, the status
+guest uses nixpkgs' Mesa (380 MB with its closure) in place of the
+site's. When the site's driver is too new for the program, the status
 line says why.
 
-X11 programs need an X server, and the page adds one: when a selected
-program's closure holds libX11 or libxcb and no libwayland, the page
-walks in xwayland-satellite, and every shell gets `DISPLAY=:0` (see
-[X11 programs](#x11-programs)). Each X11 window opens as a window of
-its own, like a Wayland program's.
+X11 programs need an X server, and every guest has one the same way:
+xwayland-satellite, linked from the boot and downloaded when the first
+X client connects, and every shell has `DISPLAY=:0` (see [X11
+programs](#x11-programs)). Each X11 window opens as a window of its
+own, like a Wayland program's.
 
 ```
 https://trynix.dev/?pkg=xterm&boot=1&run=xterm+%26
@@ -133,13 +133,18 @@ reaches the terminal; wland gives each window's canvases their own.
 The guest half is wland's relay, `wlandr`, a 353 KB static aarch64
 binary built from source ([nix/wlandr.nix](../nix/wlandr.nix)).
 unkernel's base system has no relay (only its Debian image ships one),
-so the site serves it. When a NAR whose name is libwayland's arrives,
-the page fetches the relay and the fonts while the rest of the closure
-downloads, writes them into the share under `/share/gui`, and starts
-the relay before it reports the shell ready. Every shell gets
-`WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` and the toolkit hints
-(`GDK_BACKEND`, `QT_QPA_PLATFORM`, `SDL_VIDEODRIVER` and the rest), so
-a program started plainly picks Wayland.
+so the site serves it. Every unkernel boot fetches the relay and the
+fonts while the shell starts, writes them into the share under
+`/share/gui`, and starts the relay in the background once the shell is
+at its prompt, so the shell never waits for it. A program that
+connects before the relay listens finds no socket; the relay listened
+0.13 to 0.18 s after the prompt in sixteen runs, and a GUI program
+started at the prompt spends longer than that loading its own
+libraries. Every shell gets `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR`, the
+toolkit hints (`GDK_BACKEND`, `QT_QPA_PLATFORM`, `SDL_VIDEODRIVER` and
+the rest) and `DISPLAY`, the same from the boot to the end, so a
+program started plainly picks Wayland, and one with no Wayland backend
+finds the X server.
 
 The relay dials the page only when the first program connects
 (`--link-on-demand`), and the page loads wland on that first dial. A
@@ -166,9 +171,11 @@ A few things the guest lacks, the page supplies:
   have. The site ships DejaVu Sans and Sans Mono and a `fonts.conf`
   that names them and maps `monospace`, `sans-serif` and `serif`.
 - **The GL driver** and its link. nixpkgs' libglvnd and libgbm look
-  for the driver in `/run/opengl-driver`, as on NixOS. The page adds
-  the site's Mesa to a GL program's closure, and a NAR holding Mesa's
-  `50_mesa.json` becomes that link in the guest.
+  for the driver in `/run/opengl-driver`, as on NixOS. The page links
+  it to the site's Mesa before the shell starts, or to a selected
+  package whose NAR holds Mesa's `50_mesa.json`.
+- **The X server** and its link, `/run/x11-server`, to
+  xwayland-satellite's program, made with the driver's.
 - **Store mtimes.** Every file in a nix store has a modification time
   of one second past the epoch, and some programs compare them: guile
   takes a compiled `.go` only when it is no older than its source.
@@ -271,14 +278,26 @@ program's is the one loaded:
 | mesa-demos + `mesa`                | 133   | 380 MB     | 1.47 GB  |
 | mesa-demos, with the site's driver | 131   | 124 MB     | 548 MB   |
 
-A program that never draws with GL pays the same when its closure
-holds libglvnd and Wayland, because the page cannot tell from the
-closure whether the program will load the driver: GTK 3 programs and
-mpv get it. For galculator, mousepad, aisleriot and mpv the driver
-adds 20 paths, 16.0 MB from cache.nixos.org and 3.2 MB from the site,
-90 MB unpacked in the page's memory. The page adds it anyway rather
-than guess from the binaries: SDL, GTK 4, Qt and Firefox load GL with
-`dlopen`, so no `NEEDED` entry says they will.
+Every unkernel guest is linked to the driver, and none of it is
+fetched until a program looks inside it. The first lookup starts the
+walk of its closure (20 paths) and is answered from the root's
+listing once the root's narinfo is in, while the walk goes on; its
+files' NARs download as they are opened
+([site/js/lazy.js](../site/js/lazy.js), capabilities). The page does not guess from a closure whether a
+program will load GL: SDL, GTK 4, Qt and Firefox load it with
+`dlopen`, so no `NEEDED` entry says they will, and GTK 3 programs and
+mpv link libglvnd and may never call it. The dynamic loader of any
+program that links libglvnd looks for each of its libraries in
+`/run/opengl-driver/lib` first, which costs the driver root's narinfo
+and listing and nothing more: the site's cache serves a listing beside
+each narinfo, and the lookup is answered from it.
+
+es2gears from mesa-demos, selected alone and started at the prompt,
+measured as in [What X11 costs](#what-x11-costs), four runs each:
+the shell came up after a median 3.43 s against 7.29 s when the page
+walked the driver in and fetched it with the selection, and the first
+frame came 2.64 s after the command against 3.71 s. Both downloaded
+48.5 MB by then.
 
 ### Which glibc it is built against
 
@@ -308,15 +327,16 @@ What the page does instead:
 - the page reads the program's own floors from its closure, the
   version in its glibc and gcc runtime store paths, taking the oldest
   when a selection mixes revisions;
-- it adds the newest driver whose floors are no newer than the
+- it links the newest driver whose floors are no newer than the
   program's ([site/js/gldriver.js](../site/js/gldriver.js)), and when
-  none fits it says so and suggests a Mesa from the program's own
-  nixpkgs, which the reader can select with `pkg=mesa@<version>`;
+  none fits it links the newest anyway, which such a program fails to
+  load as it would fail with no driver at all, and says so, suggesting
+  a Mesa from the program's own nixpkgs, which the reader can select
+  with `pkg=mesa@<version>`;
 - a program added to a running guest is judged the same way, with the
-  closures of every program selected so far and the driver it already
-  has, so an added program older than that driver gets the same note a
-  fresh boot gives. What the page added beside the selections, an X
-  server among them, is not judged.
+  closures of every program selected so far, so an added program older
+  than the driver gets the same note a fresh boot gives. The X server
+  and the driver's own closures are not judged.
 
 One driver is published, built on the nixpkgs this flake locks. Its
 floors are glibc 2.38 and gcc 11.1: the `GLIBC_2.38` comes from
@@ -336,22 +356,38 @@ program has loaded an older one, Mesa gets that one. The glibc floor
 keeps the two in the same era of nixpkgs, which is what has held for
 the programs tried; it is not a proof.
 
+A program older than the driver fails cleanly. mesa-demos 8.5.0
+(glibc 2.35) with the site's driver linked: `eglinfo` prints
+`eglInitialize failed` and exits 1, and `es2gears_wayland` prints
+`EGLUT: failed to initialize EGL display` and exits 1. With
+`LD_DEBUG=versions` the loader says why: `version 'GLIBC_2.38' not
+found (required by .../libEGL_mesa.so.0)`. libglvnd takes the vendor
+that did not load for no vendor, and the program reports no display,
+as it does with no driver. The attempt fetches the driver's NAR and
+the libraries it maps before the loader checks versions. A Mesa that
+is only in a program's closure is not one the reader selected:
+mesa-demos 8.5.0's holds `mesa-22.3.7-drivers` and
+`mesa-22.3.7-osmesa`, which the page used to take for a selected Mesa,
+fetch with the selection (148.7 MB) and link as the driver.
+
 `checks.gl-driver` recomputes the glibc floor from the pinned NAR and
-fails when the pin claims less than the binaries ask for, and
+fails when the pin claims less than the binaries ask for, or when a
+path the site's cache serves has no listing beside its narinfo, and
 [tests/site/gldriver.test.mjs](../tests/site/gldriver.test.mjs)
-covers the choice: a program older than every driver gets none, a
-mixed selection is judged by its older glibc, a selected Mesa wins,
-and the site's driver in a running guest is held to a program added
-later.
+covers the choice: a program older than every driver gets the newest
+and a note, a mixed selection is judged by its older glibc, a Mesa
+among the selected roots silences the note and one in a program's
+closure does not, and the site's driver in a running guest is held to
+a program added later.
 
 ### Where it is served from
 
 No public cache holds this build, so the site carries a binary cache
 of its own: `site/gl/cache/`, committed to the repository and served
 by Pages with the page, as the example cache under `site/examples/`
-is. It is a `nix-cache-info`, one narinfo and one NAR per store path,
-and it holds only what cache.nixos.org does not: Mesa and the libdrm
-and libgbm built for it. The rest of Mesa's closure is nixpkgs' own
+is. It is a `nix-cache-info`, and one narinfo, one NAR listing and one
+NAR per store path, and it holds only what cache.nixos.org does not:
+Mesa and the libdrm and libgbm built for it. The rest of Mesa's closure is nixpkgs' own
 builds. Beside it,
 `site/gl/drivers.json` names the driver and its two floors.
 
@@ -403,120 +439,125 @@ needs. The relay's side is wland's own (`server/src/xwayland.zig`),
 built into the relay the site serves. Nothing X11 runs until a program
 connects.
 
-### Which programs get it
+### Which X server
 
-The page decides per selected program, from that program's own
-closure ([site/js/x11.js](../site/js/x11.js)): an X client library and
-no libwayland. The client library is libX11, or libxcb, which libX11
-is built on: xlsatoms and xlsclients speak X11 through libxcb alone,
-and booted alone with the rule looking for libX11 they found no
-display. The closures of foot, galculator, mpv, wireshark-qt and xpdf
-all hold libX11 beside libwayland, through their toolkits and
-libraries, and those programs run on the relay as before.
+Every unkernel guest has the same one: the multiverse index's newest
+aarch64 xwayland-satellite when it was pinned, 0.8.3 with Xwayland
+24.1.15, named in [site/js/config.js](../site/js/config.js)
+(`X11_SERVER`) and served by cache.nixos.org. The page does not ask
+which selected programs speak X11. A rule that did (an X client
+library and no libwayland in the program's closure) missed programs
+whose closure holds libwayland and that speak X11 alone: Java's AWT
+and Swing, whose closure holds GTK 3, and extremetuxracer, whose SFML
+reaches libwayland through openal-soft and pipewire, and which then
+aborted with `Failed to open X11 display`.
 
-When one does, the page resolves `xwayland-satellite` in the
-multiverse index, as it resolves a name in a link, takes the newest
-build and walks its closure from cache.nixos.org. Programs selected by
-name resolve to their newest builds too, so the two share paths:
-glibc, gcc's runtime and the X client libraries. Of the satellite's
-129 paths, xeyes' closure held 12 already, xterm's 23 and wish's 22,
-in November 2026. The build from the nixpkgs this flake locks shared
-none with any of them (its glibc is 2.42, theirs 2.44), and its first
-use downloaded glibc again, 10 MB of it. The satellite and Xwayland run
-as processes of their own, so unlike the GL driver they need not match
-the program's glibc.
-
-A program whose closure holds libwayland and still speaks only X11 is
-not recognised. Java's AWT and Swing are the known case: openjdk's
-closure holds GTK 3. Selecting the satellite with it gives it the
-server, since a closure that holds a satellite, selected or added
-earlier, is used as it is:
-
-```
-https://trynix.dev/?pkg=openjdk21&pkg=xwayland-satellite&boot=1
-```
+Programs selected by name resolve to their newest builds too, so the
+pin shares paths with them while both are recent: glibc, gcc's
+runtime and the X client libraries. Of the satellite's 129 paths,
+xeyes' closure held 12, xterm's 23 and wish's 22, in November 2026.
+The build from the nixpkgs this flake locks shared none with any of
+them (its glibc is 2.42, theirs 2.44), and its first use downloaded
+glibc again, 10 MB of it. The satellite and Xwayland run as processes
+of their own, so unlike the GL driver they need not match the
+program's glibc. Moving the pin is an edit of `X11_SERVER`.
 
 ### In the guest
 
-Every GUI session writes a launcher, `/share/gui/start-x11`, and
-starts the relay with `--xwayland` pointing at it, whether the closure
-has an X server yet or not. The launcher runs `/run/x11-server`, which
-the page links to the satellite's program once the closure holds one;
-without the link it says so and fails, and the relay, after three
-quick failures, stops listening on `:0`. So a relay already serving
-Wayland programs when an addition brings the X server needs no
-restart.
+Every unkernel boot links `/run/x11-server` to the satellite's program
+before the shell starts, writes a launcher, `/share/gui/start-x11`,
+and starts the relay with `--xwayland` pointing at it. Nothing of the
+X server is fetched until the first X client connects: the relay runs
+the launcher, the launcher runs `/run/x11-server`, and that lookup is
+what starts the walk of the satellite's closure (106 narinfos and
+their listings beyond what the selection shares). The lookup is
+answered once the satellite's own narinfo is in; the rest join the
+store as the walk finds them, and a lookup of one not found yet waits
+for the walk. Then come the NARs the satellite and Xwayland open. A
+boot with no X client fetches none of it, and has no X server
+process. The X server's programs (Xwayland, `dbus-launch`,
+`systemctl` and the rest of its closure's) stay off `PATH`: the farm
+takes the selection's programs alone.
 
-Shells get `DISPLAY=:0` once the closure holds the server, and not
-before: a program with both backends that tries X11 first would
-otherwise find a display with nothing behind it. A shell sources its
-environment as it starts, from the file `ENV` names, so the shell on
-the page has no `DISPLAY` after an addition brought the server. The
-status line says so and names two ways to it: a new shell (`sh`), or
-`. $ENV`, which sources the environment again in the shell already
-running, the X resources below included. Shells started later have
-both, at the prompt or in a terminal window.
+The client waits while the server downloads. Xlib and xcb wait for
+the server's first answer without a limit, and a lookup on the share
+has none either: with the satellite's and Xwayland's NARs held back
+35 s, xterm kept running and opened its window after the hold
+(gui-test's slowx case).
 
-Xwayland draws with glamor, through the GL driver, when the guest has
-one at `/run/opengl-driver`, which a selected program that links
-libglvnd brings. GLX programs need it (see [GLX
-programs](#glx-programs)). With glamor Xwayland loads the driver into
-its own process, so the driver has to fit Xwayland's glibc too; the
-index's newest satellite comes with glibc 2.44, above the driver's
-floor. Without a driver the launcher sets `XWAYLAND_NO_GLAMOR=1`, and
-Xwayland draws with pixman into shared memory, which the compositor
-reads through kwshm like any other program's buffers. xterm and the
-other X11 programs above bring no driver and draw that way: glamor
-needs the driver's closure and the GL renderer loaded, and xterm's
-first frame took 6.3 s with it against 5.0 s without, one cold run
-each. The GL driver rule looks only at the selected programs' closures,
-so the libglvnd that Xwayland links does not bring the driver.
+Every shell has `DISPLAY=:0` from the boot, with `XENVIRONMENT` and
+`_JAVA_AWT_WM_NONREPARENTING=1`: Java's AWT waits for its window
+manager to reparent each window, which the satellite does not, and a
+Swing window stayed blank until AWT was told. Nothing an addition
+brings changes a shell's environment. A program that tries X11 before
+Wayland and ignores the toolkit hints now finds a working server, and
+downloads it, where it used Wayland before.
+
+Xwayland draws with glamor, through the GL driver, when the selection
+links libglvnd, a hint that it may draw with GLX: GLX programs need it
+(see [GLX programs](#glx-programs)), and a GLX program must link
+libGL, which in nixpkgs is libglvnd. The page then writes
+`/share/gui/glamor`, and the launcher looks for it. With glamor
+Xwayland loads the driver into its own process, so the driver has to
+fit Xwayland's glibc too; the pinned satellite comes with glibc 2.44,
+above the driver's floor. Otherwise the launcher passes
+`-glamor none -extension GLX`, which the satellite hands to Xwayland:
+`-glamor none` is Xwayland's `-shm`, read with its command line,
+before it asks EGL whether glamor could work, which loads the driver
+(`XWAYLAND_NO_GLAMOR` is read after that, and xterm downloaded the
+driver with it set); and GLX's software path loads the driver through
+Mesa's DRI loader and serves no GLX program without DRI3. Xwayland
+then draws with pixman into shared memory, which the compositor reads
+through kwshm like any other program's buffers. With glamor always
+on, xterm's first window took 2.5 s longer and fetched 18 MB more.
+Xwayland chooses once, as it starts.
 
 Xwayland has no core fonts but its built-in `fixed`, and xterm asks
 for one it lacks by default, which printed a warning on the reader's
 terminal. The session writes X resources, `/share/gui/Xresources`,
-named by `XENVIRONMENT` in every shell that has `DISPLAY`, which give
-xterm the `monospace` family through Xft; fontconfig maps it to the
-page's DejaVu Sans Mono. Tk draws through Xft and fontconfig by
-itself.
+named by `XENVIRONMENT` in every shell, which give xterm the
+`monospace` family through Xft; fontconfig maps it to the page's
+DejaVu Sans Mono. Tk draws through Xft and fontconfig by itself.
 
 ### What X11 costs
 
-Measured 2026-11-23 on the laptop below, headless Chromium with
+Measured 2026-11-24 on the laptop below, headless Chromium with
 SwiftShader, downloads on first use (the default), each run in a new
 browser profile, the closures from cache.nixos.org over a home
-connection. The index's satellite was 0.8.3, with Xwayland 24.1.15.
+connection, against the site before the X server and the driver were
+in every guest, the runs of the two interleaved.
 
-The X server costs an X11 boot three things. The closure walk takes
-106 to 129 more narinfos and their listings, and one 10 KB shard of
-the index to find the satellite: xeyes' shell came up after 2.9 to
-6.0 s, against 2.2 s in three boots of the site before X11, which
-could not run it. The first X11 program then starts the satellite and
-Xwayland, which download what they open: 54 paths and 24 MB
-compressed for xeyes, whose own closure was in by the prompt. And the
-GUI session starts, as for any Wayland program, since the server's
-closure holds libwayland. A boot with no X11 program pays nothing:
-hello's shell came up after 1.8 to 2.2 s before the change and 1.9 to
-2.0 s after.
+A boot with no X client pays nothing for the X server: hello's shell
+came up after a median 1.75 s (1.6 to 2.9 s) against 1.70 s (1.5 to
+3.5 s) before, sixteen boots each. The first X client pays the
+server's walk, behind its own narinfo, and what the satellite and
+Xwayland open. Before, an X11 program got the server only when the
+rule picked it, or with `xwayland-satellite` selected, which fetches
+the satellite and its references before the shell:
 
-| program, selected alone              | paths | shell after | first frame after the shell | downloaded by then |
-| ------------------------------------ | ----- | ----------- | --------------------------- | ------------------ |
-| xeyes                                | 134   | 2.9–6.0 s   | 4.0–10.6 s                  | 37 MB              |
-| xterm                                | 138   | 3.0–10.2 s  | 4.0–5.4 s                   | 40 MB              |
-| xclock                               | 139   | 2.9–5.0 s   | 3.9–5.6 s                   | 39 MB              |
-| `wish` (tk)                          | 132   | 3.1–4.6 s   | 4.8–5.3 s                   | 42 MB              |
-| `python3 -m tkinter` (python3Full)   | 166   | 16.4 s      | 6.1 s                       | 99 MB              |
-| Swing (openjdk21 with the satellite) | 308   | 81 s        | 25–30 s                     | 493 MB             |
+| xterm, `xterm &` at the prompt | shell after | first window after the command | downloaded by then |
+| ------------------------------ | ----------- | ------------------------------ | ------------------ |
+| with the satellite selected    | 3.65 s      | 6.19 s (5.67 to 11.95 s)       | 58.3 MB            |
+| alone, the server on first use | 2.29 s      | 4.39 s (4.06 to 6.47 s)        | 39.0 MB            |
 
-"Downloaded by then" is the compressed bytes the guest had fetched
-five seconds after the first frame, the program's own closure
-included. Each row is one to six boots; the slow ends of the xeyes and
-xterm rows were each the first boot of a series. openjdk is the expensive
-one: a selected package's references are all fetched at the boot, and
-openjdk21's are 438 MB. When this was measured, its `java` was not on
-`PATH`, since its `bin` is a link to `lib/openjdk/bin`, so the Swing
-program was started by its store path; the page now follows such a
-link.
+Each row is the median of four runs. "Downloaded by then" is the
+compressed bytes the page had fetched three seconds after the first
+window, xterm's own closure included: 75 NARs alone. The walk of the
+satellite's 106 narinfos took 0.63 to 1.6 s, while the satellite's own
+NAR downloaded: the first lookup is answered once the satellite's
+narinfo is in, and a later one waits only until the path it names has
+joined. The driver's root narinfo and listing,
+which Xwayland's loader needs to find its libraries are not in
+`/run/opengl-driver/lib`, took 0.11 to 0.15 s; its whole walk, before
+the lookup was answered early, took 0.11 to 0.65 s.
+
+nixpkgs' Xwayland links libdecor for its rootful `-decorate` mode,
+which a rootless Xwayland never uses, and 70 of the satellite's 129
+paths, 64 MiB, are in its closure only through libdecor. On first use
+that costs little: of xterm's first window's 39.0 MB, 1.5 MB came
+through libdecor alone (libdecor, cairo, pango and dbus's library),
+4.1 MB counting paths xterm opens anyway. So the site serves nixpkgs'
+Xwayland rather than one built without libdecor.
 
 ### GLX programs
 
@@ -530,8 +571,8 @@ their contexts this way and no other.
 Mesa's GLX renders with the virgl driver only through DRI3: the
 program renders into buffers it shares with the X server, which
 presents them. Xwayland offers DRI3 only when it draws with glamor,
-which is why the launcher turns glamor on whenever the guest has a GL
-driver. Without DRI3 Mesa prints `screen 0 does not appear to be DRI3
+which is why the launcher turns glamor on whenever the selection
+links libglvnd. Without DRI3 Mesa prints `screen 0 does not appear to be DRI3
 capable` and falls back to drawing in software with llvmpipe or
 softpipe, neither of which the site's Mesa has.
 
@@ -571,7 +612,7 @@ stopped answering; it was not revisited.
 ## Firefox and whole compositors
 
 nixpkgs' `firefox` runs in the guest, as a Wayland client, loading GL
-through libglvnd with `dlopen`, so the page adds the GL driver for it.
+through libglvnd with `dlopen`, from the GL driver every guest has.
 Its closure with the driver is 322 paths, 457 MB compressed and 1.7 GB
 unpacked. It needs memory: in a 512 MiB guest the kernel ran out of
 contiguous 128 KiB blocks (`page allocation failure: order:5`) while
@@ -689,12 +730,12 @@ cache.nixos.org over a home connection.
 
 What the site adds, fetched only when used:
 
-| file                         | raw     | gzip   | fetched                         |
-| ---------------------------- | ------- | ------ | ------------------------------- |
-| wland modules and wasm       | 383 KB  | 109 KB | on the relay's first dial       |
-| relay (`wlandr`)             | 353 KB  | 149 KB | when the closure has libwayland |
-| DejaVu Sans and Sans Mono    | 1.10 MB | 587 KB | when the closure has libwayland |
-| `virgl.mjs` and `virgl.wasm` | 597 KB  | 216 KB | on the guest's first GL use     |
+| file                         | raw     | gzip   | fetched                     |
+| ---------------------------- | ------- | ------ | --------------------------- |
+| wland modules and wasm       | 383 KB  | 109 KB | on the relay's first dial   |
+| relay (`wlandr`)             | 353 KB  | 149 KB | while the shell starts      |
+| DejaVu Sans and Sans Mono    | 1.10 MB | 587 KB | while the shell starts      |
+| `virgl.mjs` and `virgl.wasm` | 597 KB  | 216 KB | on the guest's first GL use |
 
 The closures, from the cache, for the paths the nixpkgs this flake
 locks builds (the page resolves names against the multiverse index,
@@ -748,22 +789,17 @@ compositor:
 
 ## Limits
 
-- **GL programs from before nixpkgs 23.11** get no driver: the one
-  the site serves needs glibc 2.38. The page says so; a Mesa from the
-  program's own nixpkgs, selected with `pkg=mesa@<version>`, is the
-  way around it until an older driver is published.
+- **GL programs from before nixpkgs 23.11** fail to load the driver,
+  which needs glibc 2.38, and report no display, as with no driver.
+  The page says so; a Mesa from the program's own nixpkgs, selected
+  with `pkg=mesa@<version>`, is the way around it until an older
+  driver is published. Before nixpkgs moved the EGL vendor file into
+  Mesa's default output, that Mesa's index entry lacks it (22.3.7 keeps
+  it in `mesa-22.3.7-drivers`), and the drivers output has to be
+  selected by its store path.
 - **A selected `mesa`** resolves to the newest Mesa in the index,
   which may be built against a newer glibc than the program; the page
   does not check one the reader chose.
-- **X11 programs the rule misses**, whose closure holds libwayland
-  though they speak only X11 (Java's AWT and Swing), get no X server
-  unless `xwayland-satellite` is selected with them.
-- **Java** draws, with `_JAVA_AWT_WM_NONREPARENTING=1`, which shells
-  with `DISPLAY` get: the satellite does not reparent windows, and
-  without it a Swing window stayed blank.
-- **An X server an addition brings** reaches
-  shells started after it; the shell already on the page needs
-  `. $ENV`, or a new shell (`sh`).
 - **A blit or copy within one texture level**, whose source and
   destination are the same image, is refused by WebGL 2 too, and the
   site's Mesa does not route around it; no program run so far has done
@@ -771,15 +807,14 @@ compositor:
 - **A shadow sampler** whose texture is not a depth texture, or whose
   sampler does not compare, is refused by WebGL 2 as well, and the
   site's Mesa leaves it as it is; no program run so far has made one.
-- **A GL driver an addition brings to an X server already running**
-  does not give it glamor: Xwayland decides as it starts, so GLX
-  programs it serves get no DRI3. Selecting the GL program with the
-  X11 programs at the boot avoids it.
-- **Downloads set to all** fetch the X server's whole closure before
-  the shell: 129 paths, 105 MB compressed. 70 of those paths, 67 MB,
-  are there only for libdecor's GTK plugin (GTK 3, ICU, systemd),
-  which Xwayland links for its rootful `-decorate` mode and a rootless
-  Xwayland never loads.
+- **A GLX program added after the X server started without glamor**
+  gets no DRI3: Xwayland decides as it starts, and it started without
+  glamor because the selection then linked no libglvnd. Selecting the
+  GLX program at the boot, or reloading, avoids it.
+- **A GUI program started within 0.2 s of the prompt** can find no
+  relay: the relay starts behind the prompt. A program's own loading
+  takes longer than that, and gui-test's cases type theirs at the
+  prompt.
 - **Reloads end the programs**, as they end the guest: the page boots a
   fresh kernel every time.
 - **Keyboard layout** is US, which is wland's.
@@ -793,15 +828,18 @@ compositor:
   ([pithings/unkernel#31](https://github.com/pithings/unkernel/issues/31)).
 - **Browsers.** `gui-test` passes in Chromium and in Firefox 160, both
   headless: foot takes keys, and es2gears draws through virgl at
-  60 FPS. Its xterm case, which takes keys through Xwayland, passed in
-  Chromium 152 and Firefox 155. Safari has not been run.
+  60 FPS. With the X server and the driver in every guest, its foot,
+  xterm and extremetuxracer cases passed in Chromium 152 and Firefox
+  155, and every case in Chromium 152. Safari has not been run.
 
 ## Testing
 
 `nix run .#gui-test -- --site <site>` boots foot, es2gears and xterm
-from links (es2gears alone, so the page has to add the driver, and
-xterm alone, so it has to add the X server and no driver), starts each
-at the shell and waits for the compositor's first frame. It types into
+from links, each selected alone (es2gears with no Mesa, xterm with no
+X server), starts each at the shell and waits for the compositor's
+first frame. It checks that es2gears' first look brought the driver,
+and that xterm's first connection brought the X server, put none of
+its programs on `PATH` and downloaded no GL driver. It types into
 foot's window and checks that the keys reached the program, then
 presses the terminal beside the window, types a line, and checks that
 the page's shell ran it while wland sent no key to any window and
@@ -821,10 +859,17 @@ with NEAREST filters while the draw renders into its level 1, which
 reads level 0's red, and an integer sampler with an incomplete texture
 or none on its unit, which reads (0, 0, 0, 1). The case fails on a
 wrong colour or a context error in the renderer's log.
-The glx case boots extremetuxracer alone, so the page has to add the
-X server and the GL driver both, waits for the game's window, and
-checks that its frames went through the page's GL renderer by GPU
-resource, which GLX reaches only by DRI3 on a glamor Xwayland.
+The glx case boots extremetuxracer alone, with no X server or driver
+selected, waits for the game's window, and checks that its frames went
+through the page's GL renderer by GPU resource, which GLX reaches only
+by DRI3 on a glamor Xwayland. The oldgl case boots mesa-demos 8.5.0,
+older than the driver, and checks that `/run/opengl-driver` is the
+site's driver, that none of the Mesa in the program's closure is
+downloaded, and that `eglinfo` and `es2gears_wayland` exit with their
+own error and not a signal. The slowx case holds the X server's NARs
+back 35 s and checks that xterm waits through the hold for its window.
+The page records which NARs it fetches for these checks from a script
+the tool runs before the page's own.
 `--with firefox`
 runs the same cases in Firefox, driven over WebDriver BiDi, the
 protocol Firefox speaks since it dropped the DevTools one.
@@ -836,9 +881,11 @@ SwiftShader (Firefox picks its own), and `--screenshots <dir>` saves
 the console, terminal and windows, at each step.
 
 [tests/site/gui.test.mjs](../tests/site/gui.test.mjs) covers what the
-page writes into the share and runs in the guest, offline,
-[tests/site/x11.test.mjs](../tests/site/x11.test.mjs) which selections
-get the X server, and
+page writes into the share and runs in the guest, offline, the
+environment every shell gets among it,
+[tests/site/lazy.test.mjs](../tests/site/lazy.test.mjs) how a
+capability joins the store on its first lookup and stays out of the
+farm, and
 [tests/site/frame.test.mjs](../tests/site/frame.test.mjs) the frame's
 rules: which windows open maximized, where the others open, where a
 window past the edge goes back to, and what the windows button offers.
@@ -866,7 +913,7 @@ site next to the files:
 - DejaVu fonts are Bitstream Vera's license with public-domain changes
   (`gui.<hash>/LICENSE-dejavu`).
 - The programs come from cache.nixos.org and keep nixpkgs' licenses,
-  as every other package the page boots does, the X server the page
-  adds among them (xwayland-satellite is MPL-2.0, Xwayland MIT). The
+  as every other package the page boots does, the X server every guest
+  has among them (xwayland-satellite is MPL-2.0, Xwayland MIT). The
   site's Mesa is MIT, built unmodified from nixpkgs' source with fewer
   drivers.

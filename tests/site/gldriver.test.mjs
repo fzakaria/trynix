@@ -1,10 +1,11 @@
-// Tests which GL driver the page adds to a selection (site/js/gldriver.js).
-// A driver is loaded into the program's process, so it may only be one
-// built against a glibc and a libstdc++ no newer than the program's own;
-// these tests hand the chooser closures as lists of store basenames,
-// the way the closure walk produces them, and the drivers the site
-// publishes as the records its manifest holds. Reading the manifest runs
-// against a fake fetch.
+// Tests which of the site's GL drivers the page links into the guest
+// (site/js/gldriver.js), and when it tells the reader that the driver
+// is too new for the selection. Every guest gets a driver; it is loaded
+// into a program's process, so it works only for a program whose glibc
+// and libstdc++ are no older than the driver's. These tests hand the
+// chooser closures as lists of store basenames, the way the closure
+// walk produces them, and the drivers the site publishes as the records
+// its manifest holds. Reading the manifest runs against a fake fetch.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -12,7 +13,7 @@ import {
   chooseDriver,
   DriverChoice,
   driverNote,
-  isGlDriverPath,
+  drawsWithGl,
   publishedDrivers,
 } from "../../site/js/gldriver.js";
 import {
@@ -34,6 +35,9 @@ const glProgram = (glibc, gcc) => [
   path(`gcc-${gcc}-lib`),
 ];
 
+// The selected root of glProgram's closure.
+const GL_ROOTS = [path("es2gears-9.0.0")];
+
 // Two published drivers: one built on an older nixpkgs, one on a newer.
 const OLD = {
   storePath: `/nix/store/${path("mesa-virgl-24.2.8")}`,
@@ -47,32 +51,32 @@ const NEW = {
 };
 const DRIVERS = [OLD, NEW];
 
-// Checks that a program as new as the newest driver gets that driver.
+// Checks that a program as new as the newest driver gets that driver,
+// with nothing to say.
 test("a program from the driver's own nixpkgs gets it", () => {
   const result = chooseDriver(glProgram("2.42-84", "15.3.0"), DRIVERS);
-  assert.equal(result.choice, DriverChoice.ADD);
+  assert.equal(result.choice, DriverChoice.FITS);
   assert.equal(result.driver, NEW);
+  assert.equal(
+    driverNote(result, glProgram("2.42-84", "15.3.0"), GL_ROOTS),
+    null,
+  );
 });
 
-// Checks that a program that speaks X11 alone and links libglvnd gets
-// the driver too: it draws through GLX on the page's X server, and the
-// driver's libGLX_mesa is what libglvnd's GLX loads for it.
-test("an X11 program that links libglvnd gets the driver", () => {
-  const x11Program = [
-    path("glxgears-9.0.0"),
-    path("libx11-1.8.14"),
-    path("libxcb-1.17.0"),
-    path("libglvnd-1.7.0"),
-    path("glibc-2.42-84"),
-    path("gcc-15.3.0-lib"),
-  ];
-  const result = chooseDriver(x11Program, DRIVERS);
-  assert.equal(result.choice, DriverChoice.ADD);
+// Checks that a selection with no GL program gets the driver all the
+// same, since the guest links one at every boot, and that no note is
+// given for it even when the driver is newer than its glibc: xterm
+// draws no GL.
+test("a selection that draws no GL gets the driver and no note", () => {
+  const xterm = [path("xterm-412"), path("libx11-1.8.14"), path("glibc-2.42")];
+  const result = chooseDriver(xterm, DRIVERS);
+  assert.equal(result.choice, DriverChoice.FITS);
   assert.equal(result.driver, NEW);
 
-  // xterm speaks X11 and draws no GL.
-  const xterm = [path("xterm-412"), path("libx11-1.8.14"), path("glibc-2.42")];
-  assert.equal(chooseDriver(xterm, DRIVERS).choice, DriverChoice.NOT_NEEDED);
+  const oldXterm = [path("xterm-330"), path("glibc-2.27")];
+  const old = chooseDriver(oldXterm, DRIVERS);
+  assert.equal(old.choice, DriverChoice.NONE_FITS);
+  assert.equal(driverNote(old, oldXterm, [path("xterm-330")]), null);
 });
 
 // Checks that a program older than the newest driver's glibc gets the
@@ -80,22 +84,25 @@ test("an X11 program that links libglvnd gets the driver", () => {
 // below 2.42 (a string comparison would not).
 test("a program older than a driver's glibc gets an older driver", () => {
   const result = chooseDriver(glProgram("2.40-66", "14.2.1"), DRIVERS);
-  assert.equal(result.choice, DriverChoice.ADD);
+  assert.equal(result.choice, DriverChoice.FITS);
   assert.equal(result.driver, OLD);
 });
 
-// Checks that a driver built against a newer glibc than the program's
-// is never chosen, and that the page says why.
-test("a program older than every driver gets none, and a note", () => {
-  const result = chooseDriver(glProgram("2.37-45", "12.3.0"), DRIVERS);
+// Checks that a program older than every driver still gets the newest,
+// which it fails to load the way it would fail with none, and that the
+// page says why.
+test("a program older than every driver gets the newest, and a note", () => {
+  const closure = glProgram("2.37-45", "12.3.0");
+  const result = chooseDriver(closure, DRIVERS);
   assert.equal(result.choice, DriverChoice.NONE_FITS);
-  assert.match(driverNote(result), /glibc 2\.37/);
+  assert.equal(result.driver, NEW);
+  assert.match(driverNote(result, closure, GL_ROOTS), /glibc 2\.37/);
 });
 
 // Checks the libstdc++ side: a program whose closure carries an older
 // gcc runtime than the driver was built with may have loaded that older
-// libstdc++ first, so the driver is not chosen even when glibc fits.
-test("a program with an older gcc runtime does not get a newer driver", () => {
+// libstdc++ first, so the driver does not fit even when glibc does.
+test("a program with an older gcc runtime does not fit a newer driver", () => {
   const result = chooseDriver(glProgram("2.42-84", "14.2.1"), [NEW]);
   assert.equal(result.choice, DriverChoice.NONE_FITS);
 });
@@ -106,44 +113,61 @@ test("a program with no gcc runtime is judged by glibc alone", () => {
   const closure = glProgram("2.42-84", "15.3.0").filter(
     (b) => !b.includes("gcc"),
   );
-  assert.equal(chooseDriver(closure, [NEW]).choice, DriverChoice.ADD);
+  assert.equal(chooseDriver(closure, [NEW]).choice, DriverChoice.FITS);
 });
 
-// Checks the cases where nothing is added: no GL program, a Mesa the
-// reader selected (which is how a reader opts out of the page's), and a
-// site that publishes no driver.
-test("nothing is added where nothing is needed or a Mesa is selected", () => {
-  const noGl = [
-    path("foot-1.28.0"),
-    path("wayland-1.24.0"),
-    path("glibc-2.42-84"),
+// Checks that a Mesa in a program's closure is not a Mesa the reader
+// selected. mesa-demos 8.5.0's closure holds mesa-22.3.7-drivers and
+// mesa-22.3.7-osmesa; taking them for a selected Mesa silenced the
+// note, and the page downloaded 148.7 MB of them with the selection. A
+// Mesa among the selected roots is the reader's opt-out and silences
+// the note.
+test("a Mesa only in a program's closure is not a selected Mesa", () => {
+  const demos = [
+    path("mesa-demos-8.5.0"),
+    path("wayland-1.21.0"),
+    path("libglvnd-1.6.0"),
+    path("mesa-22.3.7-drivers"),
+    path("mesa-22.3.7-osmesa"),
+    path("glibc-2.35-224"),
+    path("gcc-12.2.0-lib"),
   ];
-  assert.equal(chooseDriver(noGl, DRIVERS).choice, DriverChoice.NOT_NEEDED);
-  assert.equal(driverNote(chooseDriver(noGl, DRIVERS)), null);
+  const result = chooseDriver(demos, DRIVERS);
+  assert.equal(result.choice, DriverChoice.NONE_FITS);
+  assert.equal(result.driver, NEW);
+  assert.match(
+    driverNote(result, demos, [path("mesa-demos-8.5.0")]),
+    /glibc 2\.35/,
+  );
 
-  const withMesa = [...glProgram("2.42-84", "15.3.0"), path("mesa-26.3.1")];
-  assert.equal(chooseDriver(withMesa, DRIVERS).choice, DriverChoice.PRESENT);
+  const selected = [path("mesa-demos-8.5.0"), path("mesa-22.3.7-drivers")];
+  assert.equal(driverNote(result, demos, selected), null);
+});
 
-  const unpublished = chooseDriver(glProgram("2.42-84", "15.3.0"), []);
+// Checks a site that publishes no driver: nothing is linked, and a
+// selection that draws with GL is told to select a Mesa.
+test("a site with no driver links none, and says so", () => {
+  const closure = glProgram("2.42-84", "15.3.0");
+  const unpublished = chooseDriver(closure, []);
   assert.equal(unpublished.choice, DriverChoice.NONE_PUBLISHED);
-  assert.match(driverNote(unpublished), /mesa/);
+  assert.equal(unpublished.driver, null);
+  assert.match(driverNote(unpublished, closure, GL_ROOTS), /mesa/);
 });
 
 // Checks a GL program added to a guest that already has the site's
 // driver: the driver is held to the program's glibc and gcc as at a
-// fresh boot, rather than taken for a Mesa the reader selected. An
-// added program older than the driver gets the note a fresh boot
-// gives, and a closure the driver fits keeps the driver it has.
+// fresh boot. An added program older than the driver gets the note a
+// fresh boot gives, and a closure the driver fits gets none.
 test("the site's driver in a running guest is checked against added programs", () => {
-  const driver = NEW.storePath.slice("/nix/store/".length);
-  const booted = [...glProgram("2.42-84", "15.3.0"), driver];
+  const booted = glProgram("2.42-84", "15.3.0");
+  const withOld = [...booted, path("glibc-2.37-45")];
 
-  const added = chooseDriver([...booted, path("glibc-2.37-45")], [NEW]);
+  const added = chooseDriver(withOld, [NEW]);
   assert.equal(added.choice, DriverChoice.NONE_FITS);
-  assert.match(driverNote(added), /glibc 2\.37/);
+  assert.match(driverNote(added, withOld, GL_ROOTS), /glibc 2\.37/);
 
   const kept = chooseDriver(booted, [NEW]);
-  assert.equal(kept.choice, DriverChoice.ADD);
+  assert.equal(kept.choice, DriverChoice.FITS);
   assert.equal(kept.driver, NEW);
 });
 
@@ -153,7 +177,7 @@ test("the site's driver in a running guest is checked against added programs", (
 test("a closure with two glibcs is judged by the older", () => {
   const mixed = [...glProgram("2.42-84", "15.3.0"), path("glibc-2.40-66")];
   const result = chooseDriver(mixed, DRIVERS);
-  assert.equal(result.choice, DriverChoice.ADD);
+  assert.equal(result.choice, DriverChoice.FITS);
   assert.equal(result.driver, OLD);
 });
 
@@ -162,7 +186,15 @@ test("a closure with two glibcs is judged by the older", () => {
 test("a driver with no gcc floor is judged by glibc alone", () => {
   const plain = { ...NEW, gcc: null };
   const result = chooseDriver(glProgram("2.42-84", "9.3.0"), [plain]);
-  assert.equal(result.choice, DriverChoice.ADD);
+  assert.equal(result.choice, DriverChoice.FITS);
+});
+
+// Checks the hint that turns glamor on for the X server: a selection
+// that links libglvnd may draw with GLX, which needs it, and xterm,
+// which links no libglvnd, starts the X server without it.
+test("a selection draws with GL when it links libglvnd", () => {
+  assert.equal(drawsWithGl(glProgram("2.42-84", "15.3.0")), true);
+  assert.equal(drawsWithGl([path("xterm-412"), path("libx11-1.8.14")]), false);
 });
 
 // Checks that reading the manifest tells the substituters which paths
@@ -189,13 +221,4 @@ test("the manifest's paths are asked of the site alone", async () => {
   assert.equal(await holdsPath(served, readSubstituters()), true);
 
   assert.deepEqual(asked.slice(1), [`${SITE_CACHE_URL}/${served}.narinfo`]);
-});
-
-// Checks which store paths count as a GL driver: nixpkgs' Mesa and the
-// site's, and not the Mesa programs or libraries named after it.
-test("a Mesa is a GL driver path, and mesa-demos is not", () => {
-  assert.equal(isGlDriverPath(path("mesa-26.1.8")), true);
-  assert.equal(isGlDriverPath(path("mesa-virgl-26.2.2")), true);
-  assert.equal(isGlDriverPath(path("mesa-demos-9.0.0")), false);
-  assert.equal(isGlDriverPath(path("libglvnd-1.7.0")), false);
 });

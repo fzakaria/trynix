@@ -103,7 +103,8 @@ jobs:
       # reaches: the relay the page starts in the guest, wland's
       # compositor on the page, kwshm for foot's pixels, for es2gears
       # the site's GL driver, the guest's virtio-gpu device and the
-      # page's GL renderer, and for xterm the X server the page adds. A
+      # page's GL renderer, for xterm the X server every guest has, and
+      # for extremetuxracer both, through GLX on a glamor Xwayland. A
       # shell appears with every one of those broken. The runner has no
       # GPU, so Chromium draws WebGL with SwiftShader (--gpu software).
       # Needs the network, as above.

@@ -1,64 +1,60 @@
-// Which GL driver the page adds to a selection with a GL program.
+// Which of the site's GL drivers the guest links, and what the page
+// says when the driver is too new for the selection.
 //
 // nixpkgs' GL programs link libglvnd, which loads the system's driver
 // at run time from /run/opengl-driver. The guest has none of its own,
-// so when a selection holds a Wayland or X11 program that links
-// libglvnd and no Mesa, the page adds one: Mesa with the virgl driver
-// alone (nix/mesa-virgl.nix), which the site serves from its own binary
-// cache beside cache.nixos.org (docs/gui.md). An X11 program draws
-// through the driver's GLX on the page's X server (x11.js).
+// so the page links the site's: Mesa with the virgl driver alone
+// (nix/mesa-virgl.nix), which the site serves from its own binary cache
+// beside cache.nixos.org (docs/gui.md). The link is there from the
+// boot, in every guest, and the driver's closure is fetched only once a
+// program looks inside it (lazy.js, capability), so a guest that draws
+// no GL pays nothing for it. An X11 program draws through the driver's
+// GLX on the page's X server.
 //
 // The driver is loaded into the program's process, so the program's
 // glibc and libstdc++ are the ones it runs against. A Mesa built
 // against a newer glibc asks for symbol versions the program's glibc
 // does not have, and fails to load; one built with a newer gcc asks
 // libstdc++ for versions an older one, already loaded by a C++
-// program, lacks. The program's closure says which of each it has (its
-// glibc and gcc runtime store paths), and the site's manifest says
-// which each driver was built with, so the page picks the newest driver
-// that is no newer than the program on either count.
+// program, lacks. Such a program fails as it would with no driver at
+// all: libglvnd takes a vendor that does not load for no vendor. The
+// program's closure says which glibc and gcc it has (its glibc and gcc
+// runtime store paths), and the site's manifest says which each driver
+// was built with, so the page links the newest driver that is no newer
+// than the program on either count, and tells the reader when none is.
 //
-// A reader who selects a Mesa of their own gets that one instead: the
-// page adds nothing where the selection already holds a Mesa. The
-// site's own driver is not such a Mesa. A guest the page gave it at the
-// boot still has it when a program is added, and the added program may
-// be older than the driver; the driver is held to the whole closure
-// again, as a fresh boot of it would be.
+// A reader who selects a Mesa of their own gets that one instead
+// (unkernel.js links a selected path that holds Mesa's EGL vendor file
+// over the site's), and no note.
 
-import { speaksWayland } from "./gui.js";
 import { siteManifest } from "./substituters.js";
 import { compareVersions as compare } from "./version.js";
-import { speaksX11 } from "./x11.js";
 
-// What the chooser decided.
+// How the published drivers fit a selection.
 export const DriverChoice = Object.freeze({
-  // No Wayland or X11 program in the selection loads GL through
-  // libglvnd.
-  NOT_NEEDED: "not-needed",
-  // The selection already holds a Mesa.
-  PRESENT: "present",
-  // Add `driver`.
-  ADD: "add",
-  // Every published driver is newer than the program's glibc or gcc.
+  // `driver` is the newest no newer than the selection's glibc and gcc.
+  FITS: "fits",
+  // Every published driver is newer than the selection's glibc or gcc;
+  // `driver` is the newest, which an older program fails to load.
   NONE_FITS: "none-fits",
   // The site publishes no driver.
   NONE_PUBLISHED: "none-published",
 });
 
 // Store basenames, by the nixpkgs package each one is. Mesa covers
-// nixpkgs' own (mesa-26.3.1) and the site's (mesa-virgl-26.2.2).
+// nixpkgs' own in any output (mesa-26.3.1, mesa-22.3.7-drivers) and the
+// site's (mesa-virgl-26.2.2).
 const GLVND_PATH = /^[0-9a-z]{32}-libglvnd-\d/;
 const MESA_PATH = /^[0-9a-z]{32}-mesa-(virgl-)?\d/;
 const GLIBC_PATH = /^[0-9a-z]{32}-glibc-(\d+(?:\.\d+)*)/;
 const GCC_LIB_PATH = /^[0-9a-z]{32}-gcc-(\d+(?:\.\d+)*)-lib$/;
 
-const STORE_PREFIX = "/nix/store/";
-
-// Whether a store basename is a Mesa, which the guest may take as its
-// GL driver. A lazily served boot fetches these with the selection
-// (app.js), since the guest links a driver only once it has seen the
-// driver's files.
-export const isGlDriverPath = (basename) => MESA_PATH.test(basename);
+// Whether a closure's basenames hold libglvnd, through which nixpkgs'
+// programs load GL: a hint that the selection draws with GL, which
+// turns glamor on for the X server (gui.js) and makes the driver's
+// note worth giving.
+export const drawsWithGl = (basenames) =>
+  basenames.some((basename) => GLVND_PATH.test(basename));
 
 // The oldest version among a closure's paths of one package, or null.
 // A selection can mix nixpkgs revisions, so a closure can hold two
@@ -75,60 +71,57 @@ function oldestIn(basenames, pattern) {
   return oldest;
 }
 
-// What to do about a GL driver for a closure (`basenames`), given the
-// drivers the site publishes, each { storePath, glibc, gcc }: glibc is
-// the newest GLIBC_ version the driver's closure asks for, gcc the
-// oldest gcc whose libstdc++ has every GLIBCXX_ version it asks for,
-// or null when it links no libstdc++. Returns
-// { choice }, with `driver` for ADD and the program's `glibc` and `gcc`
-// for NONE_FITS.
-export function chooseDriver(basenames, drivers) {
-  if (
-    !(speaksWayland(basenames) || speaksX11(basenames)) ||
-    !basenames.some((basename) => GLVND_PATH.test(basename))
-  ) {
-    return { choice: DriverChoice.NOT_NEEDED };
-  }
-
-  // A Mesa in the closure that the site does not publish is one the
-  // reader selected.
-  const published = new Set(
-    drivers.map((driver) => driver.storePath.slice(STORE_PREFIX.length)),
+// The newest of `drivers` by the glibc it was built against.
+const newestOf = (drivers) =>
+  drivers.reduce((best, driver) =>
+    compare(driver.glibc, best.glibc) > 0 ? driver : best,
   );
-  if (
-    basenames.some(
-      (basename) => MESA_PATH.test(basename) && !published.has(basename),
-    )
-  ) {
-    return { choice: DriverChoice.PRESENT };
-  }
+
+// Which driver to link for a closure (`basenames`), given the drivers
+// the site publishes, each { storePath, glibc, gcc }: glibc is the
+// newest GLIBC_ version the driver's closure asks for, gcc the oldest
+// gcc whose libstdc++ has every GLIBCXX_ version it asks for, or null
+// when it links no libstdc++. Returns { choice, driver }, driver null
+// for NONE_PUBLISHED, with the closure's `glibc` and `gcc` for
+// NONE_FITS.
+export function chooseDriver(basenames, drivers) {
   if (drivers.length === 0) {
-    return { choice: DriverChoice.NONE_PUBLISHED };
+    return { choice: DriverChoice.NONE_PUBLISHED, driver: null };
   }
 
   // A closure with no gcc runtime has loaded no libstdc++ before the
   // driver, which then brings its own, and a driver with no gcc floor
-  // links none: either way glibc alone decides.
+  // links none: either way glibc alone decides. A closure with no glibc
+  // (static programs alone) fits any driver.
   const glibc = oldestIn(basenames, GLIBC_PATH);
   const gcc = oldestIn(basenames, GCC_LIB_PATH);
   const fits = drivers.filter(
     (driver) =>
-      glibc !== null &&
-      compare(driver.glibc, glibc) <= 0 &&
+      (glibc === null || compare(driver.glibc, glibc) <= 0) &&
       (driver.gcc === null || gcc === null || compare(driver.gcc, gcc) <= 0),
   );
   if (fits.length === 0) {
-    return { choice: DriverChoice.NONE_FITS, glibc, gcc };
+    return {
+      choice: DriverChoice.NONE_FITS,
+      driver: newestOf(drivers),
+      glibc,
+      gcc,
+    };
   }
-
-  const newest = fits.reduce((best, driver) =>
-    compare(driver.glibc, best.glibc) > 0 ? driver : best,
-  );
-  return { choice: DriverChoice.ADD, driver: newest };
+  return { choice: DriverChoice.FITS, driver: newestOf(fits) };
 }
 
-// What the page tells the reader about a choice, or null.
-export function driverNote(result) {
+// What the page tells the reader about a choice for a closure
+// (`basenames`) and the roots the reader selected, or null. Only a
+// selection that draws with GL hears of the driver, and one that
+// selected a Mesa of its own has opted out of the site's.
+export function driverNote(result, basenames, roots) {
+  if (!drawsWithGl(basenames)) {
+    return null;
+  }
+  if (roots.some((basename) => MESA_PATH.test(basename))) {
+    return null;
+  }
   if (result.choice === DriverChoice.NONE_PUBLISHED) {
     return "these programs can draw with GL, and nothing selected provides a driver: add mesa for one";
   }
