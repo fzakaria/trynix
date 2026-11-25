@@ -8,96 +8,32 @@
 
 const LIMIT = 500;
 
-// How many of the last lines a message may repeat to be counted
-// instead of taking a line, and so the most different messages one run
-// counts. A guest GL context the renderer has given up on logs the
-// renderer's refusal and the kernel's failed submit in turn, several
-// times a second, and a third message once a second among them.
-// Counting only a message the same as the one before it never merged
-// them: they filled all LIMIT lines in seconds and pushed out the first
-// lines of the burst, which say why. Counting only a pair that
-// alternates still gave the three of them three new lines a second.
-const RUN_LIMIT = 4;
-
 const lines = [];
 const listeners = new Set();
 
-// The messages of the last RUN_LIMIT lines, newest last, each with the
-// time its line was given. A message the same as one of them starts a
-// run of that message and those after it.
-let recent = [];
-
-// The run being counted, or null: its messages, how many times any of
-// them has come since the run began, when it began, and the log's last
-// line as it was then, which the count is put after.
-//
-// A run is counted rather than given lines: a guest retrying a host
-// its relay refuses logs the same line several times a second, and in
-// a page nested inside another trynix guest that once filled all
-// LIMIT lines and pushed out everything that said what had gone
-// before. Its messages are counted in whatever order they come, so a
-// message that joins a flood now and then is counted with it once it
-// has had one line.
-let run = null;
+// The last message, how many times in a row it came, and when it first
+// did. A message the same as the one before it is counted on that
+// one's line rather than given its own: a guest retrying a host its
+// relay refuses logs the same line several times a second, and in a
+// page nested inside another trynix guest that once filled all LIMIT
+// lines and pushed out everything that said what had gone before.
+let last = null;
 
 // A line, with the seconds since the page loaded so the shape of a
 // slow boot is visible in the transcript.
 export function log(message) {
   const at = (performance.now() / 1000).toFixed(1).padStart(6);
 
-  // A message of the run: counted on the run's last line.
-  if (run !== null && run.messages.has(message)) {
-    count();
+  // The same message again: the last line counts it.
+  if (last !== null && last.message === message) {
+    last.count += 1;
+    lines[lines.length - 1] =
+      `${at}s  ${message} (${last.count} times since ${last.at}s)`;
+    tell();
     return;
   }
 
-  // Any other message ends the run. The run's messages stay in
-  // `recent`, so when the run's messages come back after this one, it
-  // and they start one run together.
-  run = null;
-
-  // The same as the message of one of the last RUN_LIMIT lines: that
-  // line and those after it start a run, and this message is the
-  // run's first.
-  const index = recent.findIndex((entry) => entry.message === message);
-  if (index >= 0) {
-    const start = recent.slice(index);
-    run = {
-      messages: new Set(start.map((entry) => entry.message)),
-      count: 0,
-      at: index === recent.length - 1 ? start[0].at : at.trim(),
-      line: lines[lines.length - 1],
-    };
-    count();
-    return;
-  }
-
-  // Any other message takes a line of its own.
-  add(message, at);
-}
-
-// Count one more message of the run, and say on the log's last line,
-// which is the run's last, how many have come and since when. One
-// message repeated says how many times it came in all, its first line
-// included.
-function count() {
-  run.count += 1;
-
-  const said =
-    run.messages.size === 1
-      ? `${run.count + 1} times since ${run.at}s`
-      : `${run.count} more of these ${run.messages.size} lines since ${run.at}s`;
-  lines[lines.length - 1] = `${run.line} (${said})`;
-  tell();
-}
-
-// Give `message`, which came at `at`, a line of its own.
-function add(message, at) {
-  recent.push({ message, at: at.trim() });
-  if (recent.length > RUN_LIMIT) {
-    recent.shift();
-  }
-
+  last = { message, count: 1, at: at.trim() };
   lines.push(`${at}s  ${message}`);
   if (lines.length > LIMIT) {
     lines.shift();
