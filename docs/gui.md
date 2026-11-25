@@ -628,9 +628,11 @@ https://trynix.dev/?pkg=vulkan-tools&vk=1&boot=1&run=vulkaninfo+--summary
 
 It is off unless the link has `vk=1`
 ([site/js/vulkan.js](../site/js/vulkan.js)), which the Vulkan box under
-Settings writes for the next boot. The box also says whether the
-browser gives WebGPU an adapter; the page asks the first time the
-Settings lane opens, never at a boot. With it on, mpv's first
+Settings writes for the next boot. The box also names the browser's
+WebGPU adapter by vendor and architecture, says when it draws in
+software, and offers On only when there is one; the page asks the
+first time the Settings lane opens, never at a boot. A `vk=1` link
+boots with Vulkan either way. With it on, mpv's first
 frame came 3 s later, for nothing: mpv tries Vulkan before GL, fails on
 kwvk, and starts the X server on the way (see [Programs that prefer
 Vulkan](#programs-that-prefer-vulkan)). Off, the guest is as it was
@@ -668,8 +670,11 @@ With `vk=1` every shell gets two variables (`sessionEnv` in
 ### Which browsers have an adapter
 
 The renderer needs a WebGPU adapter. Chrome has one on macOS, Windows,
-ChromeOS and Android. Chrome on Linux has `navigator.gpu` and gives no
-adapter unless started with flags; `gui-test` starts Chromium with
+ChromeOS and Android. On Linux it depends on the GPU and the driver:
+Chrome 157 gave a hardware adapter for an AMD Radeon 780M on Mesa
+with no WebGPU flags, on a profile with `#ignore-gpu-blocklist` on;
+without that override it is untested. Headless Chromium 152 on Linux
+gives no adapter unless started with flags; `gui-test` starts it with
 the ones unkernel's own tests use (`--enable-unsafe-webgpu`,
 `--use-vulkan=swiftshader`, `--use-webgpu-adapter=swiftshader` and the
 `Vulkan` and `WebGPU` features), which give any host SwiftShader's
@@ -769,8 +774,8 @@ no dmabuf support`, and draws with GL; its first frame did not move.
 Its instance stays open while the program runs: one stream to the
 renderer, and the renderer's WebGPU device kept on the page.
 
-Without an adapter (Chromium's WebGPU off, as Chromium on Linux has
-it) both fail at the instance, as before kwvk, no X server starts, and
+Without an adapter (Chromium's WebGPU off, as headless Chromium on
+Linux has it without flags) both fail at the instance, as before kwvk, no X server starts, and
 neither moved: mpv 4.3 and 5.0 s against 4.3 and 4.3 s,
 gnome-calculator 16.8 s against 16.7 and 16.8 s.
 

@@ -124,7 +124,13 @@ import {
   relayOf,
 } from "./network.js";
 import { Sound } from "./sound.js";
-import { adapterNote, pickVulkan, probeAdapter, Vulkan } from "./vulkan.js";
+import {
+  adapterNote,
+  canChooseOn,
+  pickVulkan,
+  probeAdapter,
+  Vulkan,
+} from "./vulkan.js";
 import { BootState, bootButtonOf } from "./boot-button.js";
 
 const STORE_PREFIX = "/nix/store/";
@@ -843,9 +849,9 @@ function wireVulkanChoice() {
 wireVulkanChoice();
 
 // Ask this browser's WebGPU for an adapter, once, the first time the
-// Settings lane opens on the guest that has Vulkan, and say what it
-// answered. Never at a boot: the SDK asks for its own adapter on the
-// guest's first VkInstance.
+// Settings lane opens on the guest that has Vulkan, say what it
+// answered, and offer On only when there is one. Never at a boot: the
+// SDK asks for its own adapter on the guest's first VkInstance.
 let adapterAsked = false;
 
 function probeVulkan() {
@@ -855,6 +861,8 @@ function probeVulkan() {
   adapterAsked = true;
   probeAdapter(navigator.gpu).then((adapter) => {
     adapterSaid = adapterNote(adapter);
+    vulkanChoice.querySelector(`input[value="${Vulkan.ON}"]`).disabled =
+      !canChooseOn(adapter.kind);
     showVulkanStatus();
   });
 }

@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
   Adapter,
   adapterNote,
+  canChooseOn,
   kernelVulkan,
   pickVulkan,
   probeAdapter,
@@ -57,26 +58,73 @@ test("the link's position wins, else off", () => {
 });
 
 // Checks the Settings lane's probe of this browser's WebGPU with stand-in
-// navigator.gpu objects: an adapter, null for none, a request that
+// navigator.gpu objects: a hardware adapter named by its vendor and
+// architecture, SwiftShader's fallback adapter in both the current and
+// the older place browsers mark it, null for none, a request that
 // throws, and no navigator.gpu at all.
-test("the probe says whether WebGPU gives an adapter", async () => {
+test("the probe names the adapter and says whether it is software", async () => {
   const gives = (adapter) => ({ requestAdapter: async () => adapter });
-  assert.equal(await probeAdapter(gives({})), Adapter.PRESENT);
-  assert.equal(await probeAdapter(gives(null)), Adapter.ABSENT);
-  assert.equal(
+
+  assert.deepEqual(
+    await probeAdapter(
+      gives({ info: { vendor: "amd", architecture: "rdna-3" } }),
+    ),
+    { kind: Adapter.HARDWARE, name: "amd rdna-3" },
+  );
+  assert.deepEqual(
+    await probeAdapter(
+      gives({
+        info: {
+          vendor: "google",
+          architecture: "swiftshader",
+          isFallbackAdapter: true,
+        },
+      }),
+    ),
+    { kind: Adapter.SOFTWARE, name: "google swiftshader" },
+  );
+  assert.deepEqual(
+    await probeAdapter(
+      gives({ isFallbackAdapter: true, info: { vendor: "google" } }),
+    ),
+    { kind: Adapter.SOFTWARE, name: "google" },
+  );
+
+  const none = { kind: Adapter.ABSENT, name: "" };
+  assert.deepEqual(await probeAdapter(gives(null)), none);
+  assert.deepEqual(
     await probeAdapter({
       requestAdapter: async () => {
         throw new Error("blocked");
       },
     }),
-    Adapter.ABSENT,
+    none,
   );
-  assert.equal(await probeAdapter(undefined), Adapter.ABSENT);
+  assert.deepEqual(await probeAdapter(undefined), none);
 });
 
-// Checks what the status line says for each probe result: without an
-// adapter it warns that programs will find no Vulkan device.
-test("the status line warns when there is no adapter", () => {
-  assert.match(adapterNote(Adapter.PRESENT), /has a WebGPU adapter/);
-  assert.match(adapterNote(Adapter.ABSENT), /no Vulkan device/);
+// Checks what the status line says for each kind of adapter: the
+// adapter's name, a warning that a software one is slow, and without
+// one that programs would find no Vulkan device.
+test("the status line names the adapter and warns about software", () => {
+  assert.match(
+    adapterNote({ kind: Adapter.HARDWARE, name: "amd rdna-3" }),
+    /amd rdna-3/,
+  );
+  assert.match(
+    adapterNote({ kind: Adapter.SOFTWARE, name: "google swiftshader" }),
+    /google swiftshader.*slow/,
+  );
+  assert.match(
+    adapterNote({ kind: Adapter.ABSENT, name: "" }),
+    /no Vulkan device/,
+  );
+});
+
+// Checks which adapters let the reader choose On: any adapter, hardware
+// or software, and not the lack of one.
+test("On can be chosen only with an adapter", () => {
+  assert.equal(canChooseOn(Adapter.HARDWARE), true);
+  assert.equal(canChooseOn(Adapter.SOFTWARE), true);
+  assert.equal(canChooseOn(Adapter.ABSENT), false);
 });

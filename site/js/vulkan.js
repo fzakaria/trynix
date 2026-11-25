@@ -32,37 +32,61 @@ export function pickVulkan({ linked }) {
   return { mode: Vulkan.OFF, why: "the default" };
 }
 
-// Whether this browser's WebGPU gives the page an adapter, which kwvk's
-// renderer needs.
+// What this browser's WebGPU gives the page, which kwvk's renderer
+// draws with: a GPU, a software adapter such as SwiftShader, which works
+// but is slow, or nothing.
 export const Adapter = Object.freeze({
-  PRESENT: "present",
+  HARDWARE: "hardware",
+  SOFTWARE: "software",
   ABSENT: "absent",
 });
 
-// Ask `gpu`, the browser's navigator.gpu or undefined, for an adapter.
-// A browser with no WebGPU, one that gives none, and a request that
-// throws all leave the renderer without one.
+// What the probe says when there is no adapter.
+const NO_ADAPTER = Object.freeze({ kind: Adapter.ABSENT, name: "" });
+
+// Ask `gpu`, the browser's navigator.gpu or undefined, for an adapter,
+// and return { kind, name }: an Adapter and the adapter's vendor and
+// architecture as GPUAdapterInfo gives them. A browser with no WebGPU,
+// one that gives none, and a request that throws all leave the renderer
+// without one. Browsers mark a fallback adapter in its info now and on
+// the adapter itself before.
 export async function probeAdapter(gpu) {
   if (gpu === undefined) {
-    return Adapter.ABSENT;
+    return NO_ADAPTER;
   }
+
+  let adapter;
   try {
-    return (await gpu.requestAdapter()) === null
-      ? Adapter.ABSENT
-      : Adapter.PRESENT;
+    adapter = await gpu.requestAdapter();
   } catch {
-    return Adapter.ABSENT;
+    return NO_ADAPTER;
   }
+  if (adapter === null) {
+    return NO_ADAPTER;
+  }
+
+  const info = adapter.info ?? {};
+  const fallback = info.isFallbackAdapter ?? adapter.isFallbackAdapter ?? false;
+  const name = [info.vendor, info.architecture].filter(Boolean).join(" ");
+  return { kind: fallback ? Adapter.SOFTWARE : Adapter.HARDWARE, name };
 }
 
 // What the Settings lane says about the probe's answer.
-const ADAPTER_NOTES = {
-  [Adapter.PRESENT]: "This browser has a WebGPU adapter for Vulkan programs.",
-  [Adapter.ABSENT]:
-    "This browser gives WebGPU no adapter, so programs will find no Vulkan device.",
-};
+export function adapterNote({ kind, name }) {
+  switch (kind) {
+    case Adapter.HARDWARE:
+      return `Vulkan programs would draw on this browser's WebGPU adapter: ${name}.`;
+    case Adapter.SOFTWARE:
+      return `This browser's WebGPU adapter, ${name}, draws in software, so Vulkan programs would be slow.`;
+    default:
+      return "This browser gives WebGPU no adapter, so programs would find no Vulkan device.";
+  }
+}
 
-export const adapterNote = (adapter) => ADAPTER_NOTES[adapter];
+// Whether the reader can choose On: with no adapter, On would give
+// programs no Vulkan device, so the lane offers only Off. A link that
+// asks for Vulkan still boots with it, and its programs find no device.
+export const canChooseOn = (kind) => kind !== Adapter.ABSENT;
 
 // What createKernel gets for the switch at `vulkan`: nothing when off,
 // so the SDK starts no Vulkan host; when on, the vk option naming the
