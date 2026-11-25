@@ -33,6 +33,15 @@ or an addition that fails is answered with the error the page shows,
 so an agent can tell it failed; calling `boot` again retries a failed
 addition.
 
+A page holds one engine for its life, so it runs one boot at a time,
+and a boot that fails once its engine started cannot be retried in
+place. A `boot` call made while a boot is running answers at once that
+one is, and `page-state` says `booted: true` once its guest is up.
+After a boot that failed once its engine started, as one whose
+download failed does, `boot` answers that the boot failed with a link
+that boots the selection in a fresh page, and the button reads Start
+over and opens that link.
+
 Support is thin: ChatGPT Desktop ships WebMCP, Chrome and Edge have it
 behind an origin trial, Firefox and Safari have nothing. The page
 feature-detects `document.modelContext` and registers nothing where it

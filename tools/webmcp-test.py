@@ -79,14 +79,27 @@ REFUSAL_MESSAGE = "Failed to fetch"
 FAILED_ROW = "document.querySelector('#boot-progress .failed')?.textContent ?? ''"
 ADDITION_FAILED = "the addition failed: "
 
-# A boot that fails: once before its guest starts, with the second of
-# BOTH_VERSIONS refused as above, and once after, with the guest's link
-# of its store at /nix failing (BREAK_LINK). The boot tool's answer
-# opens with BOOT_NOT_STARTED or BOOT_FAILED, and carries the error.
-BOOT_NOT_STARTED = "the boot did not start: "
-BOOT_FAILED = "the boot failed after the guest started: "
+# A boot that fails once its engine started: once before its guest
+# starts, with the second of BOTH_VERSIONS refused as above, and once
+# after, with the guest's link of its store at /nix failing
+# (BREAK_LINK). The boot tool's answer opens with BOOT_FAILED, carries
+# the error, and names a link that boots the selection in a fresh page
+# (BOOT_PARAMETER). The page holds its engine for its life, so the next
+# boot call opens with LAST_BOOT_FAILED, and the button reads
+# START_OVER and opens a fresh page.
+BOOT_FAILED = "the boot failed: "
+LAST_BOOT_FAILED = "the last boot failed; "
+BOOT_PARAMETER = "boot=1"
+START_OVER = "Start over"
+BOOT_BUTTON = "document.getElementById('boot-button')"
 LINK_PROGRAM = "/bin/ln"
 LINK_ERROR = "ln: refused by webmcp-test"
+
+# Set on a page before its button is clicked, and gone from the page the
+# click opens.
+OLD_PAGE_MARK = "window.webmcpTestOldPage"
+# True once a guest is at its prompt: the veil over the terminal goes.
+AT_PROMPT = "document.getElementById('console-veil').hidden"
 
 # A real cachix cache and its key, used only to check that set-caches
 # takes them and puts them in the link. Nothing is fetched from it.
@@ -111,6 +124,7 @@ MISSING_LIMIT_SECONDS = 60
 REGISTER_LIMIT_SECONDS = 30
 REGISTER_POLL_SECONDS = 0.25
 BOOT_LIMIT_MS = 300000
+MS_PER_SECOND = 1000
 
 # The missing browser API, installed before any module runs. registerTool
 # keeps the whole descriptor; executeTool calls the page's own execute.
@@ -291,9 +305,10 @@ def await_tools(browser):
     return names
 
 
-def poll(browser, expression):
-    """Evaluate `expression`, awaited, until it is truthy or the limit passes."""
-    deadline = time.monotonic() + MISSING_LIMIT_SECONDS
+def poll(browser, expression, limit_seconds=MISSING_LIMIT_SECONDS):
+    """Evaluate `expression`, awaited, until it is truthy or
+    `limit_seconds` pass."""
+    deadline = time.monotonic() + limit_seconds
     while time.monotonic() < deadline:
         value = resolved(browser, expression)
         if value:
@@ -519,14 +534,53 @@ def check_retried_addition(browser, checks, base, mode):
         checks.equal("the added version runs", version_line(browser), VERSION_LINE.format(added))
 
 
+def await_new_page(browser):
+    """Wait until the tab holds a new page: OLD_PAGE_MARK, set on the
+    old one, is gone. Evaluated without awaiting, so a look that lands
+    while the old page goes answers None rather than failing."""
+    deadline = time.monotonic() + REGISTER_LIMIT_SECONDS
+    while time.monotonic() < deadline:
+        if browser.evaluate(f"{OLD_PAGE_MARK} === undefined"):
+            return True
+        time.sleep(REGISTER_POLL_SECONDS)
+    return False
+
+
+def check_start_over(browser, checks):
+    """Press the button on a page whose boot failed once its engine
+    started, and check that the fresh page it opens boots the selection
+    as it opens."""
+    print("the button, after the boot that failed")
+    browser.evaluate(f"{OLD_PAGE_MARK} = true")
+    browser.evaluate(f"{BOOT_BUTTON}.click()")
+    fresh = await_new_page(browser)
+    checks.true("the button opens a fresh page", fresh)
+    if not fresh:
+        return
+
+    await_tools(browser)
+    at_prompt = poll(browser, AT_PROMPT, limit_seconds=BOOT_LIMIT_MS / MS_PER_SECOND)
+    checks.true("the fresh page boots", at_prompt)
+    if not at_prompt:
+        return
+    result = json.loads(call(browser, "run-command", command=PACKAGE))
+    checks.equal("the booted package runs", result["output"], GREETING)
+
+
 def check_failed_boot(browser, checks, base):
-    """A boot that fails, before its guest starts and after.
+    """A boot that fails once its engine started, before its guest
+    starts and after.
 
     The boot tool has to say that the boot failed and why, as the
     progress row does. A boot that failed once the page had started its
     guest used to be answered "booted", and one that failed before
     that was answered with the status line, which by then describes the
     selection and not the error.
+
+    The engine stays in the page, so the button has to start over in a
+    fresh page, and the next boot call has to say the last one failed
+    rather than start a second engine. The fresh page has to boot: the
+    page's reboot used to reload the old address, which does not boot.
     """
     query = urllib.parse.urlencode({"engine": RETRY_ENGINE})
     booted, refused = BOTH_VERSIONS
@@ -541,8 +595,21 @@ def check_failed_boot(browser, checks, base):
         said = call(browser, "boot", timeout_ms=BOOT_LIMIT_MS)
         print(f"  {said}")
         checks.true("the NAR was refused", browser.evaluate("window.refuseTest.refused"))
-        checks.true("the boot tool says the boot did not start", said.startswith(BOOT_NOT_STARTED))
+        checks.true("the boot tool says the boot failed", said.startswith(BOOT_FAILED))
         checks.true("the boot tool says why", REFUSAL_MESSAGE in said)
+        checks.true("the boot tool names a link that boots", BOOT_PARAMETER in said)
+
+        # The engine started before the download failed, so this page
+        # cannot boot again.
+        checks.equal(
+            "the button starts over", browser.evaluate(f"{BOOT_BUTTON}.textContent"), START_OVER
+        )
+        checks.equal("the button is enabled", browser.evaluate(f"{BOOT_BUTTON}.disabled"), False)
+        said = call(browser, "boot")
+        print(f"  {said}")
+        checks.true("the next boot says the last one failed", said.startswith(LAST_BOOT_FAILED))
+        checks.true("the next boot names a link that boots", BOOT_PARAMETER in said)
+    check_start_over(browser, checks)
 
     print("a boot whose guest cannot link its store at /nix")
     with preloaded(browser, BREAK_LINK):

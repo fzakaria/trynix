@@ -118,8 +118,10 @@ to allow cross-origin reads for a page to fetch from it at all.
 `boot=1` works in any link. The page never adds it to the address bar
 itself, though: a link copied from there lands on the selection with
 the Boot button ready, rather than starting a download on open. The
-one link the page writes with it is its own "start over in a fresh
-VM" reload, where starting at once is the point.
+page writes it only where starting at once is the point: its own
+"start over in a fresh VM" reload, and after a boot that failed once
+its engine started, the Start over button and the link the boot tool
+answers with ([webmcp.md](webmcp.md)).
 
 `run=` is typed at the guest's shell once the guest is at its prompt,
 followed by Enter, as if the reader had typed it: it is echoed at the

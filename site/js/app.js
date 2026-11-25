@@ -126,6 +126,7 @@ import {
 } from "./network.js";
 import { Sound } from "./sound.js";
 import { rootRecord } from "./roots.js";
+import { BootState, bootButtonOf } from "./boot-button.js";
 
 const STORE_PREFIX = "/nix/store/";
 
@@ -168,6 +169,11 @@ const consoleTty = document.getElementById("console-tty");
 // What the console veil says once a boot has failed, in place of the
 // progress it was reporting.
 const BOOT_FAILED_NOTE = "boot failed";
+
+// How the boot tool answers a call made while a boot is under way. The
+// call starts nothing and waits for nothing.
+const BOOT_UNDER_WAY =
+  "a boot is already running; page-state says booted: true once its guest is up";
 
 // The selection: digest -> { digest, label, attr, version, storePath }.
 // A package chosen any of the three ways lands here in the same shape,
@@ -482,12 +488,20 @@ function missingNote(missing) {
   return `${NOT_FOUND}: ${missing.map((e) => e.label).join(", ")}`;
 }
 
-// The button offers a boot only when there is something to boot and no
-// cache has said it lacks any of it. One missing path fails the whole
-// closure walk. Adding a cache reprobes, and removing the chip redraws,
-// so either fix turns the button back on.
+// The button follows the page's boot (boot-button.js), and offers a
+// boot or an addition only when there is something to boot and no cache
+// has said it lacks any of it. Adding a cache reprobes, and removing the
+// chip redraws, so either fix turns the button back on. The link to
+// start over in a fresh VM shows beside a running guest.
 function refreshBootButton() {
-  bootButton.disabled = selection.size === 0 || unheld().length > 0;
+  const button = bootButtonOf({
+    state: bootState,
+    selected: selection.size,
+    unheld: unheld().length,
+  });
+  bootButton.textContent = button.label;
+  bootButton.disabled = button.disabled;
+  rebootLink.hidden = bootState !== BootState.RUNNING;
 }
 
 // The chips, the status line, and the address bar all describe the same
@@ -584,9 +598,10 @@ function wireMemoryChoice() {
     memory = { mib, why: "chosen in Settings" };
     linkedMemory = mib;
     history.replaceState(null, "", link());
-    memoryStatus.textContent = vmStarted
-      ? `${memoryLabel(mib)} from the next boot; this guest keeps what it booted with`
-      : "";
+    memoryStatus.textContent =
+      bootState === BootState.RUNNING
+        ? `${memoryLabel(mib)} from the next boot; this guest keeps what it booted with`
+        : "";
   });
 }
 wireMemoryChoice();
@@ -624,9 +639,10 @@ function wireCpuChoice() {
     cpus = { count, why: "chosen in Settings" };
     linkedCpus = count;
     history.replaceState(null, "", link());
-    cpuStatus.textContent = vmStarted
-      ? `${count} from the next boot; this guest keeps what it booted with`
-      : "";
+    cpuStatus.textContent =
+      bootState === BootState.RUNNING
+        ? `${count} from the next boot; this guest keeps what it booted with`
+        : "";
   });
 }
 wireCpuChoice();
@@ -644,9 +660,10 @@ function wireDownloadsChoice() {
     downloads = { mode, why: "chosen in Settings" };
     linkedDownloads = mode;
     history.replaceState(null, "", link());
-    downloadsStatus.textContent = vmStarted
-      ? "from the next boot; this guest keeps the way it started"
-      : "";
+    downloadsStatus.textContent =
+      bootState === BootState.RUNNING
+        ? "from the next boot; this guest keeps the way it started"
+        : "";
   });
 }
 wireDownloadsChoice();
@@ -688,7 +705,7 @@ function wireNetworkChoice() {
   const fromNextBoot = () =>
     [
       relayNote(),
-      vmStarted
+      bootState === BootState.RUNNING
         ? "From the next boot; this guest keeps the network it booted with."
         : "",
     ]
@@ -1193,7 +1210,9 @@ function renderClosure(closure) {
 // its worker pool and linear memory for the life of the page. So a
 // second boot restarts the page instead, at a URL that describes the
 // new selection and asks for it to start straight away.
-let vmStarted = false;
+//
+// Where the page's boot is (boot-button.js).
+let bootState = BootState.IDLE;
 let vm = null;
 // Everything the running guest already has, so a later addition only
 // fetches what is new.
@@ -1252,9 +1271,12 @@ function commandEntered(line) {
 // How the guest started, for the report.
 let bootMode = "not started";
 
+// Start over in a fresh page that boots the selection as it opens. The
+// link differs from the address, which lost boot=1 when the boot
+// started, so going there loads a new page. A reload called after it
+// cancelled that navigation and reloaded the old address.
 function reboot() {
   location.href = link({ boot: true });
-  location.reload();
 }
 
 // ---------- a closure served on first use ----------
@@ -1672,6 +1694,9 @@ async function boot() {
   const telemetry = createLoadTelemetry(entries, LoadOperation.BOOT);
   let stage = LoadStage.CLOSURE;
   let mode = BootMode.UNKNOWN;
+  // Whether this boot started its engine, which the page then holds for
+  // its life whether or not the guest runs.
+  let engineStarted = false;
 
   // The qemu engine is threaded, and its threads need SharedArrayBuffer,
   // which a browser only hands to a cross-origin isolated page. Say so
@@ -1698,6 +1723,10 @@ async function boot() {
     return status.textContent;
   }
 
+  // The boot is under way from here, before it waits on anything, so
+  // every redraw until its guest runs keeps the button disabled.
+  bootState = BootState.BOOTING;
+
   // The boot a link asked for has started: boot=1 leaves the address,
   // so a reload from here on offers the boot rather than starting a
   // second one, and the status line stops saying the boot waits.
@@ -1706,7 +1735,6 @@ async function boot() {
   render();
 
   bootSection.hidden = false;
-  bootButton.disabled = true;
   consoleVeil.hidden = false;
   consoleSpinner.hidden = false;
   consoleNote.textContent = "fetching…";
@@ -1783,6 +1811,7 @@ async function boot() {
     // waiting for the closure.
     let waiting = "booting";
     const vmPromise = startEngine((started) => {
+      engineStarted = true;
       mode = started.mode;
       bootMode = started.described;
       waiting = started.verb;
@@ -1846,7 +1875,7 @@ async function boot() {
     // The bar fills when the guest is at its prompt; until then the row
     // says what the guest is doing, not that it is done.
     vmRow.note(`${waiting}…`);
-    vmStarted = true;
+    bootState = BootState.RUNNING;
     mounted = closure;
 
     stage = LoadStage.GUEST;
@@ -1857,9 +1886,7 @@ async function boot() {
     reportSilent(vm, closure, roots);
     reportGl(gl.result);
     reportX11(x11.result);
-    bootButton.textContent = "Add to the running VM";
-    rebootLink.hidden = false;
-    bootButton.disabled = false;
+    refreshBootButton();
 
     await ready;
     reportCpus(vm);
@@ -1904,6 +1931,10 @@ async function boot() {
     log(`boot failed: ${err.message}`);
     const reason = String(err);
     vmRow.fail(reason);
+    // A boot that failed once its engine started leaves the engine in
+    // the page, which cannot start a second one, so the button starts
+    // over in a fresh page. One that failed before boots again here.
+    bootState = engineStarted ? BootState.FAILED : BootState.IDLE;
     // The error is on the progress row. The status line goes back to
     // describing the selection, which names any path no cache holds.
     render();
@@ -1912,14 +1943,19 @@ async function boot() {
     // rather than still fetching.
     consoleSpinner.hidden = true;
     consoleNote.textContent = BOOT_FAILED_NOTE;
-    refreshBootButton();
     return reason;
   }
 }
 
+// The button adds to a running guest, starts over in a fresh page after
+// a boot that failed once its engine started, and otherwise boots.
 bootButton.addEventListener("click", () => {
-  if (vmStarted) {
+  if (bootState === BootState.RUNNING) {
     addToRunningVM();
+    return;
+  }
+  if (bootState === BootState.FAILED) {
+    reboot();
     return;
   }
   boot();
@@ -2332,13 +2368,21 @@ if (!STORE_PATH.startsWith("__")) {
 
 // ---------- the tools an agent drives this page with ----------
 
+// How the boot tool tells an agent to start over after a boot that
+// failed once its engine started: a link that boots the selection in a
+// fresh page as it opens.
+function startOver() {
+  const fresh = new URL(link({ boot: true }), location.href).href;
+  return `open ${fresh} to start over in a fresh page`;
+}
+
 // The same operations the three lanes and the boot button perform,
 // named and given argument schemas so an agent can call them instead
 // of clicking (webmcp.js). Nothing new happens here: every one of
 // these is the function the reader's click already runs.
 const page = {
   state: () => ({
-    booted: vmStarted,
+    booted: bootState === BootState.RUNNING,
     bootMode,
     // The guest this page boots: packages resolve to builds for this
     // system, and a store path has to be one.
@@ -2391,13 +2435,25 @@ const page = {
   // caller knows it failed; a failed addition can be retried by calling
   // boot again.
   async boot() {
+    // A call made while a boot is under way answers at once.
+    if (bootState === BootState.BOOTING) {
+      return BOOT_UNDER_WAY;
+    }
+
+    // A boot that failed once its engine started left nothing running,
+    // and the next guest needs a fresh page, which the tool cannot open
+    // from inside this one.
+    if (bootState === BootState.FAILED) {
+      return `the last boot failed; ${startOver()}`;
+    }
+
     // The button is disabled for a path no cache holds, so the tool
     // answers the same way instead of downloading toward a failure.
     const missing = unheld();
     if (missing.length > 0) {
       return `the boot did not start: ${missingNote(missing)}`;
     }
-    if (vmStarted) {
+    if (bootState === BootState.RUNNING) {
       const failure = await addToRunningVM();
       if (failure !== null) {
         return `the addition failed: ${failure}; call boot again to retry it`;
@@ -2409,12 +2465,11 @@ const page = {
       return `booted; ${mounted.size} paths mounted`;
     }
 
-    // A boot can fail once the page has started the guest, as when the
-    // guest's store cannot be mounted or linked at /nix. The guest is
-    // there and the page takes the next call as an addition to it, so
-    // the answer says it had started.
-    if (vmStarted) {
-      return `the boot failed after the guest started: ${failure}`;
+    // A boot can fail once the page has started its engine, as when a
+    // download fails or the guest's store cannot be linked at /nix.
+    // Nothing runs after that, so the answer says how to start over.
+    if (bootState === BootState.FAILED) {
+      return `the boot failed: ${failure}; ${startOver()}`;
     }
     return `the boot did not start: ${failure}`;
   },

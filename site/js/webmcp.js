@@ -150,7 +150,7 @@ export function toolsFor(page, engine) {
 
     {
       name: "boot",
-      description: `Boot the selection in the tab: fetch its closure from cache.nixos.org into ${MACHINES[engine]} and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. A boot or an addition that fails says so and why, and calling boot again retries a failed addition.`,
+      description: `Boot the selection in the tab: fetch its closure from cache.nixos.org into ${MACHINES[engine]} and wait for a shell. Takes a few seconds on a warm cache and much longer on a cold one. Once a guest is running, selecting more packages and calling boot again adds them without rebooting. A boot or an addition that fails says so and why, and calling boot again retries a failed addition. A call made while a boot is running says so at once. A boot that fails once its engine started leaves no guest running, and its answer names a link that boots the selection in a fresh page.`,
       inputSchema: { type: "object", properties: {} },
       execute: async () => text(await page.boot()),
     },
