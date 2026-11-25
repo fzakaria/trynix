@@ -1005,7 +1005,8 @@ BY 3.0, Blender Foundation) at 1080p in H.264, 22.7 MB, fetched with
 1.0.0. jsDelivr sends CORS headers and sent it at 5 to 16 MB/s. mpv
 decodes on the CPU unless told `--hwdec=vaapi`;
 `--video-sync=desync` keeps it from dropping frames to follow the
-guest's audio clock, as unkernel's own page found.
+guest's audio clock, as unkernel's own page found. The Try link "a film
+in mpv" plays the clip that way, looping.
 
 nixpkgs' libva loads the driver. kwva exports `__vaDriverInit_1_22`,
 which libva 2.22 and later take (the index's mpv 0.42 brings libva

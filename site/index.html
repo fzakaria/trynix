@@ -234,6 +234,18 @@
         title="a video player drawing a fractal"
         >mpv</a
       > ·
+      <!-- A film in mpv, decoded by the browser's own video decoder
+           through the guest's VA-API (docs/gui.md, "Video"): the first
+           30 seconds of Big Buck Bunny, (c) 2008 Blender Foundation,
+           www.bigbuckbunny.org, CC BY 3.0, at 1080p in H.264, 22.7 MB.
+           The link fetches it (file=) from jsDelivr's copy of the npm
+           package video-media-samples 1.0.0, which never changes and
+           sends CORS headers. -->
+      <a
+        href="?pkg=mpv&file=https://cdn.jsdelivr.net/npm/video-media-samples@1.0.0/big-buck-bunny-1080p-30sec.mp4%20sha256-B7dWpMe0gYKXdmRcFTFnyhTJ34At2%2Bp9/9o9gXqlJho%3D&engine=unkernel&run=mpv%20--hwdec=vaapi%20--vo=dmabuf-wayland%20--video-sync=desync%20--loop%20/nix/store/45vnxpjln5923dd0vv3k6138d0gvgi0k-big-buck-bunny-1080p-30sec.mp4%20%26&boot=1"
+        title="Big Buck Bunny (CC BY 3.0, Blender Foundation) in 1080p, decoded by your browser for mpv; click the page to hear it"
+        >a film in mpv</a
+      > ·
       <a
         href="?pkg=xeyes&engine=unkernel&run=xeyes%20%26&boot=1"
         title="an X11 program, through Xwayland"
