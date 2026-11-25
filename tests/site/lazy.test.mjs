@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import {
   lazyFs,
   lazyStore,
+  PathOrigin,
   PREFETCH_LIMIT_BYTES,
   Priority,
   References,
@@ -452,6 +453,7 @@ function servedLazily(infos, files, listings = null) {
   store.add(infos);
   return {
     fs: lazyFs(share, store, { storeDir: STORE, shareDir: SHARE }),
+    store,
     started,
     listed,
     finish: async (basename) => {
@@ -947,4 +949,159 @@ test("the store lists a listed path with its listed type", async () => {
     (await fs.readdir(STORE)).map((entry) => [entry.name, entry.type]),
   );
   assert.deepEqual(types, { [LIBC]: "dir", "p-script": "file" });
+});
+
+// A capability: the X server's program and a library it needs, which
+// the guest reaches only through a link the page makes to the program.
+const SERVER = "q-xwayland-satellite-0.8.3";
+const SERVER_LIB = "r-libxcb-1.17.0";
+const SERVER_FILES = {
+  [`${STORE}/${SERVER}`]: { type: "dir" },
+  [`${STORE}/${SERVER}/bin`]: { type: "dir" },
+  [`${STORE}/${SERVER}/bin/xwayland-satellite`]: {
+    type: "file",
+    data: new Uint8Array([9]),
+  },
+};
+
+// A capability's loader the test settles by hand: `calls` counts how
+// often the store asked for the closure, join(infos) hands the store
+// narinfos as the latest load finds them, and `pending` is the promise
+// that load ends with.
+function capabilityLoader() {
+  const loader = { calls: 0, pending: null, join: null };
+  loader.load = (join) => {
+    loader.calls += 1;
+    loader.join = join;
+    loader.pending = deferred();
+    return loader.pending.promise;
+  };
+  return loader;
+}
+
+// Checks that a capability the guest has not looked at costs nothing:
+// the store does not know its paths, lists none of them, and asks for
+// no closure. The first lookup asks for the closure once, however many
+// lookups wait, and is then answered like any path of the store.
+test("a capability joins the store on its first lookup", async () => {
+  const { fs, store, started, finish } = servedLazily([info(LIBC)], {
+    [SERVER]: SERVER_FILES,
+  });
+  const loader = capabilityLoader();
+  store.capability(SERVER, loader.load);
+
+  assert.equal(store.knows(SERVER), false);
+  const names = (await fs.readdir(STORE)).map((entry) => entry.name);
+  assert.deepEqual(names, [LIBC]);
+  assert.equal(loader.calls, 0);
+
+  const program = `${STORE}/${SERVER}/bin/xwayland-satellite`;
+  const first = fs.getattr(program);
+  const second = fs.open(program, { read: true });
+  assert.equal(loader.calls, 1);
+  loader.join([info(SERVER, [SERVER_LIB]), info(SERVER_LIB)]);
+  loader.pending.resolve();
+  await settle();
+  assert.equal(started[0], SERVER);
+  await finish(SERVER);
+
+  assert.deepEqual(brief(await first), { type: "file", size: 1 });
+  assert.deepEqual((await second).read(0, 1), new Uint8Array([9]));
+  assert.equal(store.knows(SERVER_LIB), true);
+  assert.equal(loader.calls, 1);
+});
+
+// Checks that a lookup inside a capability is answered as soon as the
+// capability's root has joined, while the rest of its closure is still
+// being walked: the X server's loader looks for libraries in the GL
+// driver, and the whole driver's walk stood in front of each answer. A
+// lookup of a name the store does not know yet waits while a walk is
+// on, since the walk may bring it, and is ENOENT once every walk ended
+// without it.
+test("a capability's root answers before the rest of its closure joins", async () => {
+  const listings = { [SERVER]: { type: "directory", entries: {} } };
+  const { fs, store, started } = servedLazily([info(LIBC)], {}, listings);
+  const loader = capabilityLoader();
+  store.capability(SERVER, loader.load);
+
+  const missing = fs.getattr(`${STORE}/${SERVER}/lib/libX11.so.6`);
+  loader.join([info(SERVER, [SERVER_LIB])]);
+  await assert.rejects(missing, (err) => err.code === "ENOENT");
+  assert.deepEqual(started, []);
+
+  let found = null;
+  const lib = fs.getattr(`${STORE}/${SERVER_LIB}`).then((attr) => {
+    found = attr;
+  });
+  const never = fs.getattr(`${STORE}/s-unknown-1.0`);
+  await settle();
+  assert.equal(found, null);
+
+  loader.join([info(SERVER_LIB)]);
+  loader.pending.resolve();
+  await assert.rejects(never, (err) => err.code === "ENOENT");
+  lib.catch(() => {});
+  assert.equal(store.knows(SERVER_LIB), true);
+});
+
+// Checks that a capability's paths stay capability paths, which the page
+// keeps out of the farm and out of the selection's progress rows, and
+// that a path a selection brings later is a selection's path from then
+// on, whose programs the farm offers.
+test("a capability's paths are marked until a selection takes them", async () => {
+  const { fs, store } = servedLazily([info(LIBC)], {});
+  const loader = capabilityLoader();
+  store.capability(SERVER, loader.load);
+
+  const lookup = fs.getattr(`${STORE}/${SERVER}`);
+  loader.join([info(SERVER, [SERVER_LIB]), info(SERVER_LIB)]);
+  loader.pending.resolve();
+  await settle();
+  lookup.catch(() => {});
+
+  assert.equal(store.origin(SERVER), PathOrigin.CAPABILITY);
+  assert.equal(store.origin(SERVER_LIB), PathOrigin.CAPABILITY);
+  assert.equal(store.origin(LIBC), PathOrigin.SELECTION);
+  assert.equal(store.stats().paths, 3);
+  assert.equal(store.stats(PathOrigin.SELECTION).paths, 1);
+
+  store.add([info(SERVER_LIB)]);
+  assert.equal(store.origin(SERVER_LIB), PathOrigin.SELECTION);
+  assert.equal(store.origin(SERVER), PathOrigin.CAPABILITY);
+});
+
+// Checks that a capability whose closure could not be had answers the
+// guest EIO, which the guest does not keep as an answer, and that the
+// next lookup asks for the closure again.
+test("a capability that fails to load answers EIO, and loads again", async () => {
+  const { fs, store } = servedLazily([info(LIBC)], {});
+  const loader = capabilityLoader();
+  store.capability(SERVER, loader.load);
+
+  const failed = fs.getattr(`${STORE}/${SERVER}`);
+  loader.pending.reject(new Error("HTTP 503"));
+  await assert.rejects(failed, (err) => err.code === "EIO");
+
+  const retried = fs.readdir(`${STORE}/${SERVER}`);
+  assert.equal(loader.calls, 2);
+  loader.join([info(SERVER)]);
+  loader.pending.resolve();
+  await settle();
+  assert.equal(store.knows(SERVER), true);
+  retried.catch(() => {});
+});
+
+// Checks that a name in the store that is neither in the closure nor a
+// capability goes to the share as before, which says it is not there,
+// and asks for nothing.
+test("a name that is no capability is not loaded", async () => {
+  const { fs, store } = servedLazily([info(LIBC)], {});
+  const loader = capabilityLoader();
+  store.capability(SERVER, loader.load);
+
+  assert.throws(
+    () => fs.getattr(`${STORE}/s-unknown-1.0`),
+    (err) => err.code === "ENOENT",
+  );
+  assert.equal(loader.calls, 0);
 });

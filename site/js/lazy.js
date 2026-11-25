@@ -46,6 +46,16 @@
 //   gcc (82 MiB), and solitaire's first frame waited behind it. A
 //   selected package's references are all fetched, since the reader is
 //   about to run it.
+//
+// The store can also hold paths outside the selection that the guest
+// may ask for by name: the X server and the GL driver the page links
+// into every guest (gui.js). Each is a capability. Its root's basename
+// is all the store knows of it until the guest first looks the root
+// up; that lookup starts the walk of its closure, whose narinfos join
+// the store as the walk finds them and are fetched as the guest opens
+// them. The lookup is answered once the root has joined, while the
+// walk goes on. A guest that never touches a capability costs nothing
+// for it.
 
 import { loaderStorePaths } from "./elf.js";
 import {
@@ -75,6 +85,16 @@ export const References = Object.freeze({
   ALL: "all",
   // Those no larger than PREFETCH_LIMIT_BYTES.
   SMALL: "small",
+});
+
+// Why a path is in the store.
+export const PathOrigin = Object.freeze({
+  // The reader's selection brought it: its programs join the farm.
+  SELECTION: "selection",
+  // A capability's closure brought it (capability): it is reached only
+  // through the link the page made to the capability, and its programs
+  // stay off PATH.
+  CAPABILITY: "capability",
 });
 
 // The largest reference, in compressed bytes, fetched in the background
@@ -126,17 +146,65 @@ export function lazyStore({
   dropListing,
   onWritten,
 }) {
-  // basename -> { info, written, promise, settle, queued, listing }.
-  // `promise` is the download every lookup of the path waits on, from
-  // the moment the path is asked for until the download ends; null
-  // otherwise. `queued` is the queue the path waits in for room, or
-  // null. `listing` is undefined until the listing is asked for, then a
-  // promise, then its root or null; a NAR that arrives before anything
-  // asked makes it null (checkListing).
+  // basename -> { info, origin, written, promise, settle, queued,
+  // listing }. `origin` is a PathOrigin. `promise` is the download
+  // every lookup of the path waits on, from the moment the path is
+  // asked for until the download ends; null otherwise. `queued` is the
+  // queue the path waits in for room, or null. `listing` is undefined
+  // until the listing is asked for, then a promise, then its root or
+  // null; a NAR that arrives before anything asked makes it null
+  // (checkListing).
   const paths = new Map();
 
   // Paths the guest has touched, whose references are on their way.
   const touched = new Set();
+
+  // Capabilities by their root's basename: { load, loading, error },
+  // where `loading` is the walk of the closure from the lookup that
+  // started it until it ends, and null otherwise, and `error` is why the
+  // last walk failed, until a lookup hears it.
+  const capabilities = new Map();
+
+  // How many capabilities' walks are on, and the lookups waiting for a
+  // path to join or a walk to end, which either may answer.
+  let walking = 0;
+  let waiting = [];
+
+  // Wake every waiting lookup, to look again.
+  function wake() {
+    const woken = waiting;
+    waiting = [];
+    for (const resolve of woken) {
+      resolve();
+    }
+  }
+
+  // Walk a capability's closure: load(join) hands the store narinfos
+  // with join(infos) as it finds them, and settles when the walk ends.
+  // A load that throws rather than rejecting fails the same way.
+  function walk(capability) {
+    walking += 1;
+    capability.error = null;
+    const join = (infos) => {
+      store.add(infos, PathOrigin.CAPABILITY);
+      wake();
+    };
+    let request;
+    try {
+      request = Promise.resolve(capability.load(join));
+    } catch (err) {
+      request = Promise.reject(err);
+    }
+    const ended = () => {
+      walking -= 1;
+      capability.loading = null;
+      wake();
+    };
+    capability.loading = request.then(ended, (err) => {
+      capability.error = err;
+      ended();
+    });
+  }
 
   // Fetches waiting for room, oldest first in each: what the loader
   // opens next (NEXT), which goes first, and the background (PREFETCH).
@@ -272,16 +340,22 @@ export function lazyStore({
   }
 
   const store = {
-    // Add paths of the closure, as narinfos; paths already known are
-    // left as they are.
-    add(infos) {
+    // Add paths, as narinfos, brought by `origin` (PathOrigin). A path
+    // already known is left as it is, except that a selection that
+    // brings a capability's path makes it the selection's.
+    add(infos, origin = PathOrigin.SELECTION) {
       for (const info of infos) {
         const basename = basenameOf(info);
-        if (paths.has(basename)) {
+        const known = paths.get(basename);
+        if (known !== undefined) {
+          if (origin === PathOrigin.SELECTION) {
+            known.origin = origin;
+          }
           continue;
         }
         paths.set(basename, {
           info,
+          origin,
           written: false,
           promise: null,
           settle: null,
@@ -346,7 +420,39 @@ export function lazyStore({
       return arrived;
     },
 
+    // Name a capability by its root's basename, with load(join), which
+    // walks the root's closure (walk).
+    capability(basename, load) {
+      capabilities.set(basename, { load, loading: null, error: null });
+    },
+
+    // For a lookup of `basename`, which the store does not know: a
+    // promise that settles when a path has joined or a walk has ended,
+    // after which the lookup looks again; null when no walk is on that
+    // could bring the name. Looking up a capability's root starts its
+    // walk, once however many lookups wait. A root whose last walk
+    // failed rejects with why, once, and the next lookup walks again.
+    resolve(basename) {
+      if (paths.has(basename)) {
+        return null;
+      }
+      const capability = capabilities.get(basename);
+      if (capability !== undefined && capability.loading === null) {
+        if (capability.error !== null) {
+          const err = capability.error;
+          capability.error = null;
+          return Promise.reject(err);
+        }
+        walk(capability);
+      }
+      if (walking === 0) {
+        return null;
+      }
+      return new Promise((resolve) => waiting.push(resolve));
+    },
+
     knows: (basename) => paths.has(basename),
+    origin: (basename) => paths.get(basename)?.origin,
     ready: (basename) => paths.get(basename)?.written === true,
 
     // The path's listing: resolves to its root, or to null when the
@@ -391,19 +497,25 @@ export function lazyStore({
 
     // The closure against what has been written, in paths and in
     // compressed bytes (the narinfo's FileSize, which is what a
-    // download costs).
-    stats() {
+    // download costs): every path, or those brought by `origin`
+    // (PathOrigin) when it is given.
+    stats(origin) {
       let bytes = 0;
       let writtenPaths = 0;
       let writtenBytes = 0;
+      let counted = 0;
       for (const path of paths.values()) {
+        if (origin !== undefined && path.origin !== origin) {
+          continue;
+        }
+        counted += 1;
         bytes += path.info.fileSize;
         if (path.written) {
           writtenPaths += 1;
           writtenBytes += path.info.fileSize;
         }
       }
-      return { paths: paths.size, bytes, writtenPaths, writtenBytes };
+      return { paths: counted, bytes, writtenPaths, writtenBytes };
     },
   };
   return store;
@@ -441,7 +553,8 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
 
   // The closure path `path` is or is inside, as { basename, rest }, rest
   // being the part inside it ("" for the path itself); null for a path
-  // outside the store, or a name the closure does not hold.
+  // outside the store, or a name the closure does not hold. While a
+  // capability's walk may still bring the name, a promise of the same.
   function closurePathOf(path) {
     if (!path.startsWith(prefix)) {
       return null;
@@ -449,10 +562,37 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
     const inside = path.slice(prefix.length);
     const slash = inside.indexOf("/");
     const basename = slash === -1 ? inside : inside.slice(0, slash);
-    if (!store.knows(basename)) {
+    const at = { basename, rest: slash === -1 ? "" : inside.slice(slash + 1) };
+    if (store.knows(basename)) {
+      return at;
+    }
+
+    // A name a capability's walk may still bring, or one the store will
+    // never hold. A capability whose closure could not be had answers
+    // EIO, which the guest asks again.
+    const joining = store.resolve(basename);
+    if (joining === null) {
       return null;
     }
-    return { basename, rest: slash === -1 ? "" : inside.slice(slash + 1) };
+    return joining.then(
+      () => closurePathOf(path),
+      (err) => {
+        throw errno(EIO, `${path}: ${err.message}`);
+      },
+    );
+  }
+
+  // Answer a call at `path` with inside(at) for a path in the closure,
+  // or outside() for any other, once no capability's walk can change
+  // which it is.
+  function within(path, inside, outside) {
+    const at = closurePathOf(path);
+    if (at instanceof Promise) {
+      return at.then((joined) =>
+        joined === null ? outside() : inside(joined),
+      );
+    }
+    return at === null ? outside() : inside(at);
   }
 
   // How the share writes a symlink's target at `path`.
@@ -533,20 +673,23 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
 
   return {
     getattr(path) {
-      const at = closurePathOf(path);
-      if (at === null) {
-        return fs.getattr(path);
-      }
-      return answer(
+      return within(
         path,
-        at,
-        (root) => storeAttr(listingAttr(nodeAt(root, at.rest), path, targetOf)),
-        () => storeAttr(fs.getattr(path)),
+        (at) =>
+          answer(
+            path,
+            at,
+            (root) =>
+              storeAttr(listingAttr(nodeAt(root, at.rest), path, targetOf)),
+            () => storeAttr(fs.getattr(path)),
+          ),
+        () => fs.getattr(path),
       );
     },
 
     // The store itself lists every path of the closure, fetched or not,
-    // typed by its listing where it has one. Listing it fetches nothing.
+    // typed by its listing where it has one. Listing it fetches nothing,
+    // and lists no capability the guest has not looked up.
     readdir(path) {
       if (path === storeDir) {
         const written = fs.readdir(path).map(entryOf);
@@ -563,15 +706,16 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
           });
         return [...written, ...unfetched];
       }
-      const at = closurePathOf(path);
-      if (at === null) {
-        return fs.readdir(path);
-      }
-      return answer(
+      return within(
         path,
-        at,
-        (root) => listingEntries(nodeAt(root, at.rest)),
-        () => fs.readdir(path).map(entryOf),
+        (at) =>
+          answer(
+            path,
+            at,
+            (root) => listingEntries(nodeAt(root, at.rest)),
+            () => fs.readdir(path).map(entryOf),
+          ),
+        () => fs.readdir(path),
       );
     },
 
@@ -579,39 +723,42 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
     // downloads its path, and anything else the listing names is not a
     // file to open.
     open(path, flags) {
-      const at = closurePathOf(path);
-      if (at === null) {
-        return fs.open(path, flags);
-      }
-      const opened = () => openWritten(path, at.basename, flags);
-      return answer(
+      return within(
         path,
-        at,
-        (root) => {
-          if (nodeAt(root, at.rest).type !== "regular") {
-            throw errno("EISDIR", `${path}: not a regular file`);
-          }
-          return whole(path, at.basename, opened);
+        (at) => {
+          const opened = () => openWritten(path, at.basename, flags);
+          return answer(
+            path,
+            at,
+            (root) => {
+              if (nodeAt(root, at.rest).type !== "regular") {
+                throw errno("EISDIR", `${path}: not a regular file`);
+              }
+              return whole(path, at.basename, opened);
+            },
+            () => whole(path, at.basename, opened),
+          );
         },
-        () => whole(path, at.basename, opened),
+        () => fs.open(path, flags),
       );
     },
 
     readlink(path) {
-      const at = closurePathOf(path);
-      if (at === null) {
-        return fs.readlink(path);
-      }
-      return answer(
+      return within(
         path,
-        at,
-        (root) => {
-          const node = nodeAt(root, at.rest);
-          if (node.type !== "symlink") {
-            throw errno("EINVAL", `${path}: not a symlink`);
-          }
-          return targetOf(path, node.target);
-        },
+        (at) =>
+          answer(
+            path,
+            at,
+            (root) => {
+              const node = nodeAt(root, at.rest);
+              if (node.type !== "symlink") {
+                throw errno("EINVAL", `${path}: not a symlink`);
+              }
+              return targetOf(path, node.target);
+            },
+            () => fs.readlink(path),
+          ),
         () => fs.readlink(path),
       );
     },
