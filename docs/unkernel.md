@@ -614,9 +614,10 @@ interpreter. That is the first item on unkernel's own roadmap.
   unbuilt version is, with a note that Settings has the x86_64 guest.
 - **Browsers.** JSPI means Chrome 137, Firefox 153 or Safari 27. An
   older browser gets qemu without being asked.
-- **Kernel features.** No seccomp and no ptrace register sets, so
-  `strace` and `gdb` do not work. A wasm trap in the kernel ends the
-  session.
+- **Kernel features.** Since 0.2.0-261124 the kernel has ptrace
+  register sets and seccomp filters (upstream 7fc4e1f and 0b65e72);
+  `strace` from nixpkgs runs in the guest. A wasm trap in the kernel
+  ends the session.
 - **Maturity.** The project was eight days old when this was written,
   with one author and several releases a day. The version is pinned by
   hash in [nix/vendor.nix](../nix/vendor.nix).
