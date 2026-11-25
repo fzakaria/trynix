@@ -759,6 +759,43 @@ destroy the device; kwvk then reads frames back as before. Without
 `vk=1` the page has no Vulkan renderer and gives no `resolveExternal`,
 so no program is offered the global.
 
+Measured 2026-11-24 on the laptop's Radeon 780M ("amd rdna-3") in
+headless Chromium 152 with its hardware WebGPU adapter, on the site
+just before external buffers (the patched kwvk, frames read back) and
+on the site with them, the two alternated, three runs each, each in a
+new browser profile with downloads on first use. "First picture" is
+from the command to the first frame in the program's window with more
+than 24 colours; frames a second are the compositor's commits over 20
+s (vkcube 15 s) after 20 s (10 s) of settling. The 1-minute load
+average was 0.6 to 2.5 at the commands and 0.9 to 2.6 while
+measuring:
+
+| program                         | frames          | first picture      | frames a second  |
+| ------------------------------- | --------------- | ------------------ | ---------------- |
+| Taisei 1.4.6, SDL 3 GPU on kwvk | read back       | 15.4 s (15.3–15.7) | 43.1 (41.2–43.2) |
+| Taisei 1.4.6, SDL 3 GPU on kwvk | external buffer | 15.8 s (15.5–21.3) | 59.9 (59.9–60.0) |
+| Taisei 1.4.6, GLES 3.0 on virgl | GPU resource    | 12.6 s (12.4–12.7) | 59.9 (59.9–60.0) |
+| vkcube 500x500, FIFO            | read back       | 0.88 s (0.63–0.89) | 59.8 (59.7–59.9) |
+| vkcube 500x500, FIFO            | external buffer | 0.65 s (0.62–3.13) | 60.0 (60.0–60.0) |
+| vkcube 500x500, IMMEDIATE       | read back       | 0.89 s (0.64–0.91) | 178 (176–181)    |
+| vkcube 500x500, IMMEDIATE       | external buffer | 0.86 s (0.62–0.88) | 869 (834–921)    |
+
+Read back, Taisei's 928x836 frames cost 3.1 MB each and held it at 43
+frames a second; by external buffer it draws at 60, the rate of the
+compositor's frame callbacks, as on GLES, and nothing is read back.
+GLES on the site before external buffers measured the same: 12.7 s
+and 60.0. vkcube in FIFO waits for those callbacks too, so both ways
+it draws at 60; IMMEDIATE shows what each way can carry, five times as
+many frames without readback. First pictures are not what changed:
+the slowest of the external rows came with slow downloads. That Taisei
+run's shell took 57.5 s against 29 to 32 s for the others, and its
+first commit came 15.7 s after the command against 9.8 to 9.9 s; that
+vkcube run fetched 16.9 MB before its first frame, against 2.1 to
+12.4 MB for the others. Taisei's first picture is 3 s later on Vulkan
+than on GLES either way; the renderer's shader translation is 38 to
+45 ms of that, and the rest was not traced. On the kernel's own kwvk
+Taisei draws nothing: its pipelines fail on `OpLine` among the types.
+
 ### Which browsers have an adapter
 
 The renderer needs a WebGPU adapter. Chrome has one on macOS, Windows,
