@@ -125,12 +125,18 @@
         href="?pkg=hello&run=hello&boot=1"
         >hello</a
       > ·
+      <!-- These two fetch files the link names by URL and hash (file=;
+           site/js/files.js) from raw.githubusercontent.com at a commit,
+           which never changes and sends CORS headers. The command names
+           each file by the store path fetchurl gives it. -->
       <a
-        href="?pkg=ripgrep&pkg=jq&run=rg%20--version%20%26%26%20jq%20--version&boot=1"
+        href="?pkg=ripgrep&pkg=jq&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/maintainers/maintainer-list.nix%20sha256-qD3XTmtAfLsCR8Vr3rkiZQkr/N2VnMFN0hmZIoAFyfE%3D&file=https://raw.githubusercontent.com/NixOS/nixpkgs/ac62194c3917d5f474c1a844b6fd6da2db95077d/pkgs/os-specific/linux/kernel/kernels-org.json%20sha256-wqMutWYUlW/5oBLjmJYI8t43v2YCLl4MdfgYYRRgG/0%3D&run=rg%20-or%20%27%241%27%20%27%5E%20%20%28%5Cw%2Anix%5Cw%2A%29%20%3D%27%20%2Fnix%2Fstore%2Fwhmg5hajv6z6fprb5v46p008jiz4mr54-maintainer-list.nix%20%26%26%20jq%20-r%20%27to_entries%5B%5D%7C%22%5C%28.key%29%20%5C%28.value.version%29%22%27%20%2Fnix%2Fstore%2F7dmyl6k8v95rwdfk8lnphk14db8hc4nb-kernels-org.json&boot=1"
+        title="searches nixpkgs' maintainer list and reads its kernel versions, two files the link fetches"
         >ripgrep and jq</a
       > ·
       <a
-        href="?pkg=python3@3.6.2&run=python3%20-c%20%27import%20sys%3B%20print%28sys.version%29%27&boot=1"
+        href="?pkg=python3@3.6.2&file=https://raw.githubusercontent.com/mwaskom/seaborn-data/71e2436a092d714350de0fc409ca8a8714e7e78f/penguins.csv%20sha256-4HY2vYr3QmAJnqL4Z44uq7813vV5lAzHb2cGHuFsBsE%3D&run=python3%20--version%20%26%26%20python3%20-c%20%22import%20csv%2Ccollections%3Bprint%28collections.Counter%28r%5B%27species%27%5D%20for%20r%20in%20csv.DictReader%28open%28%27%2Fnix%2Fstore%2F16lvfqchy2lr4cz48ds45lsvh1m97605-penguins.csv%27%29%29%29%29%22&boot=1"
+        title="counts the penguins in a CSV the link fetches"
         >python 3.6.2 from 2017</a
       > ·
       <a
