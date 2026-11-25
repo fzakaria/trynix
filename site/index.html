@@ -166,11 +166,13 @@
         >firefox</a
       > ·
       <!-- The first six show the range, and the rest wait behind
-           "more": a <details> drawn inline (site/style.css), so
-           once it opens its links carry on the line. A <p> cannot
-           hold a <details>, which is why the links are in a <div>. -->
+           "N more": a <details> drawn inline (site/style.css), so
+           once it opens its links carry on the line. N is written
+           here by hand, and tests/site/examples.test.mjs checks it
+           against the links inside. A <p> cannot hold a <details>,
+           which is why the links are in a <div>. -->
       <details>
-        <summary>more</summary>
+        <summary>18 more</summary>
         <a
           href="?pkg=jujutsu@0.43.0&run=jj%20--version&boot=1"
           >jujutsu</a

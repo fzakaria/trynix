@@ -167,12 +167,13 @@ code {
 }
 
 /* The examples past the first few, in a <details> drawn inline: its
-   summary, "more", reads as the intro's hint phrases do, and its links
-   carry on the line once it opens. The summary goes then, since the
-   whole list is out. The closed content needs display: none of its
-   own, because an inline box ignores the content-visibility the
-   browser hides it with. A browser without ::details-content puts the
-   links on a line of their own, which still works. */
+   summary, "N more", reads as the intro's hint phrases do and is kept
+   on one line as each link is, and its links carry on the line once
+   it opens. The summary goes then, since the whole list is out. The
+   closed content needs display: none of its own, because an inline
+   box ignores the content-visibility the browser hides it with. A
+   browser without ::details-content puts the links on a line of their
+   own, which still works. */
 .examples details,
 .examples summary,
 .examples details[open]::details-content {
@@ -182,6 +183,7 @@ code {
   display: none;
 }
 .examples summary {
+  white-space: nowrap;
   cursor: pointer;
   text-decoration: underline dotted var(--muted);
   text-underline-offset: 3px;
