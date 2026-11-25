@@ -356,7 +356,10 @@
           # The page fetches virgl.mjs by a versioned URL, and the module
           # resolves virgl.wasm against its own URL, under a path
           # _headers caches for a year, so a bare name would pair a new
-          # module with a browser's copy of the old wasm
+          # module with a browser's copy of the old wasm. Guest Vulkan's
+          # chunks are imported by their hashes and import the one
+          # core.mjs the entry does, and assets.json versions the
+          # translator's wasm, whose URL the page hands the SDK
           site =
             let
               site = self.packages.${system}.site;
@@ -368,6 +371,24 @@
               wasm=$(sha256sum ${site}/vendor/unkernel/virgl.wasm | cut -c1-12)
               if ! grep -q "\"virgl.wasm?v=$wasm\"" ${site}/vendor/unkernel/virgl.mjs; then
                 echo "virgl.mjs does not name virgl.wasm by its hash, $wasm"
+                exit 1
+              fi
+              unkernel=${site}/vendor/unkernel
+              core=$(sha256sum $unkernel/_chunks/core.mjs | cut -c1-12)
+              for name in vk-host vk-shader; do
+                hash=$(sha256sum $unkernel/_chunks/$name.mjs | cut -c1-12)
+                if ! grep -q "\"./_chunks/$name.mjs?v=$hash\"" $unkernel/web.mjs; then
+                  echo "web.mjs does not name $name.mjs by its hash, $hash"
+                  exit 1
+                fi
+                if ! grep -q "\"./core.mjs?v=$core\"" $unkernel/_chunks/$name.mjs; then
+                  echo "$name.mjs does not import core.mjs as web.mjs does, by $core"
+                  exit 1
+                fi
+              done
+              wasm=$(sha256sum $unkernel/kwvk-naga.wasm | cut -c1-12)
+              if ! grep -q "\"vendor/unkernel/kwvk-naga.wasm\": \"$wasm\"" ${site}/assets.json; then
+                echo "assets.json does not version kwvk-naga.wasm by its hash, $wasm"
                 exit 1
               fi
               touch $out

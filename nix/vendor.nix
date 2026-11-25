@@ -110,8 +110,8 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/ghostty-vt.wasm $out/ghostty-vt.wasm
   rm -r unpack/package
 
-  # The SDK's browser entry, the chunk the entry imports by relative
-  # path, and the kernel. The Node entry and the CLI stay behind: the
+  # The SDK's browser entry, the chunk the entry imports as it loads,
+  # and the kernel. The Node entry and the CLI stay behind: the
   # page never loads them. The workers the SDK starts are inlined in
   # the entry as blobs, so there is no worker file to place.
   tar -xzf ${unkernel} -C unpack
@@ -123,7 +123,18 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   # loads on the guest's first GL use and never before. virgl.mjs finds
   # its wasm next to itself.
   cp unpack/package/dist/virgl.mjs unpack/package/dist/virgl.wasm $out/unkernel/
-  cp unpack/package/LICENSE unpack/package/LICENSE-MIT $out/unkernel/
+  # Guest Vulkan's renderer (site/js/unkernel.js): the two chunks the
+  # entry imports on the guest's first VkInstance, and the shader
+  # translator, SPIR-V to WGSL, which the page names to the SDK by a
+  # versioned URL. The renderer's code itself is in core.mjs.
+  cp unpack/package/dist/_chunks/vk-host.mjs unpack/package/dist/_chunks/vk-shader.mjs \
+    $out/unkernel/_chunks/
+  cp unpack/package/dist/kwvk-naga.wasm $out/unkernel/
+  # The licenses, and the notices of what the package carries that is
+  # not unkernel's own: virgl.wasm's virglrenderer and kwvk-naga.wasm's
+  # naga among them.
+  cp unpack/package/LICENSE unpack/package/LICENSE-MIT unpack/package/THIRD-PARTY.md \
+    $out/unkernel/
   # The version, for the benchmark history: a record of the unkernel
   # engine is named after the version the site carried
   # (tools/bench-history.py).

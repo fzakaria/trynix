@@ -87,6 +87,7 @@ import {
   UNKERNEL_GL,
   UNKERNEL_KERNEL,
   UNKERNEL_MAIN,
+  UNKERNEL_VK,
   X11_SERVER,
 } from "./config.js";
 import { asset, assets, manifest } from "./assets.js";
@@ -1545,7 +1546,12 @@ function unkernelEngine(panel) {
   const engineRow = panel.row("unkernel engine");
 
   return async function start(started) {
-    const urls = await assets([UNKERNEL_MAIN, UNKERNEL_KERNEL, UNKERNEL_GL]);
+    const urls = await assets([
+      UNKERNEL_MAIN,
+      UNKERNEL_KERNEL,
+      UNKERNEL_GL,
+      UNKERNEL_VK,
+    ]);
 
     // The kernel is not held by the page: the SDK streams the wasm from
     // the URL and the browser compiles as the bytes arrive. This
@@ -1588,6 +1594,7 @@ function unkernelEngine(panel) {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
         gl: urls.get(UNKERNEL_GL),
+        vk: urls.get(UNKERNEL_VK),
       },
     });
     log("unkernel booted");

@@ -174,7 +174,7 @@ async function visible(kernel, paths) {
 // finds the relay from the shell it is typed into. With a network, TLS
 // clients are pointed at the CA bundle in the share (`caBundle`, or
 // null without one).
-function manifest({ caBundle }) {
+export function manifest({ caBundle }) {
   const session = Object.entries(sessionEnv()).map(
     ([name, value]) => `export ${name}="${value}"`,
   );
@@ -259,8 +259,9 @@ async function pump(shell, port, console_) {
   }
 }
 
-// engine: { main, kernel, gl }, the versioned URLs of the SDK's
-// browser entry, of the kernel and of the GL renderer's module.
+// engine: { main, kernel, gl, vk }, the versioned URLs of the SDK's
+// browser entry, of the kernel, of the GL renderer's module and of the
+// Vulkan renderer's shader translator.
 // desktopElement is where GUI programs' windows go (gui.js), over the
 // terminal in consoleElement, and windowsButton is the console bar's
 // button that hides and shows them (frame.js). soundControl is the
@@ -386,6 +387,14 @@ export async function startUnkernel({
     worker: globalThis.crossOriginIsolated === true,
     shm: true,
     gpu: true,
+    // Guest Vulkan: kwvk, the Vulkan driver in the kernel's base
+    // system, sends a program's Vulkan calls to the SDK's renderer on
+    // the page's WebGPU (gui.js, sessionEnv; docs/gui.md). The SDK asks
+    // for an adapter and fetches the renderer and this translator on
+    // the guest's first VkInstance and never before. With no adapter
+    // the load fails, the SDK logs why, and the driver answers the
+    // program VK_ERROR_INCOMPATIBLE_DRIVER.
+    vk: { shaderWasm: new URL(engine.vk, location.href).href },
     gl: { module: new URL(engine.gl, location.href).href },
     sound,
     ...(net === null ? {} : { net }),

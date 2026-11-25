@@ -96,6 +96,11 @@ export const UNKERNEL_KERNEL = "vendor/unkernel/unkernel.wasm";
 // The SDK fetches it on the guest's first GL use and never before.
 export const UNKERNEL_GL = "vendor/unkernel/virgl.mjs";
 
+// Guest Vulkan's shader translator, SPIR-V to WGSL compiled to wasm
+// (nix/vendor.nix, site/js/unkernel.js). The SDK fetches it, with the
+// renderer's modules, on the guest's first VkInstance and never before.
+export const UNKERNEL_VK = "vendor/unkernel/kwvk-naga.wasm";
+
 // What a GUI program in the unkernel guest needs from the site
 // (gui.js, docs/gui.md), in one directory: wland's compositor, its
 // relay and the guest's fonts. nix/site.nix renames the directory

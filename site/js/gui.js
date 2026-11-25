@@ -139,11 +139,28 @@ const MESA_EGL_VENDOR = "share/glvnd/egl_vendor.d/50_mesa.json";
 // does not answer.
 const CANBERRA_DRIVER = "alsa";
 
+// kwvk's manifest, in the kw layer of unkernel's base system: kwvk is
+// the Vulkan driver whose GPU is the page's WebGPU (unkernel.js, the vk
+// option). nixpkgs' Vulkan loader looks for drivers in /etc/xdg,
+// /run/opengl-driver/share and /usr/share, none of which holds it, so
+// every shell names it. The manifest names the driver as
+// /usr/lib/kw/libvulkan_kw.so, which the base system links into the kw
+// layer. The driver is built against glibc 2.34 and links nothing else,
+// so a program from nixpkgs 22.05 on loads it into its own process. The
+// loaders of older nixpkgs, 1.2 and before, ignore the variable, and
+// their programs see no Vulkan device.
+const KWVK_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
+
 // The environment every guest shell gets, the same from the boot to the
 // end, so a GUI program started plainly finds the relay and picks its
 // Wayland backend. Toolkits that would otherwise look for X are told to
 // use Wayland; each falls back to the X display where it has no Wayland
 // backend. libcanberra is sent to ALSA.
+//
+// The Vulkan loader is told of kwvk, beside any driver a selected Mesa
+// brings, and Mesa's zink is kept off: a nixpkgs Mesa the reader selects
+// tries zink on the first Vulkan device when its own GL driver fails,
+// which would run GL through kwvk, and unkernel advises the variable.
 //
 // Java's AWT waits for its window manager to reparent each window into
 // a frame of its own, and the satellite, whose windows' frames are the
@@ -164,6 +181,8 @@ export function sessionEnv() {
     DISPLAY: X11_DISPLAY,
     XENVIRONMENT: X11_RESOURCES,
     _JAVA_AWT_WM_NONREPARENTING: "1",
+    VK_ADD_DRIVER_FILES: KWVK_ICD,
+    LIBGL_KOPPER_DISABLE: "1",
   };
 }
 
