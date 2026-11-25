@@ -23,6 +23,10 @@ link you can construct or send:
 - `?path=/nix/store/<digest>-name` a store path, verbatim
 - `&cache=https://x.cachix.org x-1:<key>` an extra binary cache and the
   key that vouches for it
+- `&file=https://host/data.csv sha256-<base64>` a file, which the guest
+  sees at the store path `pkgs.fetchurl { url; hash; }` gives it; `nix
+  store prefetch-file <url>` prints the hash and that path. The host has
+  to allow cross-origin reads, as raw.githubusercontent.com does
 - `&fetch=all` download the whole closure before the shell starts. On
   the aarch64 guest the default is `fetch=lazy`: the shell starts once
   the selected packages are in, and every other store path downloads
@@ -30,7 +34,7 @@ link you can construct or send:
   wait on the network
 - `&boot=1` start the boot without a click
 
-Repeat `pkg` and `path` for more than one. A package with no version
+Repeat `pkg`, `path` and `file` for more than one. A package with no version
 takes the newest the index has a build for, which makes such a link
 durable. The page rewrites the address bar as the selection changes, so
 whatever is on screen is always a link.

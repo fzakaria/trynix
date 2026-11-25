@@ -97,6 +97,7 @@ for what is on screen:
 | `pkg=ripgrep`                      | the newest version the index has          |
 | `path=/nix/store/<digest>-name`    | a store path, verbatim                    |
 | `cache=https://x.cachix.org x-1:…` | an extra binary cache and its public key  |
+| `file=https://host/f.csv sha256-…` | a file, at the store path fetchurl gives  |
 | `engine=qemu`                      | the engine, when not the default          |
 | `mem=2048`                         | the unkernel guest's memory, in MiB       |
 | `cpus=8`                           | the unkernel guest's CPUs, 1 to 16        |
@@ -131,6 +132,62 @@ in it (`%0A`) separates commands. The page keeps it in the address
 bar, so a copied link shows the next reader the same command, after
 they press Boot. The Try links on the page all carry `boot=1` and a
 `run=`, so each example starts and shows itself in one click.
+
+## Files a link names
+
+`file=` names a file by its URL and sha256, and the guest finds it at
+the store path `pkgs.fetchurl { url; hash; }` gives it
+([site/js/files.js](../site/js/files.js)): one read-only regular file,
+not executable. `nix store prefetch-file` prints both the hash, in the
+SRI form the link takes, and the path:
+
+```
+$ nix store prefetch-file https://example.org/data.csv
+Downloaded 'https://example.org/data.csv' to '/nix/store/<digest>-data.csv' (hash 'sha256-<base64>=').
+```
+
+The link is then `?pkg=jq&file=https://example.org/data.csv+sha256-<base64>=`,
+and a command names the file by the printed path. The name is the URL's
+last segment, query string included, as fetchurl takes it; a link whose
+URL ends in something nix would not take as a store path's name is
+dropped, as a `cache=` without a key is. Nix's own `sha256:` form of the
+hash works too. A `+` typed into the hash by hand needs no escape: the
+query string reads it as a space, and since a URL holds no space,
+everything after the first space is the hash and its spaces go back to
+`+`. There is no way to give another name.
+
+The page fetches the file with the browser's fetch, so the host has to
+allow cross-origin reads. raw.githubusercontent.com does, and at a
+commit its files never change; archive.org does; GitHub release assets
+and GitLab's raw files do not. Nothing more is trusted than with
+`cache=`: the link already makes the browser fetch from hosts it names,
+and the bytes are checked against the hash before the guest sees any of
+them.
+
+The file joins the guest's store as a path of the closure does
+([site/js/lazy.js](../site/js/lazy.js)): listed in `/nix/store`, as a
+file, from the boot, and fetched the first time the guest touches it,
+or before the shell with `fetch=all`. The x86_64 guest fetches it
+before the shell, as it does everything. It is kept in the Cache API
+like a NAR, so a reload does not fetch it again. Its download counts in
+the progress rows and the strip under the terminal, sized once its
+response says how large it is. A refused fetch, an HTTP error or a hash
+mismatch names the URL on the file's chip and in the status line, and
+the guest gets an I/O error on the path, which the next lookup tries
+again.
+
+A large file costs the tab several times its size while it arrives.
+Measured in headless Chromium on an 800 MiB file served from localhost:
+the fetch took 3.7 s and a read back from the Cache API 1.4 s, and the
+renderer's memory peaked at 2.2 to 3.3 GiB, from the stream's chunks
+waiting for collection, the Cache API's copy of the body on `put` and
+WebCrypto's copy for the hash. The Cache API's quota in that fresh
+profile was 11 GiB; where an entry does not fit, the `put` fails
+silently and the next visit downloads it again
+([site/js/cache.js](../site/js/cache.js)). Once written, unkernel's
+MemoryFs holds its own copy of the file, and a program that maps it
+holds it again in guest memory, so the guest's memory setting has to
+leave room for it.
 
 ## The store share
 
