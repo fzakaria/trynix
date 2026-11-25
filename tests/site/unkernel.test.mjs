@@ -11,7 +11,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,7 +25,7 @@ import { join } from "node:path";
 // screen as it loads. Node has none; this one says it is no touch
 // screen.
 globalThis.matchMedia = () => ({ matches: false, addEventListener: () => {} });
-const { manifest } = await import("../../site/js/unkernel.js");
+const { envLink, manifest } = await import("../../site/js/unkernel.js");
 const { Vulkan } = await import("../../site/js/vulkan.js");
 
 // The site's kwvk as the page names it to the guest (its store path's
@@ -113,5 +119,33 @@ test("without vk=1 no shell has the Vulkan variables", () => {
       );
       assert.deepEqual(values, [UNSET, UNSET, UNSET], shell);
     }
+  }
+});
+
+// Checks that the boot puts env where scripts name it in their #! line,
+// /usr/bin/env, linked to the base system's /bin/env, and keeps an env
+// a base system has there already, by running the command in sh against
+// a directory standing in for the guest's root. VSCodium's launcher
+// starts "#!/usr/bin/env sh" and failed with "bad interpreter".
+test("the boot links env where scripts look for it", () => {
+  const root = mkdtempSync(join(tmpdir(), "root-"));
+  try {
+    mkdirSync(join(root, "usr", "bin"), { recursive: true });
+    const run = () =>
+      spawnSync("sh", ["-c", envLink(root)], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+      });
+    let result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readlinkSync(join(root, "usr", "bin", "env")), "/bin/env");
+
+    // A second boot's command, or a base system with its own env,
+    // leaves what is there.
+    result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readlinkSync(join(root, "usr", "bin", "env")), "/bin/env");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -88,6 +88,20 @@ const MEMORY_FS_STORE_DIR = STORE_DIR.slice(SHARE_DIR.length);
 // lookup is then answered EIO (lazy.js).
 const LAZY_REQUEST_TIMEOUT_MS = 0;
 
+// Where scripts name env in their #! line, as NixOS and every FHS
+// system have it, and where unkernel's base system has it: /bin/env
+// alone. A script that starts "#!/usr/bin/env sh" failed in the guest
+// with "bad interpreter", VSCodium's launcher among them.
+const ENV_LINK = "/usr/bin/env";
+const BASE_ENV = "/bin/env";
+
+// The command that links env at ENV_LINK under `root`, the guest's root
+// when empty, unless something is there already, a file or a link: a
+// base system that ships its own env keeps it. `-e` alone follows a
+// link, and a link whose target is missing would be made again and fail.
+export const envLink = (root = "") =>
+  `{ [ -e ${root}${ENV_LINK} ] || [ -L ${root}${ENV_LINK} ] || ln -s ${BASE_ENV} ${root}${ENV_LINK}; }`;
+
 // The file the shell sources as it starts. ash reads the file ENV names
 // when the shell is interactive, which is how PATH reaches the shell
 // without the page typing anything.
@@ -537,18 +551,19 @@ export async function startUnkernel({
 
       // Every nix binary names its loader and libraries by /nix/store
       // paths, so the guest needs the store at /nix as well as where
-      // the share is mounted. The same command points the guest's fixed
-      // names at the X server and the GL driver, a GL driver the reader
-      // selected over the site's.
+      // the share is mounted. The same command puts env where scripts
+      // look for it, and points the guest's fixed names at the X server
+      // and the GL driver, a GL driver the reader selected over the
+      // site's.
       const driver = ownGlDriver(roots) ?? glDriver;
       const links = capabilityLinks({ glDriver: driver, x11Server });
       const linked = await kernel.exec(SHELL, [
         "-c",
-        `ln -s ${SHARE_DIR}/nix /nix && ${links}`,
+        `ln -s ${SHARE_DIR}/nix /nix && ${envLink()} && ${links}`,
       ]);
       if (linked.exitCode !== 0) {
         throw new Error(
-          `could not link /nix and /run in the guest: ${linked.stderr.trim()}`,
+          `could not link /nix, /usr/bin/env and /run in the guest: ${linked.stderr.trim()}`,
         );
       }
       log(

@@ -168,6 +168,9 @@ The guest side is unkernel's base system, with no distro image:
   downloads on first use, the default, the SDK serves it through a
   file system of the page's own that lists every path of the closure
   and holds a lookup until its path is in (below);
+- `/usr/bin/env` is linked to the base system's `/bin/env`, where
+  NixOS has it too, for scripts that name it in their `#!` line:
+  VSCodium's launcher failed with "bad interpreter" without it;
 - the shell is busybox ash on a real pty, started with `ENV` pointing
   at `/share/manifest`, which sets PATH, TERM and LANG. A resize is a
   call on the pty, so there is no `stty` loop;
