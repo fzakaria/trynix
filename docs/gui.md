@@ -631,7 +631,12 @@ The program sees "kwvk (WebGPU)", an integrated GPU with Vulkan 1.2.
 
 ```
 https://trynix.dev/?pkg=vulkan-tools&vk=1&boot=1&run=vulkaninfo+--summary
+https://trynix.dev/?pkg=taisei@1.4.6&vk=1&boot=1&run=TAISEI_RENDERER%3Dsdlgpu%3Avulkan+taisei+%26
 ```
+
+The second is the Try link "Taisei on Vulkan": Taisei's SDL 3 GPU
+renderer on kwvk, at 60 frames a second on a Radeon 780M, as on GLES
+(see [Frames without readback](#frames-without-readback)).
 
 It is off unless the link has `vk=1`
 ([site/js/vulkan.js](../site/js/vulkan.js)), which the Vulkan box under

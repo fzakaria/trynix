@@ -203,6 +203,15 @@
         title="a chat with Qwen2.5 0.5B, run by llama.cpp on your GPU; the model is a 400 MB download"
         >an LLM on your GPU</a
       > ·
+      <!-- Taisei on its SDL 3 GPU renderer, which draws through the
+           guest's Vulkan (vk=1): the site's kwvk on the page's WebGPU,
+           its frames handed to the compositor without readback
+           (docs/gui.md). The version is the one measured there. -->
+      <a
+        href="?pkg=taisei@1.4.6&engine=unkernel&vk=1&run=TAISEI_RENDERER%3Dsdlgpu%3Avulkan%20taisei%20%26&boot=1"
+        title="a bullet-hell game drawn by your GPU through Vulkan"
+        >Taisei on Vulkan</a
+      > ·
       <!-- GZDoom opens full screen unless told not to, and its Vulkan
            renderer compiles its shaders in the guest for about a minute
            before the first frame, so the link picks its GLES renderer. -->
