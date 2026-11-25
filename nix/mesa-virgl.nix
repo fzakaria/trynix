@@ -53,10 +53,12 @@ in
     pname = "mesa-virgl";
 
     # A draw that samples a texture it renders into, or has a texture
-    # of another type than its sampler on a unit, puts the guest's
-    # whole GL context in error on unkernel, whose renderer replays GL
-    # on WebGL 2; the virgl driver sends a stand-in view instead, until
-    # unkernel fixes its renderer (the patches' headers say more).
+    # of another type than its sampler on a unit, samples other values
+    # than GL defines on unkernel, whose renderer replays GL on WebGL 2
+    # and keeps such a texture off the unit (pithings/unkernel#27); the
+    # virgl driver sends a stand-in view that samples what GL defines.
+    # The patches' headers predate that fix, when such a draw put the
+    # whole context in error, and docs/gui.md has both.
     patches = old.patches ++ [
       ../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch
       ../patches/mesa/0002-virgl-stand-in-for-a-sampler-view-of-another-type.patch

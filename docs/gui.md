@@ -209,10 +209,15 @@ libdrm's headers and test programs in the runtime closure. The build
 refuses to finish if LLVM, python3, hwdata, libpciaccess or libdrm's
 dev and bin outputs are in its closure.
 
-Mesa carries two patches for unkernel's renderer, which can go once
-the renderer stops passing these draws to WebGL
-([pithings/unkernel#27](https://github.com/pithings/unkernel/issues/27)).
-In the first,
+Mesa carries two patches for unkernel's renderer. Since unkernel
+0.2.0-261124 the renderer no longer loses the context over such a draw
+([pithings/unkernel#27](https://github.com/pithings/unkernel/issues/27)):
+it keeps a texture WebGL would refuse off the unit, and the draw
+lands. The patches stay because what that draw then samples is not
+what GL defines. Without them, on 2026-11-24, the feedback case below
+read black where GL defines level 0's red, and (0, 0, 0, 0) where it
+defines (0, 0, 0, 1) for an integer sampler with an incomplete texture
+or none. In the first,
 [patches/mesa/0001](../patches/mesa/0001-virgl-stand-in-for-a-sampler-view-in-a-feedback-loop.patch),
 a draw that renders into a level of a texture
 while a sampler view of the draw covers that level is a feedback loop:
