@@ -123,6 +123,7 @@ import {
   relayOf,
 } from "./network.js";
 import { Sound } from "./sound.js";
+import { Vulkan } from "./vulkan.js";
 import { BootState, bootButtonOf } from "./boot-button.js";
 
 const STORE_PREFIX = "/nix/store/";
@@ -364,6 +365,11 @@ let network = pickNetwork({
 // link.
 let linkedSound = readUrl().sound;
 
+// Guest Vulkan's switch (vulkan.js, url.js `vk`): off unless the link
+// turns it on. The link keeps it, as it keeps the sound switch.
+const linkedVulkan = readUrl().vulkan;
+const vulkan = linkedVulkan ?? Vulkan.OFF;
+
 // The link the page was opened with, while restore() is still looking
 // the link's packages up in the index, or null. Until the restore is
 // done every link the page writes keeps the opening link's packages
@@ -409,6 +415,7 @@ function link({ boot = false, engine = null } = {}) {
     network: linkedNetwork,
     relay: linkedRelay,
     sound: linkedSound,
+    vulkan: linkedVulkan,
     run: linkedRun,
   });
 }
@@ -538,7 +545,8 @@ function render() {
 // Choosing reloads the page at a link that names the choice, because
 // the engine is fixed for the life of the page (config.js, ENGINE).
 // The link keeps every setting the page's own link carries (memory,
-// CPUs, downloads, network, relay, sound, the command to run), so each
+// CPUs, downloads, network, relay, sound, guest Vulkan, the command to
+// run), so each
 // engine applies the ones it supports and a switch there and back loses
 // none. Package names resolve again on the other side; a store path
 // does not travel, and the boot says so if one is carried across
@@ -1575,6 +1583,11 @@ function unkernelEngine(panel) {
         ? `unkernel network: through ${network.relay} (${network.why})`
         : `unkernel network: off (${network.why})`,
     );
+    log(
+      vulkan === Vulkan.ON
+        ? "unkernel Vulkan: on (the link asks for it)"
+        : "unkernel Vulkan: off (the default; vk=1 turns it on)",
+    );
     const vm = await startUnkernel({
       terminalElement,
       keyBarElement,
@@ -1590,6 +1603,7 @@ function unkernelEngine(panel) {
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,
       net: netSpec(network),
+      vulkan,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),

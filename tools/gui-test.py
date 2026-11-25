@@ -62,7 +62,8 @@ The cases:
            back 35 s from when the guest first asks for them. Checks
            that xterm waits for its server and opens its window after
            the hold.
-    vulkan vulkan-tools alone: `vulkaninfo --summary` typed at the
+    vulkan vulkan-tools alone, with guest Vulkan on (vk=1, which no
+           other case sets): `vulkaninfo --summary` typed at the
            page's shell, then `vkcube --wsi wayland`. With a WebGPU
            adapter, vulkaninfo must name kwvk's device and vkcube's
            window must draw through kwvk: frames presented by the
@@ -90,9 +91,10 @@ offer (Chromium and Firefox below).
 
 --webgpu is Chromium's WebGPU: SwiftShader's, which gives the page an
 adapter on any host, or none, which is what Chromium on Linux gives
-without flags. Every case runs with it, so the GL cases run with guest
-Vulkan there as a reader's browser with an adapter has it. Firefox has
-its own WebGPU, and the vulkan case takes either outcome there.
+without flags. Every case runs with it; only the vulkan case turns
+guest Vulkan on, so the others run as a reader's link does by default.
+Firefox has its own WebGPU, and the vulkan case takes either outcome
+there.
 
 A boot needs the network: the closures come from cache.nixos.org, and
 the driver from the site's own cache (gl/), which a site with no
@@ -701,10 +703,11 @@ HOLD_CHECK_SECONDS = 10
 XTERM_RUNNING = "pidof xterm > /dev/null"
 
 
-# The vulkan case: vulkan-tools alone. vulkaninfo is typed at the page's
-# shell, which sourced the manifest that names kwvk to the Vulkan loader
-# (site/js/gui.js, sessionEnv), so it runs as a reader's would; its
-# output and status go to files the case reads through the page's exec.
+# The vulkan case: vulkan-tools alone, booted with vk=1. vulkaninfo is
+# typed at the page's shell, which sourced the manifest that names kwvk
+# to the Vulkan loader (site/js/gui.js, sessionEnv), so it runs as a
+# reader's would; its output and status go to files the case reads
+# through the page's exec.
 VULKAN_PACKAGES = ["vulkan-tools"]
 VULKANINFO_OUT = "/tmp/vulkaninfo.out"
 VULKANINFO_STATUS = "/tmp/vulkaninfo.status"
@@ -776,16 +779,28 @@ WEBGPUS = {WEBGPU_SOFTWARE: cpu.WebGpu.SOFTWARE, WEBGPU_OFF: cpu.WebGpu.OFF}
 FETCH_MODES = ["lazy", "all"]
 
 
-def page_url(base, packages, fetch, run=None):
+class Vulkan(enum.Enum):
+    """Guest Vulkan's switch, as a link writes it (site/js/vulkan.js,
+    the link's `vk`): off, the page's default, which a link leaves out,
+    or on."""
+
+    OFF = "0"
+    ON = "1"
+
+
+def page_url(base, packages, fetch, run=None, vulkan=Vulkan.OFF):
     """The link that boots `packages` on unkernel without a click,
-    naming when the closure downloads if `fetch` is not None, and the
-    command the page types at the shell if `run` is not None."""
+    naming when the closure downloads if `fetch` is not None, the
+    command the page types at the shell if `run` is not None, and guest
+    Vulkan when `vulkan` turns it on."""
     query = [("pkg", name) for name in packages]
     query += [("engine", ENGINE)]
     if fetch is not None:
         query += [("fetch", fetch)]
     if run is not None:
         query += [("run", run)]
+    if vulkan is Vulkan.ON:
+        query += [("vk", vulkan.value)]
     query += [("boot", "1")]
     return f"{base}/?{urllib.parse.urlencode(query)}"
 
@@ -805,13 +820,14 @@ def wait_for(browser, expression, limit, label):
     raise SystemExit(f"FAIL {label}: nothing after {limit} s\n{tail}")
 
 
-def boot(browser, base, packages, fetch, viewport, run=None):
-    """Boot `packages` in a browser window of `viewport`'s size and wait
-    for the shell; returns the seconds taken. The page records the NARs
-    it fetches (FETCH_RECORDER)."""
+def boot(browser, base, packages, fetch, viewport, run=None, vulkan=Vulkan.OFF):
+    """Boot `packages` in a browser window of `viewport`'s size, with
+    guest Vulkan as `vulkan` says, and wait for the shell; returns the
+    seconds taken. The page records the NARs it fetches
+    (FETCH_RECORDER)."""
     browser.set_viewport(VIEWPORTS[viewport])
     browser.preload(FETCH_RECORDER)
-    browser.navigate(page_url(base, packages, fetch, run))
+    browser.navigate(page_url(base, packages, fetch, run, vulkan))
     _, seconds = wait_for(
         browser,
         f"(window.trynix?.transcript?.() ?? '').includes({json.dumps(cpu.SHELL_MARKER)})",
@@ -1358,7 +1374,7 @@ def run_vulkan(browser, base, screenshots, fetch, viewport):
     Without one, vulkaninfo must fail with VK_ERROR_INCOMPATIBLE_DRIVER
     and the page must go on running the guest."""
     print("vulkan")
-    seconds = boot(browser, base, VULKAN_PACKAGES, fetch, viewport)
+    seconds = boot(browser, base, VULKAN_PACKAGES, fetch, viewport, vulkan=Vulkan.ON)
     print(f"  shell after {seconds:.1f} s")
 
     # vulkaninfo, typed at the page's shell. Its status is written

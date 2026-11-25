@@ -4,8 +4,8 @@ A Wayland program from nixpkgs, run in the unkernel guest, opens a
 window on the page. foot, GTK 3 programs (galculator, mousepad,
 aisleriot), mpv, wev and GL programs through Mesa have been run this
 way, and X11 programs through Xwayland: xterm, xeyes, xclock, Tk's
-`wish` and Python's tkinter, and Vulkan programs on the page's WebGPU
-where the browser has an adapter. Everything runs in the tab: the
+`wish` and Python's tkinter, and with `vk=1` in the link Vulkan
+programs on the page's WebGPU where the browser has an adapter. Everything runs in the tab: the
 guest, the relay that carries the program's protocol, the compositor
 that draws its windows, the X server and the GL and Vulkan renderers.
 There is no server, and the host's own display is never involved.
@@ -623,18 +623,28 @@ translates the program's SPIR-V shaders to WGSL with `kwvk-naga.wasm`.
 The program sees "kwvk (WebGPU)", an integrated GPU with Vulkan 1.2.
 
 ```
-https://trynix.dev/?pkg=vulkan-tools&boot=1&run=vulkaninfo+--summary
+https://trynix.dev/?pkg=vulkan-tools&vk=1&boot=1&run=vulkaninfo+--summary
 ```
 
-It is on in every boot, with nothing to set in a link, and nothing of
-it runs until a program asks for it. The SDK listens on the driver's
-port and waits for a program to create a VkInstance. Only then does it
+It is off unless the link has `vk=1`
+([site/js/vulkan.js](../site/js/vulkan.js)). With it on, mpv's first
+frame came 3 s later, for nothing: mpv tries Vulkan before GL, fails on
+kwvk, and starts the X server on the way (see [Programs that prefer
+Vulkan](#programs-that-prefer-vulkan)). Off, the guest is as it was
+before kwvk: the page passes unkernel no `vk` option and no shell has
+the two variables below. It can become the default once kwvk offers
+the `timelineSemaphore` feature, which mpv's renderer, libplacebo,
+requires.
+
+With `vk=1`, nothing of it runs until a program asks for it. The SDK
+listens on the driver's port and waits for a program to create a
+VkInstance. Only then does it
 ask the browser for a WebGPU adapter and a device, and fetch the
 renderer's two chunks (433 bytes) and the translator (1.39 MB, 442 KB
 gzipped). On SwiftShader in headless Chromium the renderer was ready
 73 to 150 ms after the first VkInstance.
 
-Every shell gets two variables (`sessionEnv` in
+With `vk=1` every shell gets two variables (`sessionEnv` in
 [site/js/gui.js](../site/js/gui.js)):
 
 - `VK_ADD_DRIVER_FILES=/kw/layer/usr/share/vulkan/icd.d/kw_icd.json`,
@@ -723,12 +733,13 @@ has is from SwiftShader but one, an Apple M4 Pro in Chrome.
 ### Programs that prefer Vulkan
 
 Some programs try Vulkan before GL. Without kwvk their first
-`vkCreateInstance` failed at once and they went on to GL; with it they
-find a device and go further before they give up on it. Measured
-2026-11-24 in headless Chromium with SwiftShader's WebGPU and WebGL,
-each program on the site before kwvk and on the site with it, the
-closure downloaded before the shell (`fetch=all`), from the command to
-the compositor's first frame:
+`vkCreateInstance` fails at once and they go on to GL; with it they
+find a device and go further before they give up on it. This table is
+why `vk=1` is opt-in. Measured 2026-11-24 in headless Chromium with
+SwiftShader's WebGPU and WebGL, each program on the site before kwvk
+and on the site with kwvk in every boot, the closure downloaded before
+the shell (`fetch=all`), from the command to the compositor's first
+frame:
 
 | program                           | boots | without kwvk       | with kwvk          | draws with              |
 | --------------------------------- | ----- | ------------------ | ------------------ | ----------------------- |
@@ -759,6 +770,10 @@ Without an adapter (Chromium's WebGPU off, as Chromium on Linux has
 it) both fail at the instance, as before kwvk, no X server starts, and
 neither moved: mpv 4.3 and 5.0 s against 4.3 and 4.3 s,
 gnome-calculator 16.8 s against 16.7 and 16.8 s.
+
+With Vulkan behind `vk=1`, a link without it is back where it was:
+mpv's first frame took 4.3 to 4.8 s in four boots, every Vulkan
+attempt failed at the instance, and mpv never opened the X display.
 
 ## Firefox and whole compositors
 
@@ -1025,8 +1040,9 @@ own error and not a signal. The slowx case holds the X server's NARs
 back 35 s and checks that xterm waits through the hold for its window.
 The page records which NARs it fetches for these checks from a script
 the tool runs before the page's own.
-The vulkan case boots vulkan-tools, types `vulkaninfo --summary` at the
-page's shell and then starts `vkcube --wsi wayland`. With a WebGPU
+The vulkan case boots vulkan-tools with `vk=1`, which no other case
+sets, types `vulkaninfo --summary` at the page's shell and then starts
+`vkcube --wsi wayland`. With a WebGPU
 adapter vulkaninfo must name kwvk's device, and vkcube's window must
 draw through kwvk: 30 frames presented by the renderer and taken by
 the compositor, with no renderer error, and a picture with the LunarG

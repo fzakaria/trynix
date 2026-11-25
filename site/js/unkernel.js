@@ -48,6 +48,7 @@ import {
   isGlDriver,
   sessionEnv,
 } from "./gui.js";
+import { kernelVulkan } from "./vulkan.js";
 
 // Where the page writes the CA certificates when the guest has a
 // network (network.js), the same path on both sides of the share.
@@ -171,11 +172,12 @@ async function visible(kernel, paths) {
 // why each is what it is, and why there is no LD_LIBRARY_PATH). Every
 // shell gets the GUI session's environment too (gui.js), the Wayland
 // socket and the X display alike, so a GUI program added after the boot
-// finds the relay from the shell it is typed into. With a network, TLS
+// finds the relay from the shell it is typed into, and with guest Vulkan
+// on (`vulkan`, vulkan.js) the Vulkan driver. With a network, TLS
 // clients are pointed at the CA bundle in the share (`caBundle`, or
 // null without one).
-export function manifest({ caBundle }) {
-  const session = Object.entries(sessionEnv()).map(
+export function manifest({ caBundle, vulkan }) {
+  const session = Object.entries(sessionEnv(vulkan)).map(
     ([name, value]) => `export ${name}="${value}"`,
   );
   return [
@@ -271,7 +273,9 @@ async function pump(shell, port, console_) {
 // { mib, fallbacks }: the size to ask for, and the smaller sizes to try
 // if the browser cannot allocate it (memory.js). cpus is how many CPUs
 // to ask for (cpus.js); more than one boots the SDK's SMP kernel, each
-// CPU in a worker, which needs the kernel in a worker too.
+// CPU in a worker, which needs the kernel in a worker too. vulkan is
+// guest Vulkan's switch (vulkan.js): on, the guest gets kwvk and its
+// shells name it; off, neither.
 //
 // Resolves once the kernel is running and the share is writable. The
 // share is page-side memory, so the closure streams into the share
@@ -288,6 +292,7 @@ export async function startUnkernel({
   windowsButton,
   memory,
   cpus,
+  vulkan,
   engine,
 }) {
   const ui = await openTerminal(terminalElement, keyBarElement);
@@ -387,14 +392,10 @@ export async function startUnkernel({
     worker: globalThis.crossOriginIsolated === true,
     shm: true,
     gpu: true,
-    // Guest Vulkan: kwvk, the Vulkan driver in the kernel's base
-    // system, sends a program's Vulkan calls to the SDK's renderer on
-    // the page's WebGPU (gui.js, sessionEnv; docs/gui.md). The SDK asks
-    // for an adapter and fetches the renderer and this translator on
-    // the guest's first VkInstance and never before. With no adapter
-    // the load fails, the SDK logs why, and the driver answers the
-    // program VK_ERROR_INCOMPATIBLE_DRIVER.
-    vk: { shaderWasm: new URL(engine.vk, location.href).href },
+    // Guest Vulkan, with vk=1 only: kwvk, the Vulkan driver in the
+    // kernel's base system, sends a program's Vulkan calls to the SDK's
+    // renderer on the page's WebGPU (vulkan.js; docs/gui.md).
+    ...kernelVulkan(vulkan, new URL(engine.vk, location.href).href),
     gl: { module: new URL(engine.gl, location.href).href },
     sound,
     ...(net === null ? {} : { net }),
@@ -501,7 +502,10 @@ export async function startUnkernel({
 
       share.linkAll(share.known(), roots, Precedence.KEEP);
       lazyStore = store;
-      FS.writeFile(MANIFEST_FILE, manifest({ caBundle: await caBundle }));
+      FS.writeFile(
+        MANIFEST_FILE,
+        manifest({ caBundle: await caBundle, vulkan }),
+      );
 
       // The share is read-only to the guest: a store is immutable, and
       // everything the page adds later arrives from this side.

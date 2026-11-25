@@ -186,6 +186,22 @@ test("the relay and the sound travel in the link", () => {
   );
 });
 
+// Checks that a link can turn guest Vulkan on, that a vk value that is
+// not 1 or 0 is no choice, and that the switch is written only when
+// given, so a link without it stays as it was before guest Vulkan.
+test("guest Vulkan travels in the link", () => {
+  at("?pkg=vulkan-tools&vk=1");
+  assert.equal(readUrl().vulkan, "1");
+
+  at("?pkg=vulkan-tools&vk=on");
+  assert.equal(readUrl().vulkan, null);
+
+  at("");
+  const state = { pkgs: [{ attr: "vulkan-tools", version: null }], paths: [] };
+  assert.equal(writeUrl(state), "/?pkg=vulkan-tools");
+  assert.equal(writeUrl(state, { vulkan: "1" }), "/?pkg=vulkan-tools&vk=1");
+});
+
 // The page's Try link for firefox, which a first visit lost to the
 // service-worker shim's reload (tools/link-test.py), less the engine:
 // the link names the default engine, which the address leaves out
