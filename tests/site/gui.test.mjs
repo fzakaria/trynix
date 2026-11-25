@@ -364,6 +364,27 @@ test("every shell sends libcanberra to ALSA", () => {
   assert.equal(sessionEnv().CANBERRA_DRIVER, "alsa");
 });
 
+// Checks that the session writes an OpenAL Soft configuration the
+// environment names, giving every OpenAL program four periods of
+// buffer instead of three: GZDoom's mixer missed the default 60 ms
+// about once every two seconds and printed "mmap commit error: Broken
+// pipe" each time.
+test("a session gives OpenAL Soft four periods of buffer", async () => {
+  stubFetch();
+  const share = fakeShare();
+  const session = guestSession({
+    FS: share,
+    exec: async () => RELAY_STARTED,
+  });
+  await session.start();
+
+  const conf = new TextDecoder().decode(
+    share.files.get(sessionEnv().ALSOFT_CONF).data,
+  );
+  assert.match(conf, /^\[general\]$/m);
+  assert.match(conf, /^periods = 4$/m);
+});
+
 // Checks that the session writes the X resources the environment names,
 // giving xterm the monospace font fontconfig knows, since Xwayland has
 // none of the core fonts xterm asks for by default.

@@ -50,6 +50,7 @@ const GUI_SHARE_DIR = `${SHARE_DIR}/gui`;
 const RELAY_PATH = `${GUI_SHARE_DIR}/wlandr`;
 const FONT_DIR = `${GUI_SHARE_DIR}/fonts`;
 const FONTS_CONF = `${GUI_SHARE_DIR}/fonts.conf`;
+const ALSOFT_CONF = `${GUI_SHARE_DIR}/alsoft.conf`;
 
 // The session's runtime directory and socket, as logind would make
 // them for root, the user the guest's shell runs as.
@@ -140,6 +141,14 @@ const MESA_EGL_VENDOR = "share/glvnd/egl_vendor.d/50_mesa.json";
 // does not answer.
 const CANBERRA_DRIVER = "alsa";
 
+// The periods of OpenAL Soft's ALSA buffer, one more than its default
+// of three (20 ms each at 48 kHz). In a game, GZDoom keeps the guest and
+// the page's main thread so busy that its mixer missed the default
+// 60 ms about once every two seconds: each miss is an underrun that
+// restarts the stream and prints "mmap commit error: Broken pipe". At
+// four, none came in 30 s of the game.
+const ALSOFT_PERIODS = 4;
+
 // kwvk's manifest, in the kw layer of unkernel's base system: kwvk is
 // the Vulkan driver whose GPU is the page's WebGPU (unkernel.js, the vk
 // option). nixpkgs' Vulkan loader looks for drivers in /etc/xdg,
@@ -156,7 +165,8 @@ const KWVK_ICD = "/kw/layer/usr/share/vulkan/icd.d/kw_icd.json";
 // end, so a GUI program started plainly finds the relay and picks its
 // Wayland backend. Toolkits that would otherwise look for X are told to
 // use Wayland; each falls back to the X display where it has no Wayland
-// backend. libcanberra is sent to ALSA.
+// backend. libcanberra is sent to ALSA, and OpenAL Soft to the
+// configuration that gives it a longer buffer (ALSOFT_PERIODS).
 //
 // With guest Vulkan on (`vulkan`, vulkan.js), the Vulkan loader is told
 // of kwvk, beside any driver a selected Mesa brings, and Mesa's zink is
@@ -185,6 +195,7 @@ export function sessionEnv(vulkan = Vulkan.OFF) {
     ELECTRON_OZONE_PLATFORM_HINT: "wayland",
     FONTCONFIG_FILE: FONTS_CONF,
     CANBERRA_DRIVER,
+    ALSOFT_CONF,
     DISPLAY: X11_DISPLAY,
     XENVIRONMENT: X11_RESOURCES,
     _JAVA_AWT_WM_NONREPARENTING: "1",
@@ -264,6 +275,16 @@ function x11Resources() {
     `! X resources for X11 programs in the trynix guest (site/js/gui.js).`,
     `XTerm*faceName: ${XTERM_FACE}`,
     `XTerm*faceSize: ${XTERM_FACE_POINTS}`,
+    ``,
+  ].join("\n");
+}
+
+// OpenAL Soft's configuration file (ALSOFT_CONF).
+function alsoftConf() {
+  return [
+    `# OpenAL Soft in the trynix guest (site/js/gui.js).`,
+    `[general]`,
+    `periods = ${ALSOFT_PERIODS}`,
     ``,
   ].join("\n");
 }
@@ -380,6 +401,7 @@ export function guestSession({ FS, exec }) {
     FS.writeFile(X11_LAUNCHER, new TextEncoder().encode(x11Launcher()));
     FS.chmod(X11_LAUNCHER, MODE_EXECUTABLE);
     FS.writeFile(X11_RESOURCES, new TextEncoder().encode(x11Resources()));
+    FS.writeFile(ALSOFT_CONF, new TextEncoder().encode(alsoftConf()));
 
     const result = await exec(relayCommand());
     if (result.exitCode !== 0) {

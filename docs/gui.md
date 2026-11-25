@@ -947,6 +947,26 @@ fails there, with no fallback. So every shell gets
 `CANBERRA_DRIVER=alsa` ([site/js/gui.js](../site/js/gui.js),
 `sessionEnv`).
 
+OpenAL Soft, which GZDoom and other games play through, keeps three
+20 ms periods in the card's buffer by default. In a GZDoom game its
+mixer missed that 60 ms about once every two seconds; each miss is an
+underrun, which OpenAL Soft recovers from by restarting the stream,
+printing `mmap commit error: Broken pipe`. Every shell names an OpenAL
+Soft configuration with four periods (`ALSOFT_CONF`, written by
+[site/js/gui.js](../site/js/gui.js)), and over 30 s of the game none
+came. A program that names its own buffer keeps it.
+
+The page still runs dry while GZDoom plays a level, six to eight times
+a second in headless Chromium on SwiftShader. Replaying its GL on the
+page's WebGL takes about 90% of the page's main thread, most of it in
+`getBufferSubData` and `bufferSubData`, and the kernel hands the page
+its sound from CPU 0, which runs on that thread: chunks then come up
+to 200 ms apart, the worklet's 60 ms queue empties, and after each
+gap kwsnd hands over 30 ms and skips the rest, so about 90% of the
+sound's time reaches the page. A tone from OpenAL Soft's `altonegen`
+played with no gap alone and beside four busy loops in the guest, and
+ran dry 8 times a second beside a silent GZDoom game.
+
 The card has one stream, so one program holds it at a time, and a
 second program that opens it meanwhile gets EBUSY. ALSA's dmix plugin,
 which mixes several programs into one stream, needs a PCM timer that
