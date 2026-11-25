@@ -177,12 +177,23 @@ const kwvkIcd = (driver) =>
     ? KWVK_BASE_ICD
     : `${GUEST_STORE_DIR}/${driver}/${KWVK_MANIFEST}`;
 
+// Where libva finds guest VA-API's driver: kwva, in the kernel's base
+// system, which sends each picture to a WebCodecs decoder on the page
+// (unkernel.js, the va option). The kw layer's dri directory holds it as
+// virtio_gpu_drv_video.so, the name libva derives from the virtio-gpu
+// device's kernel driver, so naming the directory is enough. nixpkgs'
+// libva looks in /run/opengl-driver/lib/dri, which is the GL driver's
+// and holds no VA-API driver. kwva links only glibc, at 2.34, and is
+// libva's driver ABI 1.22, which libva 2.22 and later load.
+const KWVA_DRIVERS_DIR = "/kw/layer/usr/lib/aarch64-linux-gnu/dri";
+
 // The environment every guest shell gets, the same from the boot to the
 // end, so a GUI program started plainly finds the relay and picks its
 // Wayland backend. Toolkits that would otherwise look for X are told to
 // use Wayland; each falls back to the X display where it has no Wayland
-// backend. libcanberra is sent to ALSA, and OpenAL Soft to the
-// configuration that gives it a longer buffer (ALSOFT_PERIODS).
+// backend. libcanberra is sent to ALSA, OpenAL Soft to the
+// configuration that gives it a longer buffer (ALSOFT_PERIODS), and
+// libva to kwva (KWVA_DRIVERS_DIR).
 //
 // With guest Vulkan on (`vulkan`, vulkan.js), the Vulkan loader is told
 // that kwvk is its one driver: the site's, `vulkanDriver` (a store
@@ -215,6 +226,7 @@ export function sessionEnv({ vulkan = Vulkan.OFF, vulkanDriver = null } = {}) {
     FONTCONFIG_FILE: FONTS_CONF,
     CANBERRA_DRIVER,
     ALSOFT_CONF,
+    LIBVA_DRIVERS_PATH: KWVA_DRIVERS_DIR,
     DISPLAY: X11_DISPLAY,
     XENVIRONMENT: X11_RESOURCES,
     _JAVA_AWT_WM_NONREPARENTING: "1",

@@ -91,6 +91,13 @@ The cases:
            the prompt. With a WebGPU adapter the renderer must have
            run llama.cpp's compute work with no errors; without one,
            llama.cpp runs on the guest's CPU and must still answer.
+    video  mpv with a 480p H.264 clip of Big Buck Bunny the link names
+           by URL and hash (file=), played with VA-API onto dmabufs
+           (--hwdec=vaapi --vo=dmabuf-wayland). Where the page's
+           WebCodecs decodes H.264, mpv must decode through VA-API and
+           the page's VA-API host must have decoded the pictures with
+           no failure; elsewhere mpv must play on the guest's CPU. The
+           window must draw frames with a picture in them.
 
 --fetch says when the closure downloads (site/js/downloads.js): `lazy`
 fetches store paths as the program opens them, `all` before the shell
@@ -823,8 +830,44 @@ LLM_COMMAND = (
 )
 LLM_LIMIT_SECONDS = 180
 
+# The video case: mpv and a clip the link names by URL and hash, as the
+# page's video Try link names its own: the first 30 seconds of Big Buck
+# Bunny (CC BY 3.0, Blender Foundation) at 480p in H.264, 4.1 MB, from
+# jsDelivr's copy of the npm package video-media-samples 1.0.0, which
+# sends CORS headers. Its store path is the one `nix store
+# prefetch-file` printed for it.
+VIDEO_PACKAGES = ["mpv"]
+VIDEO_URL = (
+    "https://cdn.jsdelivr.net/npm/video-media-samples@1.0.0/big-buck-bunny-480p-30sec.mp4"
+)
+VIDEO_HASH = "sha256-Uhp44ipAZYFAZtimDVO5lHKoDWqPsJCDcN8EECmLSxI="
+VIDEO_PATH = "/nix/store/nggifrb6xsna855b6hx5hkfilh0r7ld6-big-buck-bunny-480p-30sec.mp4"
 
-CASES = ["foot", "gl", "x11", "feedback", "fds", "frames", "glx", "oldgl", "slowx", "vulkan", "llm"]
+# mpv decoding with VA-API and handing each picture to the compositor
+# as a dmabuf, as the Try link runs it, looping so the window stays, its
+# log in a file. No sound: the case judges the pictures.
+VIDEO_LOG = "/tmp/mpv.log"
+VIDEO_COMMAND = (
+    "mpv --hwdec=vaapi --vo=dmabuf-wayland --video-sync=desync --ao=null --loop"
+    f" {VIDEO_PATH} > {VIDEO_LOG} 2>&1 &\n"
+)
+VIDEO_TITLE = "mpv"
+
+# What mpv logs once its decoder takes VA-API's surfaces, and the
+# profiles the page's VA-API host offers for H.264 when WebCodecs
+# decodes it (vm.va.status.profiles in unkernel's SDK).
+HARDWARE_DECODING = "Using hardware decoding (vaapi)"
+H264_PROFILES = ("h264.cb", "h264.main", "h264.high")
+VA_READY = "ready"
+
+# How many pictures the page must have decoded, and the compositor
+# taken, before the window is judged, and how long they may take. The
+# clip runs at 24 frames a second.
+VIDEO_FRAMES = 48
+VIDEO_FRAMES_LIMIT_SECONDS = 60
+
+
+CASES = ["foot", "gl", "x11", "feedback", "fds", "frames", "glx", "oldgl", "slowx", "vulkan", "llm", "video"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -1641,6 +1684,85 @@ def run_llm(browser, base, screenshots, fetch, viewport):
         raise SystemExit("FAIL the renderer reported errors for llama.cpp")
 
 
+def va_value(browser, name):
+    """The SDK's guest VA-API host's `name` (vm.va: status or stats), as
+    plain values, or None when the page gave the guest no VA-API, or
+    the SDK took none, as it does without WebCodecs' VideoDecoder."""
+    return browser.evaluate(
+        f"(() => {{ const va = window.trynix.kernel.va;"
+        f" return va ? JSON.parse(JSON.stringify(va.{name})) : null; }})()"
+    )
+
+
+def run_video(browser, base, screenshots, fetch, viewport):
+    """video: boot mpv with a clip the link names, play it with VA-API
+    onto dmabufs, and check where its pictures were decoded and that its
+    window draws them."""
+    print("video")
+    seconds = boot(
+        browser, base, VIDEO_PACKAGES, fetch, viewport, files=[f"{VIDEO_URL} {VIDEO_HASH}"]
+    )
+    print(f"  shell after {seconds:.1f} s")
+
+    # The page must give the guest VA-API wherever the browser has
+    # WebCodecs' decoder, which every browser gui-test runs has.
+    if va_value(browser, "status") is None:
+        raise SystemExit("FAIL the page gave the guest no VA-API")
+
+    # mpv, typed at the page's shell, and its window's first frame.
+    browser.type(VIDEO_COMMAND)
+    seconds = first_frame(browser)
+    print(f"  first frame {seconds:.2f} s after the command")
+
+    # What the host offers, which it asked WebCodecs at mpv's first
+    # VA-API connection.
+    status = va_value(browser, "status")
+    decodes_h264 = status["state"] == VA_READY and any(
+        profile in status["profiles"] for profile in H264_PROFILES
+    )
+    print(f"  VA-API host {status['state']}, offering {', '.join(status['profiles'])}")
+
+    # Frames: pictures the host decoded and the compositor took, or with
+    # no H.264 in WebCodecs, frames mpv decoded on the guest's CPU.
+    decoded = (
+        f"window.trynix.kernel.va.stats.frames >= {VIDEO_FRAMES} && "
+        if decodes_h264
+        else ""
+    )
+    _, seconds = wait_for(
+        browser,
+        f"{decoded}window.trynix.desktopStats.commits >= {VIDEO_FRAMES}",
+        VIDEO_FRAMES_LIMIT_SECONDS,
+        f"{VIDEO_FRAMES} video frames",
+    )
+    stats = va_value(browser, "stats")
+    log = guest_shell(browser, f"cat {VIDEO_LOG}")["stdout"]
+    print(
+        f"  {VIDEO_FRAMES} frames {seconds:.2f} s later; VA-API host: {stats['frames']} pictures,"
+        f" {stats['failed']} failed, {stats['errors']} errors"
+    )
+
+    # Where mpv decoded, against what the page's WebCodecs offers.
+    hardware = HARDWARE_DECODING in log
+    if decodes_h264 and not hardware:
+        raise SystemExit(f"FAIL mpv did not decode through VA-API:\n{log[-3000:]}")
+    if not decodes_h264 and hardware:
+        raise SystemExit("FAIL mpv took VA-API's surfaces where WebCodecs decodes no H.264")
+    if stats["failed"] != 0 or stats["errors"] != 0:
+        raise SystemExit("FAIL the VA-API host failed pictures")
+    print("  mpv decoded through VA-API" if hardware else "  mpv decoded on the guest's CPU")
+
+    # The window, and the picture in it.
+    titles = browser.evaluate("window.trynix.desktop.windows().map((w) => w.title)")
+    if not any(VIDEO_TITLE in title for title in titles):
+        raise SystemExit(f"FAIL no window of {VIDEO_TITLE}: {titles}")
+    _, _, colours = tints(browser.screenshot(window_clip(browser)))
+    screenshot(browser, screenshots, "video", viewport)
+    print(f"  picture: {colours} colours")
+    if colours < MIN_COLOURS:
+        raise SystemExit("FAIL mpv's window shows no picture")
+
+
 RUNNERS = {
     "foot": run_foot,
     "gl": run_gl,
@@ -1653,6 +1775,7 @@ RUNNERS = {
     "slowx": run_slowx,
     "vulkan": run_vulkan,
     "llm": run_llm,
+    "video": run_video,
 }
 
 

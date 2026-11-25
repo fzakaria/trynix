@@ -5,7 +5,9 @@ window on the page. foot, GTK 3 programs (galculator, mousepad,
 aisleriot), mpv, wev and GL programs through Mesa have been run this
 way, and X11 programs through Xwayland: xterm, xeyes, xclock, Tk's
 `wish` and Python's tkinter, and with `vk=1` in the link Vulkan
-programs on the page's WebGPU where the browser has an adapter. Everything runs in the tab: the
+programs on the page's WebGPU where the browser has an adapter. Video
+that a program decodes through VA-API is decoded by the browser's own
+decoder (see [Video](#video)). Everything runs in the tab: the
 guest, the relay that carries the program's protocol, the compositor
 that draws its windows, the X server and the GL and Vulkan renderers.
 There is no server, and the host's own display is never involved.
@@ -124,6 +126,8 @@ https://trynix.dev/?pkg=xeyes&boot=1&run=xeyes+%26
  etr ──GLX──> Mesa virgl ──DRI3──> Xwayland, drawing with glamor through Mesa virgl
  vkcube ── kwvk ──vsock 1018──────> kwvk renderer on WebGPU
    └─ wl_buffer named by id ──> wlandr   └─> frame by external buffer to the compositor
+ mpv ── libva ── kwva ──vsock 1024──> WebCodecs VideoDecoder
+   └─ dmabuf, a GPU resource ─> wlandr   └─> frame drawn into the resource on WebGL2
 ```
 
 [site/js/gui.js](../site/js/gui.js) has both halves, and
@@ -977,6 +981,88 @@ With Vulkan behind `vk=1`, a link without it is back where it was:
 mpv's first frame took 4.3 to 4.8 s in four boots, every Vulkan
 attempt failed at the instance, and mpv never opened the X display.
 
+## Video
+
+A program that decodes video through VA-API gets the browser's own
+decoder. unkernel's base system carries kwva, a libva driver in its kw
+layer, and with the SDK's `va` option, which every boot passes
+([site/js/unkernel.js](../site/js/unkernel.js)), the driver sends each
+picture over vsock port 1024 to a WebCodecs `VideoDecoder` on the page
+([.agents/va.md](https://github.com/pithings/unkernel/blob/main/.agents/va.md)
+in unkernel). It decodes H.264, VP9 and AV1, and encodes VP9. With the
+virtio-gpu device every guest has, the decoded frame is drawn into the
+program's surface on the page's GPU, so mpv's `--vo=dmabuf-wayland`
+hands the compositor the picture by GPU resource with no pixels in the
+guest's memory.
+
+```
+https://trynix.dev/?pkg=mpv&file=<url>%20<hash>&boot=1&run=mpv+--hwdec=vaapi+--vo=dmabuf-wayland+--video-sync=desync+<path>+%26
+```
+
+The clip measured below is the first 30 seconds of Big Buck Bunny (CC
+BY 3.0, Blender Foundation) at 1080p in H.264, 22.7 MB, fetched with
+`file=` from jsDelivr's copy of the npm package video-media-samples
+1.0.0. jsDelivr sends CORS headers and sent it at 5 to 16 MB/s. mpv
+decodes on the CPU unless told `--hwdec=vaapi`;
+`--video-sync=desync` keeps it from dropping frames to follow the
+guest's audio clock, as unkernel's own page found.
+
+nixpkgs' libva loads the driver. kwva exports `__vaDriverInit_1_22`,
+which libva 2.22 and later take (the index's mpv 0.42 brings libva
+2.24), and links glibc alone, at 2.34. libva looks for drivers in
+`/run/opengl-driver/lib/dri`, which is the GL driver's link and holds
+none, so every shell names the kw layer's directory with
+`LIBVA_DRIVERS_PATH` (`sessionEnv` in
+[site/js/gui.js](../site/js/gui.js)). The file there is
+`virtio_gpu_drv_video.so`, the name libva derives from the virtio-gpu
+device's kernel driver, so `LIBVA_DRIVER_NAME` is not needed. `vainfo`
+then names `kwva (WebCodecs: software)` in headless Chromium, whose
+WebCodecs decodes in software on Linux.
+
+Nothing of it runs until a program opens a VA-API display: only then
+does the SDK ask WebCodecs which codecs it decodes. The page passes the
+option on every boot because that costs nothing measurable: hello's
+cold boot reached its shell in a median 1.4 s (1.3 to 1.7) with it and
+1.4 s (1.3 to 1.5) without it, twenty boots each, alternated. Measured
+2026-11-25 on the laptop (Radeon 780M, headless Chromium 152 with its
+hardware WebGPU adapter), the closure downloaded before the shell
+(`fetch=all`), the site without the option and with it alternated,
+three runs each, from the command to the first frame with a picture:
+
+| program                           | without VA-API     | with VA-API        |
+| --------------------------------- | ------------------ | ------------------ |
+| mpv, the Try link's fractal       | 4.16 s (4.14–4.43) | 4.17 s (4.15–4.67) |
+| es2gears_wayland                  | 2.17 s (2.16–2.66) | 2.14 s (2.09–2.71) |
+| lbreakouthd (SDL 2 through SDL 3) | 11.8 s (11.8–13.7) | 11.8 s (11.5–12.5) |
+| firefox                           | 28.9 s (28.4–29.4) | 28.7 s (28.7–28.8) |
+
+Of these only firefox opened a VA-API display, its start-up probe, and
+the SDK asked WebCodecs then; its first frame did not move. mpv opens
+none unless told to decode with it.
+
+The clip, five runs each in a new browser profile with
+downloads on first use, mpv's closure from cache.nixos.org and the clip
+from jsDelivr, against mpv's default of decoding on the guest's CPU
+(three runs):
+
+| mpv                        | link to picture    | frames a second  | dropped, first 25 s | audio behind |
+| -------------------------- | ------------------ | ---------------- | ------------------- | ------------ |
+| VA-API, `dmabuf-wayland`   | 13.9 s (11.9–15.2) | 24.0 (24.0–24.0) | 1 to 3              | 0.03 s       |
+| on the CPU, its own output | 14.5 s (14.5–14.9) | 4.9 (4.9–5.0)    | 185 to 194          | 7.7 s        |
+
+Both fetched mpv's closure on first use, 139 to 154 MB, and the clip
+before the first picture; the picture came 9.0 to 11.5 s after the
+command. With VA-API the clip plays at its 24 frames a second. Each
+frame costs the page's main thread about 14 ms, the SDK drawing the
+decoded frame into the program's surface (`vm.va.stats.gpuUploadMs`),
+about a third of the thread at 24 frames a second. On the CPU mpv
+decodes about five frames a second and drops the rest.
+
+ffmpeg takes the driver too: `ffmpeg -hwaccel vaapi` decoded 240
+frames of the clip at 68 frames a second with each picture read back
+into the guest, against 17 on the guest's CPU. VLC 3.0.24 refuses to
+run as root, which every guest shell is.
+
 ## Firefox and whole compositors
 
 nixpkgs' `firefox` runs in the guest, as a Wayland client, loading GL
@@ -1300,7 +1386,13 @@ named by `file=` from Hugging Face, and has llama-completion continue
 a prompt for 24 tokens: it must exit 0 and print words past the prompt,
 and with an adapter the renderer must have run its compute work with
 no error. On SwiftShader that took 19 s; with `--webgpu off` llama.cpp
-falls back to the guest's CPU, which answered in 3 s. `--webgpu` sets
+falls back to the guest's CPU, which answered in 3 s. The video case
+boots mpv with a 480p H.264 clip of Big Buck Bunny the link names by
+`file=`, plays it with `--hwdec=vaapi --vo=dmabuf-wayland`, and waits
+for 48 pictures. Where the page's WebCodecs decodes H.264, mpv's log
+must say it decodes with VA-API and the page's VA-API host must have
+decoded the pictures with none failed; elsewhere mpv must play on the
+guest's CPU. Either way its window must show a picture. `--webgpu` sets
 Chromium's WebGPU for every case: SwiftShader's (the default), which
 gives an adapter on any host, or `off`, which is Chromium on Linux as
 shipped.

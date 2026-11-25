@@ -393,6 +393,14 @@ export async function startUnkernel({
     worker: globalThis.crossOriginIsolated === true,
     shm: true,
     gpu: true,
+    // Guest VA-API: kwva, the libva driver in the kernel's base system,
+    // sends each picture a program decodes to a WebCodecs VideoDecoder
+    // on the page, and with the virtio-gpu device the decoded frame is
+    // drawn into the program's surface on the GPU (docs/gui.md,
+    // "Video"). The SDK asks nothing of WebCodecs before the guest's
+    // first VA-API connection, and in a browser without VideoDecoder it
+    // logs a line and goes on without.
+    va: true,
     // Guest Vulkan, with vk=1 only: kwvk, the Vulkan driver in the
     // kernel's base system, sends a program's Vulkan calls to the SDK's
     // renderer on the page's WebGPU (vulkan.js; docs/gui.md).

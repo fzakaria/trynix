@@ -379,6 +379,19 @@ test("every shell gets the X display, the resources and AWT's flag", () => {
   assert.equal(env.WAYLAND_DISPLAY, "wayland-0");
 });
 
+// Checks that every shell names, for libva, the directory of guest
+// VA-API's driver in the kernel's base system (kwva, which libva loads
+// as virtio_gpu_drv_video.so, after the virtio-gpu device's kernel
+// driver). nixpkgs' libva looks in /run/opengl-driver/lib/dri, which
+// is the GL driver's, and found no driver there, so mpv decoded video
+// on the guest's CPU.
+test("every shell names guest VA-API's driver to libva", () => {
+  assert.equal(
+    sessionEnv().LIBVA_DRIVERS_PATH,
+    "/kw/layer/usr/lib/aarch64-linux-gnu/dri",
+  );
+});
+
 // Checks that every shell sends libcanberra to ALSA, through the
 // session's environment. libcanberra, which plays GTK programs' event
 // sounds and aisleriot's, takes its PulseAudio backend whenever that
