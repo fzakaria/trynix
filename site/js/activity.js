@@ -246,7 +246,13 @@ export function activityLine({ starting, downloads, now }) {
         : `${downloads.length} paths`;
     fetching = `downloading ${what}`;
     progress = total > 0 ? Math.min(1, bytes / total) : null;
-    const amount = `${humanBytes(bytes)} / ${humanBytes(total)}`;
+
+    // A download of no known size yet, as a file a link names is until
+    // its response arrives (files.js), shows its bytes alone.
+    const amount =
+      total > 0
+        ? `${humanBytes(bytes)} / ${humanBytes(total)}`
+        : humanBytes(bytes);
     if (starting === null) {
       return {
         visible: true,
@@ -443,6 +449,16 @@ export function activityStrip({ element, windowCount, screen, isRunning }) {
         return;
       }
       download.bytes += bytes;
+      render();
+    },
+    // A download's size became known after it began, as a file's does
+    // when its response arrives (files.js).
+    downloadSized(basename, total) {
+      const download = downloads.get(basename);
+      if (download === undefined) {
+        return;
+      }
+      download.total = total;
       render();
     },
     downloadEnded(basename) {

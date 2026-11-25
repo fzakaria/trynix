@@ -5,7 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { decodeNixBase32, parseHash } from "../../site/js/hash.js";
+import {
+  decodeNixBase32,
+  encodeNixBase32,
+  parseHash,
+} from "../../site/js/hash.js";
 
 const HELLO_HEX =
   "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
@@ -44,4 +48,13 @@ test("a base64 hash decodes", () => {
 
 test("a hash of no recognised length is rejected", () => {
   assert.throws(() => parseHash("sha256:abc"));
+});
+
+// Tests nix's base32 encoder against the decoder above: sha256("hello")
+// encodes to what `nix hash convert` printed, and a store path's
+// 20-byte digest, from `nix store add-file`, survives the round trip.
+test("nix base32 encodes to what nix prints", () => {
+  assert.equal(encodeNixBase32(decodeNixBase32(HELLO_NIX32, 32)), HELLO_NIX32);
+  const digest = "bwpnrqxq0l114h1d97h9a3aqaf3r69gr";
+  assert.equal(encodeNixBase32(decodeNixBase32(digest, 20)), digest);
 });

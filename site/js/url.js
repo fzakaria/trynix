@@ -5,6 +5,9 @@
 //   ?pkg=ripgrep                           newest version in the index
 //   ?path=/nix/store/<digest>-name         a store path, verbatim
 //   &cache=https://x.cachix.org x-1:key=   an extra binary cache
+//   &file=https://host/data.csv sha256-…=  a file by URL and hash, which
+//                                          the guest sees at the store
+//                                          path fetchurl gives it
 //   &engine=qemu                           the engine, when not the default
 //   &mem=2048                              the unkernel guest's memory, MiB
 //   &cpus=4                                the unkernel guest's CPUs
@@ -29,6 +32,7 @@
 // (whileRestoring).
 
 import { downloadsOf } from "./downloads.js";
+import { fileOf } from "./files.js";
 import { networkOf, relayOf } from "./network.js";
 import { soundOf } from "./sound.js";
 import { vulkanOf } from "./vulkan.js";
@@ -36,6 +40,7 @@ import { vulkanOf } from "./vulkan.js";
 const PARAM_PKG = "pkg";
 const PARAM_PATH = "path";
 const PARAM_CACHE = "cache";
+const PARAM_FILE = "file";
 const PARAM_ENGINE = "engine";
 const PARAM_MEMORY = "mem";
 const PARAM_CPUS = "cpus";
@@ -49,7 +54,8 @@ const PARAM_BOOT = "boot";
 const VERSION_SEPARATOR = "@";
 
 // { pkgs: [{attr, version|null}], paths: [string],
-//   caches: [{url, key}], engine: string|null, memory: number|null,
+//   caches: [{url, key}], files: [{url, hash}],
+//   engine: string|null, memory: number|null,
 //   cpus: number|null, downloads: string|null, network: string|null,
 //   relay: string|null, sound: string|null, vulkan: string|null,
 //   run: string|null, boot: boolean }
@@ -86,10 +92,18 @@ export function readUrl() {
     .filter((parts) => parts.length === 2)
     .map(([url, key]) => ({ url: url.replace(/\/$/, ""), key }));
 
+  // "url hash", as files.js reads it; a value that is not one is dropped,
+  // as a cache without a key is.
+  const files = params
+    .getAll(PARAM_FILE)
+    .map(fileOf)
+    .filter((file) => file !== null);
+
   return {
     pkgs,
     paths,
     caches,
+    files,
     engine: params.get(PARAM_ENGINE),
     memory: countOf(params.get(PARAM_MEMORY)),
     cpus: countOf(params.get(PARAM_CPUS)),
@@ -145,7 +159,7 @@ export function whileRestoring(state, opening) {
 // `downloads`, `network`, `relay`, `sound`, `vulkan` and `run`
 // likewise.
 export function writeUrl(
-  { pkgs, paths, caches = [] },
+  { pkgs, paths, caches = [], files = [] },
   {
     boot = false,
     engine = null,
@@ -171,6 +185,9 @@ export function writeUrl(
   }
   for (const { url, key } of caches) {
     params.append(PARAM_CACHE, `${url} ${key}`);
+  }
+  for (const { url, hash } of files) {
+    params.append(PARAM_FILE, `${url} ${hash}`);
   }
   if (engine !== null) {
     params.set(PARAM_ENGINE, engine);

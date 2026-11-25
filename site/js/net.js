@@ -127,6 +127,10 @@ async function drain(res, { onBytes, onTotal } = {}) {
 // and a bad body must be neither used nor kept: a cached hit that
 // fails is evicted and fetched again, a download that fails is retried
 // like any other failed attempt, and only what passes is stored.
+//
+// The error of the last failed attempt is the `cause` of what this
+// throws: a TypeError there means no response came at all, which is
+// also how a browser refuses a host that sends no CORS headers.
 export async function fetchWithProgress(url, options = {}) {
   const verify = options.verify ?? (async () => null);
 
@@ -178,7 +182,7 @@ export async function fetchWithProgress(url, options = {}) {
 
       if (attempt >= ATTEMPTS) {
         log(`giving up on ${url} after ${attempt} attempts: ${err.message}`);
-        throw new Error(`${url}: ${err.message}`);
+        throw new Error(`${url}: ${err.message}`, { cause: err });
       }
       log(`retrying ${url} (attempt ${attempt} failed: ${err.message})`);
       await delay(BACKOFF_MS * attempt);

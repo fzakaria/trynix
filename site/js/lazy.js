@@ -110,9 +110,10 @@ export const PREFETCH_LIMIT_BYTES = 2 * 1024 * 1024;
 const EIO = "EIO";
 
 // The type a store path is listed with in the store before its NAR is
-// in, when it has no listing to say. Nearly every store path is a
-// directory, and a directory entry's type is only a hint: the guest
-// looks the name up before it acts on what the name is.
+// in, when neither its listing nor its narinfo-like info says
+// (lazyStore, typeHint). Nearly every store path is a directory, and a
+// directory entry's type is only a hint: the guest looks the name up
+// before it acts on what the name is.
 const UNFETCHED_TYPE = "dir";
 
 // The modification time nix gives every file in a store, one second
@@ -452,6 +453,13 @@ export function lazyStore({
     },
 
     knows: (basename) => paths.has(basename),
+
+    // The guest's type for a path before its listing or NAR has said:
+    // the one its info names, as a file a link names does (files.js),
+    // else UNFETCHED_TYPE.
+    typeHint: (basename) =>
+      paths.get(basename)?.info.typeHint ?? UNFETCHED_TYPE,
+
     origin: (basename) => paths.get(basename)?.origin,
     ready: (basename) => paths.get(basename)?.written === true,
 
@@ -701,7 +709,7 @@ export function lazyFs(fs, store, { storeDir, shareDir }) {
             const listed = store.listed(name);
             return {
               name,
-              type: listed ? rootType(listed) : UNFETCHED_TYPE,
+              type: listed ? rootType(listed) : store.typeHint(name),
             };
           });
         return [...written, ...unfetched];

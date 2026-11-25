@@ -951,6 +951,23 @@ test("the store lists a listed path with its listed type", async () => {
   assert.deepEqual(types, { [LIBC]: "dir", "p-script": "file" });
 });
 
+// Checks that the store lists a path whose narinfo-like info says it is
+// one file, as a file a link names does (files.js), with that type
+// before anything about it is fetched or listed.
+test("the store lists a path its info calls a file as a file", async () => {
+  const { fs, started, listed } = servedLazily(
+    [info(LIBC), { ...info("s-data.csv"), typeHint: "file" }],
+    {},
+    {},
+  );
+  const types = Object.fromEntries(
+    (await fs.readdir(STORE)).map((entry) => [entry.name, entry.type]),
+  );
+  assert.deepEqual(types, { [LIBC]: "dir", "s-data.csv": "file" });
+  assert.deepEqual(started, []);
+  assert.deepEqual(listed, []);
+});
+
 // A capability: the X server's program and a library it needs, which
 // the guest reaches only through a link the page makes to the program.
 const SERVER = "q-xwayland-satellite-0.8.3";

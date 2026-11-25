@@ -44,6 +44,25 @@ export function decodeNixBase32(text, size) {
   return bytes;
 }
 
+// The five bits one digit holds.
+const DIGIT_MASK = (1 << BITS_PER_DIGIT) - 1;
+
+// nix's encoder, transliterated: the decoder above run backwards, the
+// last digit written first. A store path's 20-byte digest is 32 digits.
+export function encodeNixBase32(bytes) {
+  const length = Math.ceil((bytes.length * BITS_PER_BYTE) / BITS_PER_DIGIT);
+  let text = "";
+  for (let n = length - 1; n >= 0; n -= 1) {
+    const bit = n * BITS_PER_DIGIT;
+    const i = Math.floor(bit / BITS_PER_BYTE);
+    const j = bit % BITS_PER_BYTE;
+    const spill =
+      i + 1 < bytes.length ? bytes[i + 1] << (BITS_PER_BYTE - j) : 0;
+    text += ALPHABET[((bytes[i] >> j) | spill) & DIGIT_MASK];
+  }
+  return text;
+}
+
 const DIGEST_SIZES = { sha256: 32 };
 
 const HEX_DIGITS_PER_BYTE = 2;

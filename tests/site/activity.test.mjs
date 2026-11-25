@@ -316,3 +316,17 @@ test("a typed line begun away from the prompt starts over at it", () => {
   assert.equal(unechoed.send("ema", Screen.NORMAL, ""), null);
   assert.equal(unechoed.send("cs &\r", Screen.NORMAL, ""), "emacs &");
 });
+
+// Checks that a download whose size is not known yet, as a file a link
+// names is until its response arrives, shows its bytes alone rather
+// than a total of nothing, and no fill.
+test("a download of no known size shows its bytes alone", () => {
+  const file = [{ basename: `${DIGEST}-data.csv`, bytes: 2048, total: 0 }];
+  assert.deepEqual(activityLine({ starting: null, downloads: file, now: 0 }), {
+    visible: true,
+    primary: "downloading data.csv",
+    secondary: "2.0 KiB",
+    progress: null,
+    elapsed: "",
+  });
+});

@@ -19,6 +19,7 @@ import {
 } from "./analytics.js";
 import { reachable, walkClosure } from "./closure.js";
 import { fetchNar } from "./store.js";
+import { fetchFile, fileInfo, nameOf } from "./files.js";
 import { lazyStore, PathOrigin, Priority, References } from "./lazy.js";
 import {
   fetchListing,
@@ -286,6 +287,15 @@ function deselect(digest) {
 // under Settings says, and what the link carries.
 let extraCaches = [];
 
+// The files the link names by URL and hash (files.js, url.js `file`),
+// which the next boot puts in the guest's store. They stay in the link
+// as the selection changes, and a chip's x takes one out.
+let linkedFiles = readUrl().files;
+
+// Why a file the link names could not be fetched, by URL, for its chip
+// and the status line. A file fetched since is taken out.
+const fileFailures = new Map();
+
 // The package picker, once the lanes below have built it. Named here
 // because render() marks its pills, and a selection can change before
 // the lanes are wired (a shared link restores one).
@@ -302,6 +312,7 @@ function urlState() {
       .filter((e) => e.attr === undefined)
       .map((e) => e.storePath ?? e.digest),
     caches: extraCaches,
+    files: linkedFiles,
   };
 }
 
@@ -482,6 +493,42 @@ function chipFor(entry) {
   return chip;
 }
 
+// One chip for a file the link names: its name, with the URL, the hash
+// and any failure in the tooltip, and an x that takes it out of the
+// link. A file that could not be fetched is marked as a path no cache
+// holds is.
+function fileChipFor(file) {
+  const failure = fileFailures.get(file.url);
+  const name = nameOf(file.url);
+
+  const chip = document.createElement("span");
+  chip.className = failure === undefined ? "chip" : "chip missing";
+
+  const label = document.createElement("span");
+  label.textContent = `${name}${failure === undefined ? "" : " ⚠"}`;
+  label.title = [
+    `${file.url}, pinned to ${file.hash}; the guest has it in /nix/store`,
+    failure,
+  ]
+    .filter(Boolean)
+    .join(". ");
+
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "drop";
+  drop.textContent = "✕";
+  drop.title = `remove ${name}`;
+  drop.ariaLabel = `remove ${name} from the link`;
+  drop.onclick = () => {
+    linkedFiles = linkedFiles.filter((other) => other !== file);
+    fileFailures.delete(file.url);
+    render();
+  };
+
+  chip.append(label, drop);
+  return chip;
+}
+
 // Selected paths that a configured cache answered for and none holds.
 // A path whose probe is still in flight, or whose caches could not be
 // reached, is not among them: neither proves the boot fails.
@@ -516,7 +563,10 @@ function refreshBootButton() {
 function render() {
   const entries = [...selection.values()];
 
-  selectionElement.replaceChildren(...entries.map(chipFor));
+  selectionElement.replaceChildren(
+    ...entries.map(chipFor),
+    ...linkedFiles.map(fileChipFor),
+  );
   // The pills in the search list say which versions are chosen, and a
   // version can leave the selection by its chip as well as by its pill.
   picker?.refresh();
@@ -533,6 +583,7 @@ function render() {
   if (missing.length > 0) {
     lines.push(missingNote(missing));
   }
+  lines.push(...fileFailures.values());
   status.textContent = lines.join(" · ");
 
   // A package with an attribute is shareable by name; a raw store path
@@ -1332,6 +1383,11 @@ function eagerOf(infos, rootDigests) {
   return infos.filter((info) => rootDigests.includes(digestOfInfo(info)));
 }
 
+// What `infos` cost to download, in compressed bytes, as the narinfos
+// price each path; a file the link names counts from when its download
+// learns its size (fetchPath).
+const sizeOf = (infos) => infos.reduce((sum, info) => sum + info.fileSize, 0);
+
 // Fetch the eager paths through the store. A selected path is touched,
 // which starts all its references in the background as well, since the
 // reader is about to run it; the rest of a closure downloaded whole
@@ -1369,10 +1425,10 @@ function newListings() {
 // replaces them (show), since each has a panel of its own. `listings`
 // gives the store each path's NAR listing.
 function serveLazily(vmPromise, listings) {
-  // { selected, closure, eager: Set of basenames }: the row of what the
-  // boot or addition waits for, the row of the selection's whole
-  // closure or null for none, and the basenames that count into the
-  // first.
+  // { selected, closure, eager: Set of basenames, eagerInfos }: the row
+  // of what the boot or addition waits for, the row of the selection's
+  // whole closure or null for none, and the paths that count into the
+  // first, by basename and as narinfos.
   let rows = null;
   let telemetry = null;
   // Compressed bytes read for the closure, from the network or the
@@ -1394,6 +1450,13 @@ function serveLazily(vmPromise, listings) {
     }
   }
 
+  // The rows' totals. Called when the rows are shown, and again when a
+  // file's download learns the file's size.
+  function total() {
+    rows.selected.setTotal(sizeOf(rows.eagerInfos));
+    rows.closure?.setTotal(store.stats(PathOrigin.SELECTION).bytes);
+  }
+
   // The closure's row is done once every path of the selection is in:
   // called as each path is written, and when the rows are shown.
   function finished() {
@@ -1408,21 +1471,26 @@ function serveLazily(vmPromise, listings) {
 
   const store = lazyStore({
     concurrency: NAR_CONCURRENCY,
-    listing: (info) => listings.of(info),
+    // A file the link names has no listing: it is one file, and the
+    // store lists it as one (lazy.js, typeHint).
+    listing: (info) => (info.file === undefined ? listings.of(info) : null),
     dropListing: forgetListing,
     async fetch(info) {
       // The strip under the terminal shows the download while it runs.
       const basename = basenameOf(info);
       activity.downloadStarted(basename, info.fileSize);
       try {
-        const entries = await fetchNar(
-          info,
-          (bytes) => {
+        const entries = await fetchPath(info, {
+          onBytes: (bytes) => {
             count(info, bytes);
             activity.downloadBytes(basename, bytes);
           },
-          (result, bytes) => telemetry.cacheRead(result, bytes),
-        );
+          onCacheRead: (result, bytes) => telemetry.cacheRead(result, bytes),
+          onSize: () => {
+            activity.downloadSized(basename, info.fileSize);
+            total();
+          },
+        });
         checkSystem(info, entries, selectedDigests);
         return entries;
       } finally {
@@ -1465,14 +1533,11 @@ function serveLazily(vmPromise, listings) {
         selected,
         closure,
         eager: new Set(eager.map(basenameOf)),
+        eagerInfos: eager,
       };
       telemetry = loadTelemetry;
-      selected.setTotal(eager.reduce((sum, info) => sum + info.fileSize, 0));
-      if (closure !== null) {
-        const { bytes, writtenBytes } = store.stats(PathOrigin.SELECTION);
-        closure.setTotal(bytes);
-        closure.add(writtenBytes);
-      }
+      total();
+      closure?.add(store.stats(PathOrigin.SELECTION).writtenBytes);
       finished();
     },
   };
@@ -1677,6 +1742,37 @@ function unkernelEngine(panel) {
   };
 }
 
+// Fetch one path of the guest's store: a closure path's NAR from the
+// cache that served its narinfo, or a file the link names from its own
+// host (files.js). A file's size is unknown until its download learns
+// it; it then becomes the file's fileSize, and onSize() hears of it. A
+// file that cannot be fetched says why on its chip and the status line.
+async function fetchPath(info, { onBytes, onCacheRead, onSize }) {
+  if (info.file === undefined) {
+    return fetchNar(info, onBytes, onCacheRead);
+  }
+
+  const { url } = info.file;
+  try {
+    const entries = await fetchFile(info, {
+      onBytes,
+      onCacheRead,
+      onSize: (size) => {
+        info.fileSize = size;
+        onSize();
+      },
+    });
+    if (fileFailures.delete(url)) {
+      render();
+    }
+    return entries;
+  } catch (err) {
+    fileFailures.set(url, err.message);
+    render();
+    throw err;
+  }
+}
+
 // Refuse a selected store path whose programs were built for a system
 // this page's engine does not run, naming the engine that does.
 //
@@ -1802,6 +1898,7 @@ async function boot() {
     log(`closure: ${closure.size} paths from ${rootDigests.length} roots`);
     walkRow.done(`${closure.size} paths`);
     renderClosure(closure);
+    const infos = [...closure.values()];
 
     // Signatures are checked against the configured keys. A path no key
     // vouches for is still booted — the reader chose the cache — but
@@ -1822,6 +1919,11 @@ async function boot() {
       signatureRow.done(`${closure.size} verified`);
     }
 
+    // The files the link names, at the store paths fetchurl gives them
+    // (files.js). The guest's store holds them beside the closure.
+    const named = await Promise.all(linkedFiles.map(fileInfo));
+    const stored = [...infos, ...named];
+
     stage = LoadStage.DOWNLOAD;
     // The engine starts as soon as its own inputs are in, without
     // waiting for the closure.
@@ -1836,7 +1938,6 @@ async function boot() {
     // Each NAR goes into the share the moment it is parsed, and is
     // dropped from the page's hands right after. Nothing here ever
     // holds more than the few NARs in flight.
-    const infos = [...closure.values()];
     let closurePromise;
     let offered = null;
     let gl = { driver: null, note: null };
@@ -1847,11 +1948,11 @@ async function boot() {
       // nothing of them is fetched.
       selectedDigests = rootDigests;
       served = serveLazily(vmPromise, listings);
-      served.store.add(infos);
+      served.store.add(stored);
       gl = await glDriverFor(closure, rootDigests);
       serveCapabilities(served.store, gl.driver);
       offered = lazily ? served.offer(infos) : null;
-      const eager = eagerOf(infos, rootDigests);
+      const eager = eagerOf(stored, rootDigests);
       served.show({
         selected: closureRow,
         closure: firstUseRow,
@@ -1861,17 +1962,17 @@ async function boot() {
       closurePromise = fetchEager(served.store, eager, rootDigests).then(() => {
         closureRow.done();
         log(
-          `selected packages written to the share; the other ${infos.length - eager.length} paths on first use`,
+          `selected packages written to the share; the other ${stored.length - eager.length} paths on first use`,
         );
       });
     } else {
-      closureRow.setTotal(infos.reduce((sum, i) => sum + i.fileSize, 0));
-      closurePromise = mapConcurrent(infos, NAR_CONCURRENCY, async (info) => {
-        const entries = await fetchNar(
-          info,
-          (n) => closureRow.add(n),
-          telemetry.cacheRead,
-        );
+      closureRow.setTotal(sizeOf(stored));
+      closurePromise = mapConcurrent(stored, NAR_CONCURRENCY, async (info) => {
+        const entries = await fetchPath(info, {
+          onBytes: (n) => closureRow.add(n),
+          onCacheRead: telemetry.cacheRead,
+          onSize: () => closureRow.setTotal(sizeOf(stored)),
+        });
         checkSystem(info, entries, rootDigests);
         const vm = await vmPromise;
         vm.share.write(basenameOf(info), entries);

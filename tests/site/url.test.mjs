@@ -255,3 +255,42 @@ test("the address describes the selection once the link is restored", () => {
   };
   assert.equal(whileRestoring(state, null), state);
 });
+
+// A file a link names, by URL and SRI hash (files.js); its hash holds a
+// + and a /, which the query string has to carry.
+const FILE = {
+  url: "https://example.org/points.csv",
+  hash: "sha256-GJvquPfvZ1vtswSZ6voA+cC7hypBbCvUrrji7UdExV0=",
+};
+
+// Checks that a link names files by a repeated file= of a URL and a
+// hash, typed by hand with its + raw, and that a value that is not a
+// URL and a hash is dropped.
+test("a link names files by URL and hash", () => {
+  at(`?pkg=jq&file=${FILE.url}+${FILE.hash}&file=https://example.org/x.csv`);
+  assert.deepEqual(readUrl().files, [FILE]);
+
+  at("?pkg=jq");
+  assert.deepEqual(readUrl().files, []);
+});
+
+// Checks that files are written after the caches, and that a written
+// link reads back to the same files.
+test("files are written after the caches and read back", () => {
+  at("");
+  const cache = { url: "https://x.cachix.org", key: "x-1:key=" };
+  const state = {
+    pkgs: [{ attr: "jq", version: null }],
+    paths: [],
+    caches: [cache],
+    files: [FILE],
+  };
+  const written = writeUrl(state);
+  const params = [...new URLSearchParams(written.slice(written.indexOf("?")))];
+  assert.deepEqual(
+    params.map(([name]) => name),
+    ["pkg", "cache", "file"],
+  );
+  at(written.slice(written.indexOf("?")));
+  assert.deepEqual(readUrl().files, [FILE]);
+});
