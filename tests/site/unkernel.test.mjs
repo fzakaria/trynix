@@ -14,6 +14,7 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readlinkSync,
   rmSync,
   writeFileSync,
@@ -25,7 +26,8 @@ import { join } from "node:path";
 // screen as it loads. Node has none; this one says it is no touch
 // screen.
 globalThis.matchMedia = () => ({ matches: false, addEventListener: () => {} });
-const { envLink, manifest } = await import("../../site/js/unkernel.js");
+const { envLink, hostsFile, manifest } =
+  await import("../../site/js/unkernel.js");
 const { Vulkan } = await import("../../site/js/vulkan.js");
 
 // The site's kwvk as the page names it to the guest (its store path's
@@ -145,6 +147,37 @@ test("the boot links env where scripts look for it", () => {
     result = run();
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readlinkSync(join(root, "usr", "bin", "env")), "/bin/env");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Checks that the boot gives the guest an /etc/hosts that names
+// localhost as 127.0.0.1, and keeps a hosts file a base system has
+// already, by running the command in sh against a directory standing in
+// for the guest's root. Without the file a nixpkgs program asks DNS for
+// localhost, and the page's DNS answers every name with a stand-in
+// address: cloudflared could not bind its metrics listener.
+test("the boot names localhost in /etc/hosts", () => {
+  const root = mkdtempSync(join(tmpdir(), "root-"));
+  try {
+    mkdirSync(join(root, "etc"));
+    const hosts = join(root, "etc", "hosts");
+    const run = () =>
+      spawnSync("sh", ["-c", hostsFile(root)], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+      });
+    let result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(hosts, "utf8"), "127.0.0.1\tlocalhost\n");
+
+    // A base system with its own hosts file keeps it.
+    const own = "127.0.0.1\tlocalhost\n127.0.1.1\tunkernel\n";
+    writeFileSync(hosts, own);
+    result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(hosts, "utf8"), own);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

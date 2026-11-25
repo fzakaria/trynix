@@ -102,6 +102,24 @@ const BASE_ENV = "/bin/env";
 export const envLink = (root = "") =>
   `{ [ -e ${root}${ENV_LINK} ] || [ -L ${root}${ENV_LINK} ] || ln -s ${BASE_ENV} ${root}${ENV_LINK}; }`;
 
+// Where a resolver looks a name up before it asks DNS, and the one name
+// the guest needs there. unkernel's base system ships no hosts file, so
+// a nixpkgs program, whose glibc reads the file and then asks DNS, sent
+// "localhost" to the page's DNS. With a Wisp relay that DNS answers
+// every name with a stand-in address (network.js), localhost included,
+// and a program that listens on or connects to localhost got an address
+// no interface has: cloudflared could not bind its metrics listener.
+// The guest's kernel has no IPv6, so ::1 is left out.
+const HOSTS_FILE = "/etc/hosts";
+const LOOPBACK_ADDRESS = "127.0.0.1";
+const LOOPBACK_NAME = "localhost";
+
+// The command that writes HOSTS_FILE under `root`, the guest's root
+// when empty, unless a hosts file is there already: a base system that
+// ships its own keeps it.
+export const hostsFile = (root = "") =>
+  `{ [ -e ${root}${HOSTS_FILE} ] || printf '%s\\t%s\\n' ${LOOPBACK_ADDRESS} ${LOOPBACK_NAME} > ${root}${HOSTS_FILE}; }`;
+
 // The file the shell sources as it starts. ash reads the file ENV names
 // when the shell is interactive, which is how PATH reaches the shell
 // without the page typing anything.
@@ -552,18 +570,18 @@ export async function startUnkernel({
       // Every nix binary names its loader and libraries by /nix/store
       // paths, so the guest needs the store at /nix as well as where
       // the share is mounted. The same command puts env where scripts
-      // look for it, and points the guest's fixed names at the X server
-      // and the GL driver, a GL driver the reader selected over the
-      // site's.
+      // look for it, names localhost in /etc/hosts, and points the
+      // guest's fixed names at the X server and the GL driver, a GL
+      // driver the reader selected over the site's.
       const driver = ownGlDriver(roots) ?? glDriver;
       const links = capabilityLinks({ glDriver: driver, x11Server });
       const linked = await kernel.exec(SHELL, [
         "-c",
-        `ln -s ${SHARE_DIR}/nix /nix && ${envLink()} && ${links}`,
+        `ln -s ${SHARE_DIR}/nix /nix && ${envLink()} && ${hostsFile()} && ${links}`,
       ]);
       if (linked.exitCode !== 0) {
         throw new Error(
-          `could not link /nix, /usr/bin/env and /run in the guest: ${linked.stderr.trim()}`,
+          `could not link /nix, /usr/bin/env and /run or write /etc/hosts in the guest: ${linked.stderr.trim()}`,
         );
       }
       log(

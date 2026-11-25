@@ -171,6 +171,11 @@ The guest side is unkernel's base system, with no distro image:
 - `/usr/bin/env` is linked to the base system's `/bin/env`, where
   NixOS has it too, for scripts that name it in their `#!` line:
   VSCodium's launcher failed with "bad interpreter" without it;
+- `/etc/hosts` names `localhost` as 127.0.0.1, unless the base system
+  has a hosts file. unkernel's base system has none, so a nixpkgs
+  program asked DNS for `localhost` and, through a Wisp relay, got a
+  stand-in address (Network, below): cloudflared could not bind its
+  metrics listener;
 - the shell is busybox ash on a real pty, started with `ENV` pointing
   at `/share/manifest`, which sets PATH, TERM and LANG. A resize is a
   call on the pty, so there is no `stty` loop;
