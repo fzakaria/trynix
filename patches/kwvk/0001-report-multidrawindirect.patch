@@ -1,0 +1,41 @@
+Subject: [PATCH] kwvk: report multiDrawIndirect
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 1).
+
+GZDoom's ZVulkan takes a device only if it has samplerAnisotropy,
+fragmentStoresAndAtomics, multiDrawIndirect and independentBlend
+(libraries/ZVulkan/src/vulkanbuilders.cpp, FindDevices). kwvk reported
+every one but multiDrawIndirect, with maxDrawIndirectCount 1, so GZDoom
+found no device it accepts and fell back to GLES.
+
+The renderer already draws any drawCount: vkCmdDrawIndirect and
+vkCmdDrawIndexedIndirect loop over the records (js/core/vk-exec.ts).
+The driver now reports the feature and 65535, the least
+maxDrawIndirectCount the spec allows with it.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index 9f37450..884161f 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -357,7 +357,10 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
+ 	l->subTexelPrecisionBits = 4;
+ 	l->mipmapPrecisionBits = 4;
+ 	l->maxDrawIndexedIndexValue = 0xffffffffu;
+-	l->maxDrawIndirectCount = 1;
++	/* multiDrawIndirect: the renderer draws an indirect call's drawCount
++	 * records one by one (js/core/vk-exec.ts), so any count works; 2^16 - 1
++	 * is the least the spec allows with the feature */
++	l->maxDrawIndirectCount = 65535;
+ 	l->maxSamplerLodBias = 0;
+ 	l->maxSamplerAnisotropy = 16;
+ 	l->maxViewports = 1;
+@@ -419,6 +422,7 @@ static void pd_init(struct kw_physical_device *pd, struct kw_reply *rep)
+ 	f->shaderClipDistance = HAS("clip-distances");
+ 	f->dualSrcBlend = HAS("dual-source-blending");
+ 	f->drawIndirectFirstInstance = HAS("indirect-first-instance");
++	f->multiDrawIndirect = 1;
+ 	f->occlusionQueryPrecise = 0;
+ 	pd->f16 = HAS("shader-f16");
+ 	if (HAS("timestamp-query")) {

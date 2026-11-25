@@ -1,0 +1,155 @@
+Subject: [PATCH] kwvk: drop descriptor bindings no function uses
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 3).
+
+GZDoom declares texture12 at set 2, binding 11, and never samples it;
+its texture set layouts end at binding 10. Vulkan allows that, since
+the shader never uses the binding. The translator reflects every
+binding a module declares, and the renderer's bindGroup then wants
+each one written (js/core/vk-host.ts), which lost the device at the
+first draw:
+
+  vkQueueSubmit: command 28 (vkCmdDrawIndexed): set binding 11 not
+  written
+
+Taisei's SDL 3 GPU renderer stopped the same way, at binding 0.
+
+Before the module leaves the driver, every module-scope variable with
+a Binding that no function names is dropped: its OpVariable, its
+decorations and names, and its entries in the OpEntryPoint interfaces.
+A variable named in an OpGroupDecorate is kept.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index 3fa9b4d..8b41789 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -1564,6 +1564,111 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
+ 	return out;
+ }
+ 
++/* Descriptor bindings no function of the module uses, dropped: their
++ * OpVariable, the decorations and names on it, and its place in the
++ * entry points' interfaces. The translator reflects every binding a
++ * module declares, and the host then wants each one written in the bound
++ * set, which Vulkan asks only of the bindings a shader uses (GZDoom
++ * declares texture12 at binding 11, never reads it, and its set layouts
++ * end at binding 10). A variable named in an OpGroupDecorate is kept.
++ * Returns the smaller module (*out_nw words), or NULL when nothing is
++ * dropped or the module is not understood. */
++static uint32_t *spirv_drop_unused(const uint32_t *w, size_t nw, size_t *out_nw)
++{
++	enum {
++		OP_NAME = 5, OP_ENTRY_POINT = 15, OP_FUNCTION = 54, OP_VARIABLE = 59, OP_DECORATE = 71,
++		OP_GROUP_DECORATE = 74, OP_DECORATE_ID = 332, OP_DECORATE_STRING = 5632,
++		DEC_BINDING = 33,
++	};
++	if (nw < 5 || w[0] != 0x07230203)
++		return NULL;
++	uint32_t bound = w[3];
++	if (bound > (1u << 22))
++		return NULL;
++	enum { F_GLOBAL = 1, F_BOUND = 2, F_USED = 4 };
++	uint8_t *flags = calloc(bound, 1);
++	uint32_t *out = NULL;
++	int bad = !flags, in_function = 0;
++
++	/* The module-scope variables with a Binding, then the ids each
++	 * function body names: any operand equal to one counts as a use. */
++	for (size_t i = 5; !bad && i < nw;) {
++		uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
++		if (!len || i + len > nw) {
++			bad = 1;
++			break;
++		}
++		const uint32_t *a = w + i + 1;
++		uint32_t na = len - 1;
++		if (op == OP_FUNCTION)
++			in_function = 1;
++		if (in_function) {
++			for (uint32_t k = 0; k < na; k++)
++				if (a[k] < bound)
++					flags[a[k]] |= F_USED;
++		} else if (op == OP_VARIABLE && na >= 2 && a[1] < bound) {
++			flags[a[1]] |= F_GLOBAL;
++		} else if (op == OP_DECORATE && na >= 2 && a[0] < bound && a[1] == DEC_BINDING) {
++			flags[a[0]] |= F_BOUND;
++		} else if (op == OP_GROUP_DECORATE) {
++			for (uint32_t k = 1; k < na; k++)
++				if (a[k] < bound)
++					flags[a[k]] |= F_USED;
++		}
++		i += len;
++	}
++#define DROPPED(id) ((id) < bound && (flags[id] & (F_GLOBAL | F_BOUND | F_USED)) == (F_GLOBAL | F_BOUND))
++	size_t drops = 0;
++	for (uint32_t id = 0; !bad && id < bound; id++)
++		drops += DROPPED(id);
++	if (bad || !drops || !(out = malloc(nw * 4))) {
++		free(flags);
++		return NULL;
++	}
++
++	/* The copy, without the dropped variables' instructions and
++	 * interface entries. */
++	memcpy(out, w, 5 * 4);
++	size_t o = 5;
++	in_function = 0;
++	for (size_t i = 5; i < nw;) {
++		uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
++		const uint32_t *a = w + i + 1;
++		uint32_t na = len - 1;
++		if (op == OP_FUNCTION)
++			in_function = 1;
++		int drop = !in_function &&
++			   ((op == OP_VARIABLE && na >= 2 && DROPPED(a[1])) ||
++			    ((op == OP_DECORATE || op == OP_DECORATE_ID || op == OP_DECORATE_STRING || op == OP_NAME) && na >= 1 && DROPPED(a[0])));
++		if (drop) {
++			i += len;
++			continue;
++		}
++		if (op == OP_ENTRY_POINT && na >= 3) {
++			/* execution model, function, a nul-terminated name in whole
++			 * words, then the interface ids */
++			uint32_t k = 2;
++			while (k < na && ((a[k] & 0xff000000u) && (a[k] & 0xff0000u) && (a[k] & 0xff00u) && (a[k] & 0xffu)))
++				k++;
++			k++;
++			size_t start = o++;
++			for (uint32_t m = 0; m < na; m++)
++				if (m < k || !DROPPED(a[m]))
++					out[o++] = a[m];
++			out[start] = (uint32_t)(o - start) << 16 | op;
++			i += len;
++			continue;
++		}
++		memcpy(out + o, w + i, len * 4);
++		o += len;
++		i += len;
++	}
++#undef DROPPED
++	free(flags);
++	*out_nw = o;
++	return out;
++}
++
+ /* One pass over the module in *w (*nw words), which *owned holds, or
+  * the app when *owned is NULL: the module the pass returns replaces it. */
+ typedef uint32_t *(*spirv_pass)(const uint32_t *w, size_t nw, size_t *out_nw);
+@@ -1579,11 +1684,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
+ 	*nw = out_nw;
+ }
+ 
+-/* The module as the host gets it: storage buffers no function writes
+- * made read-only. Returns NULL when no pass changed it. */
++/* The module as the host gets it: descriptor bindings no function uses
++ * dropped, then storage buffers no function writes made read-only.
++ * Returns NULL when no pass changed it. */
+ static uint32_t *spirv_for_host(const uint32_t *w, size_t nw, size_t *out_nw)
+ {
+ 	uint32_t *owned = NULL;
++	spirv_apply(spirv_drop_unused, &w, &nw, &owned);
+ 	spirv_apply(spirv_mark_unwritten, &w, &nw, &owned);
+ 	*out_nw = nw;
+ 	return owned;

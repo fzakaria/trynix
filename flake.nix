@@ -79,6 +79,11 @@
           # (nix/wland-wasm.nix)
           wland-wasm = import ./nix/wland-wasm.nix { inherit pkgs; };
 
+          # kwvk, unkernel's guest Vulkan driver, with the patches
+          # trynix carries, which the site serves in place of the one in
+          # the kernel's base system (nix/kwvk.nix)
+          kwvk = import ./nix/kwvk.nix { inherit pkgs; };
+
           # the native QEMU the snapshot is taken on, from the fork and
           # the patches, so it is never older than the engine
           # (nix/native-qemu.nix)
@@ -424,6 +429,13 @@
               ${pkgs.lib.concatStringsSep "\n" matches}
               touch $out
             '';
+
+          # kwvk's SPIR-V passes, from patches/kwvk/, on modules glslang
+          # compiles from tests/kwvk/shaders/ (nix/kwvk-check.nix)
+          kwvk-spirv = import ./nix/kwvk-check.nix {
+            inherit pkgs;
+            kwvk = self.packages.${system}.kwvk;
+          };
 
           # the probes build; cpu-test and emubench run them in CI's browser
           probe = self.packages.${system}.probe;

@@ -1,0 +1,7 @@
+// A buffer whose element is passed to a function by pointer stays
+// writable: the pass does not follow calls.
+#version 450
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, std430) buffer Data { vec4 data[]; };
+void bump(inout vec4 v) { v += vec4(1.0); }
+void main() { bump(data[gl_GlobalInvocationID.x]); }

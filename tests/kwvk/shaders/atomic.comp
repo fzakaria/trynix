@@ -1,0 +1,7 @@
+// A buffer written by an atomic stays writable; one declared readonly
+// is left as it is.
+#version 450
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, std430) buffer Count { uint count; };
+layout(set = 0, binding = 1, std430) readonly buffer Src { uint src[]; };
+void main() { atomicAdd(count, src[gl_GlobalInvocationID.x]); }

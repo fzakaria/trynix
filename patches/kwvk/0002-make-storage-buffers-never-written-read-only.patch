@@ -1,0 +1,228 @@
+Subject: [PATCH] kwvk: make storage buffers a module never writes read-only
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 2).
+
+GZDoom declares its light and bone buffers as plain `buffer` blocks,
+without `readonly`, and reads the bones in its vertex shader. glslang
+decorates a block NonWritable only for `readonly`, and the translator
+reads the decoration alone, so the WGSL got `var<storage, read_write>`,
+which WebGPU refuses in a vertex stage, and the pipeline was not made:
+
+  vertex stage of shader module 37: WGSL 219:20: var with 'storage'
+  address space and 'read_write' access mode cannot be used by vertex
+  pipeline stage
+
+vkCreateShaderModule now decorates NonWritable every storage buffer
+variable (StorageBuffer, or Uniform with BufferBlock) the module never
+writes. A variable counts as written when a pointer into it reaches
+anything but OpLoad, OpAtomicLoad, OpArrayLength, an access chain or
+OpCopyObject: a store, an atomic or a function call all count, so a use
+the pass does not know keeps the buffer writable. A module that
+declares variable pointers is left alone. The pass would sit better
+beside member_access_to_variables in vk/naga/src/spirv.rs, which fixes
+the same decoration gap for older glslang.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index 884161f..3fa9b4d 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -1433,6 +1433,162 @@ static int spirv_writable(const uint32_t *w, size_t nw, uint32_t *out, int cap)
+ 	return bad ? -1 : n;
+ }
+ 
++/* Storage buffers a module never writes, decorated NonWritable. glslang
++ * decorates a block NonWritable only when the GLSL says `readonly`, and
++ * the translator reads the decoration alone: a block without it becomes
++ * a read_write storage buffer, which WebGPU refuses in a vertex stage
++ * (GZDoom's bone and light buffers, read by its vertex shaders). A
++ * variable counts as written when a pointer into it reaches any
++ * instruction but a load, an access chain, OpCopyObject or OpArrayLength:
++ * a store, an atomic, a function call, so an unknown use keeps it
++ * writable. Variable pointers can join pointers out of order, so a module
++ * with them is left alone. Returns the module with the decorations added
++ * after its annotations (*out_nw words), or NULL when it needs none or is
++ * not understood. */
++static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_nw)
++{
++	enum {
++		OP_CAPABILITY = 17, OP_DECORATE = 71, OP_MEMBER_DECORATE = 72, OP_DECORATION_GROUP = 73,
++		OP_GROUP_DECORATE = 74, OP_GROUP_MEMBER_DECORATE = 75, OP_DECORATE_ID = 332,
++		OP_DECORATE_STRING = 5632, OP_MEMBER_DECORATE_STRING = 5633, OP_TYPE_STRUCT = 30,
++		OP_TYPE_ARRAY = 28, OP_TYPE_RUNTIME_ARRAY = 29, OP_TYPE_POINTER = 32, OP_VARIABLE = 59,
++		OP_FUNCTION = 54, OP_LOAD = 61, OP_ACCESS_CHAIN = 65, OP_IN_BOUNDS_ACCESS_CHAIN = 66,
++		OP_PTR_ACCESS_CHAIN = 67, OP_ARRAY_LENGTH = 68, OP_IN_BOUNDS_PTR_ACCESS_CHAIN = 70,
++		OP_COPY_OBJECT = 83, OP_ATOMIC_LOAD = 227,
++		DEC_BUFFER_BLOCK = 3, DEC_NON_WRITABLE = 24,
++		SC_UNIFORM = 2, SC_STORAGE_BUFFER = 12,
++		CAP_VARIABLE_POINTERS_STORAGE_BUFFER = 4441, CAP_VARIABLE_POINTERS = 4442,
++	};
++	if (nw < 5 || w[0] != 0x07230203)
++		return NULL;
++	uint32_t bound = w[3];
++	if (bound > (1u << 22))
++		return NULL;
++	uint32_t *root = calloc(bound, 4);     /* pointer: the storage variable it points into */
++	uint32_t *pointee = calloc(bound, 4);  /* pointer type: the type it points to */
++	uint32_t *inner = calloc(bound, 4);    /* array type: its element type */
++	uint16_t *mnw = calloc(bound, 2);      /* struct: members decorated NonWritable */
++	uint16_t *mcount = calloc(bound, 2);   /* struct: member count */
++	uint8_t *flags = calloc(bound, 1);     /* the bits below */
++	uint32_t *vars = calloc(bound, 4);
++	enum { F_NON_WRITABLE = 1, F_BUFFER_BLOCK = 2, F_STORAGE = 4, F_WRITTEN = 8 };
++	uint32_t *out = NULL;
++	size_t annot_end = 0, nvars = 0;
++	int bad = !root || !pointee || !inner || !mnw || !mcount || !flags || !vars, in_function = 0;
++
++	/* One walk: the module's annotations, types and storage variables
++	 * first, then every function body's uses of pointers into them. */
++	for (size_t i = 5; !bad && i < nw;) {
++		uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
++		if (!len || i + len > nw) {
++			bad = 1;
++			break;
++		}
++		const uint32_t *a = w + i + 1;
++		uint32_t na = len - 1;
++#define ID(x) ((x) < bound)
++		if (op == OP_FUNCTION)
++			in_function = 1;
++		if (!in_function) {
++			if (op == OP_CAPABILITY && na >= 1 && (a[0] == CAP_VARIABLE_POINTERS || a[0] == CAP_VARIABLE_POINTERS_STORAGE_BUFFER))
++				bad = 1;
++			else if (op == OP_DECORATE || op == OP_MEMBER_DECORATE || op == OP_DECORATION_GROUP || op == OP_GROUP_DECORATE ||
++				 op == OP_GROUP_MEMBER_DECORATE || op == OP_DECORATE_ID || op == OP_DECORATE_STRING || op == OP_MEMBER_DECORATE_STRING)
++				annot_end = i + len;
++			if (op == OP_DECORATE && na >= 2 && ID(a[0]) && a[1] == DEC_NON_WRITABLE)
++				flags[a[0]] |= F_NON_WRITABLE;
++			else if (op == OP_DECORATE && na >= 2 && ID(a[0]) && a[1] == DEC_BUFFER_BLOCK)
++				flags[a[0]] |= F_BUFFER_BLOCK;
++			else if (op == OP_MEMBER_DECORATE && na >= 3 && ID(a[0]) && a[2] == DEC_NON_WRITABLE)
++				mnw[a[0]]++;
++			else if (op == OP_TYPE_STRUCT && na >= 1 && ID(a[0]))
++				mcount[a[0]] = (uint16_t)(na - 1);
++			else if ((op == OP_TYPE_ARRAY || op == OP_TYPE_RUNTIME_ARRAY) && na >= 2 && ID(a[0]))
++				inner[a[0]] = a[1];
++			else if (op == OP_TYPE_POINTER && na >= 3 && ID(a[0]))
++				pointee[a[0]] = a[2];
++			else if (op == OP_VARIABLE && na >= 3 && ID(a[0]) && ID(a[1])) {
++				/* a storage buffer, or an array of them, that the
++				 * module has not already made read-only */
++				uint32_t ty = pointee[a[0]];
++				if (ID(ty) && inner[ty])
++					ty = inner[ty];
++				int storage = a[2] == SC_STORAGE_BUFFER || (a[2] == SC_UNIFORM && ID(ty) && (flags[ty] & F_BUFFER_BLOCK));
++				int readonly = (flags[a[1]] & F_NON_WRITABLE) || (ID(ty) && mcount[ty] && mnw[ty] >= mcount[ty]);
++				if (storage && !readonly) {
++					flags[a[1]] |= F_STORAGE;
++					root[a[1]] = a[1];
++					vars[nvars++] = a[1];
++				}
++			}
++			i += len;
++			continue;
++		}
++
++		/* A function body: pointers derived from a storage variable
++		 * keep its root; reads leave it alone; any other use writes. */
++		if ((op == OP_ACCESS_CHAIN || op == OP_IN_BOUNDS_ACCESS_CHAIN || op == OP_PTR_ACCESS_CHAIN ||
++		     op == OP_IN_BOUNDS_PTR_ACCESS_CHAIN || op == OP_COPY_OBJECT) &&
++		    na >= 3 && ID(a[1]) && ID(a[2])) {
++			root[a[1]] = root[a[2]];
++		} else if ((op == OP_LOAD || op == OP_ATOMIC_LOAD || op == OP_ARRAY_LENGTH) && na >= 3) {
++			/* a read */
++		} else {
++			for (uint32_t k = 0; k < na; k++)
++				if (ID(a[k]) && root[a[k]])
++					flags[root[a[k]]] |= F_WRITTEN;
++		}
++#undef ID
++		i += len;
++	}
++
++	/* The decorations, after the last annotation: none to add, or a
++	 * module with no annotations to place them by, returns NULL. */
++	size_t add = 0;
++	for (size_t k = 0; !bad && k < nvars; k++)
++		add += !(flags[vars[k]] & F_WRITTEN);
++	if (!bad && add && annot_end && (out = malloc((nw + 3 * add) * 4))) {
++		memcpy(out, w, annot_end * 4);
++		size_t o = annot_end;
++		for (size_t k = 0; k < nvars; k++) {
++			if (flags[vars[k]] & F_WRITTEN)
++				continue;
++			out[o++] = 3u << 16 | OP_DECORATE;
++			out[o++] = vars[k];
++			out[o++] = DEC_NON_WRITABLE;
++		}
++		memcpy(out + o, w + annot_end, (nw - annot_end) * 4);
++		*out_nw = nw + 3 * add;
++	}
++	free(root), free(pointee), free(inner), free(mnw), free(mcount), free(flags), free(vars);
++	return out;
++}
++
++/* One pass over the module in *w (*nw words), which *owned holds, or
++ * the app when *owned is NULL: the module the pass returns replaces it. */
++typedef uint32_t *(*spirv_pass)(const uint32_t *w, size_t nw, size_t *out_nw);
++static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_t **owned)
++{
++	size_t out_nw = 0;
++	uint32_t *out = pass(*w, *nw, &out_nw);
++	if (!out)
++		return;
++	free(*owned);
++	*owned = out;
++	*w = out;
++	*nw = out_nw;
++}
++
++/* The module as the host gets it: storage buffers no function writes
++ * made read-only. Returns NULL when no pass changed it. */
++static uint32_t *spirv_for_host(const uint32_t *w, size_t nw, size_t *out_nw)
++{
++	uint32_t *owned = NULL;
++	spirv_apply(spirv_mark_unwritten, &w, &nw, &owned);
++	*out_nw = nw;
++	return owned;
++}
++
+ /* does the module decorate anything BuiltIn BaseVertex (4424), BaseInstance
+  * (4425) or DrawIndex (4426)? WGSL has none: the translator reads 0 */
+ static int spirv_base(const uint32_t *w, size_t nw)
+@@ -1458,12 +1614,17 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+ {
+ 	(void)a;
+ 	struct kw_device *d = DEV(dh);
++	/* the module as the host gets it: unwritten storage buffers read-only */
++	size_t marked_nw = 0;
++	uint32_t *marked = spirv_for_host(ci->pCode, ci->codeSize / 4, &marked_nw);
++	const uint32_t *code = marked ? marked : ci->pCode;
++	size_t code_size = marked ? marked_nw * 4 : ci->codeSize;
+ 	uint32_t tmp[64];
+-	int nw = spirv_writable(ci->pCode, ci->codeSize / 4, tmp, 64);
++	int nw = spirv_writable(code, code_size / 4, tmp, 64);
+ 	struct kw_shader *o = calloc(1, sizeof *o + (nw > 0 ? nw : 0) * sizeof(uint32_t));
+ 	o->id = link_id(d->link);
+ 	o->nw = nw;
+-	o->base = spirv_base(ci->pCode, ci->codeSize / 4);
++	o->base = spirv_base(code, code_size / 4);
+ 	if (nw > 0)
+ 		memcpy(o->w, tmp, nw * sizeof(uint32_t));
+ 	struct jb j = {0};
+@@ -1474,11 +1635,12 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+ 		snprintf(path, sizeof path, "%s/%u.spv", dir, o->id);
+ 		FILE *f = fopen(path, "wb");
+ 		if (f) {
+-			fwrite(ci->pCode, 1, ci->codeSize, f);
++			fwrite(code, 1, code_size, f);
+ 			fclose(f);
+ 		}
+ 	}
+-	send_msg(d, &j, ci->pCode, ci->codeSize);
++	send_msg(d, &j, code, code_size);
++	free(marked);
+ 	*out = (VkShaderModule)(uintptr_t)o;
+ 	return VK_SUCCESS;
+ }

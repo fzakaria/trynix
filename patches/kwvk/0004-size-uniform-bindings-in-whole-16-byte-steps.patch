@@ -1,0 +1,67 @@
+Subject: [PATCH] kwvk: size uniform bindings in whole 16-byte steps
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 4).
+
+Vulkan sizes a uniform binding by the bytes the program names, and
+WebGPU by the WGSL struct, a multiple of 16. GZDoom binds a 252-byte
+block, and WebGPU refused the submit:
+
+  [Buffer "kwvk buffer 32"] bound with size 252 at group 1, binding 0
+  is too small. The pipeline ([RenderPipeline "kwvk pipeline 82"])
+  requires a buffer binding which is at least 256 bytes.
+
+A buffer with UNIFORM_BUFFER usage is now made 16-byte rounded on the
+page, and an explicit uniform descriptor range is rounded up to 16
+bytes within that size. Offsets are multiples of
+minUniformBufferOffsetAlignment (256), so the grown range always fits.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index 8b41789..c614452 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -1095,6 +1095,20 @@ void kw_readback(struct kw_device *d, struct kw_memory *only)
+ 
+ /* ---- buffers ---- */
+ 
++/* WebGPU sizes a uniform binding by the WGSL struct, a multiple of 16
++ * bytes; Vulkan by the bytes the app names (GZDoom binds a 252-byte
++ * block). A uniform buffer's size, and the range of a binding of it,
++ * rounded up to 16 within the buffer. */
++#define KW_UNIFORM_ALIGN 16ull
++static uint64_t uniform_size(uint64_t size) { return (size + KW_UNIFORM_ALIGN - 1) & ~(KW_UNIFORM_ALIGN - 1); }
++static uint64_t uniform_range(const struct kw_buffer *b, uint64_t offset, uint64_t range)
++{
++	if (range == VK_WHOLE_SIZE || !b || offset >= uniform_size(b->size))
++		return range;
++	uint64_t grown = uniform_size(range), room = uniform_size(b->size) - offset;
++	return grown < room ? grown : room;
++}
++
+ static API VkResult CALL kw_vkCreateBuffer(VkDevice dh, const VkBufferCreateInfo *ci, const VkAllocationCallbacks *a, VkBuffer *out)
+ {
+ 	(void)a;
+@@ -1108,8 +1122,12 @@ static API VkResult CALL kw_vkCreateBuffer(VkDevice dh, const VkBufferCreateInfo
+ 	b->id = link_id(d->link);
+ 	b->size = ci->size;
+ 	b->usage = ci->usage;
++	/* a uniform buffer's GPU buffer ends on a 16-byte boundary, so a
++	 * binding of it can be grown to the 16-byte multiple WebGPU wants
++	 * (uniform_range) */
++	uint64_t host_size = ci->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT ? uniform_size(ci->size) : ci->size;
+ 	struct jb j = {0};
+-	jb_printf(&j, "{\"op\":\"vkCreateBuffer\",\"id\":%u,\"size\":%llu,\"usage\":%u}", b->id, (unsigned long long)ci->size, ci->usage);
++	jb_printf(&j, "{\"op\":\"vkCreateBuffer\",\"id\":%u,\"size\":%llu,\"usage\":%u}", b->id, (unsigned long long)host_size, ci->usage);
+ 	send_msg(d, &j, NULL, 0);
+ 	pthread_mutex_lock(&d->mu);
+ 	b->next = d->buffers;
+@@ -2435,7 +2453,7 @@ static API void CALL kw_vkUpdateDescriptorSets(VkDevice dh, uint32_t nw, const V
+ 				struct kw_buffer *b = HANDLE(struct kw_buffer, bi->buffer);
+ 				jb_printf(&j, "%s{\"buffer\":%u,\"offset\":%llu,\"range\":", k ? "," : "", b ? b->id : 0,
+ 					  (unsigned long long)bi->offset);
+-				j_size(&j, bi->range);
++				j_size(&j, storage ? bi->range : uniform_range(b, bi->offset, bi->range));
+ 				JS(&j, "}");
+ 				if (dpos_settle(s->layout, &at)) {
+ 					set_slot(s, &(struct kw_dslot){at.binding, at.elem, b, bi->offset, bi->range, dpos_dyn(s->layout, &at), storage});

@@ -1,0 +1,89 @@
+Subject: [PATCH] kwvk: drop OpLine and OpNoLine
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 5).
+
+Taisei compiles its shaders at run time with glslang and debug info
+on, to keep declaration names (src/renderer/common/shaderlib/
+lang_spirv_aux.c). Some of its modules then have OpLine among the
+types and globals, which the translator refuses:
+
+  vertex stage of shader module 58: SPIR-V parse: unsupported
+  instruction Line at Type
+
+The driver now drops every OpLine and OpNoLine before the other passes.
+They carry nothing but source positions.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index c614452..371f9e3 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -1582,6 +1582,41 @@ static uint32_t *spirv_mark_unwritten(const uint32_t *w, size_t nw, size_t *out_
+ 	return out;
+ }
+ 
++/* The module without OpLine and OpNoLine. They carry source positions
++ * only, and the translator refuses OpLine among the types and globals,
++ * where shaderc puts one before each declaration of a -g build (Taisei's
++ * shaders). Returns the smaller module (*out_nw words), or NULL when it
++ * has none or is not understood. */
++static uint32_t *spirv_strip_lines(const uint32_t *w, size_t nw, size_t *out_nw)
++{
++	enum { OP_LINE = 8, OP_NO_LINE = 317 };
++	if (nw < 5 || w[0] != 0x07230203)
++		return NULL;
++	size_t lines = 0;
++	for (size_t i = 5; i < nw;) {
++		uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
++		if (!len || i + len > nw)
++			return NULL;
++		lines += op == OP_LINE || op == OP_NO_LINE;
++		i += len;
++	}
++	uint32_t *out = lines ? malloc(nw * 4) : NULL;
++	if (!out)
++		return NULL;
++	memcpy(out, w, 5 * 4);
++	size_t o = 5;
++	for (size_t i = 5; i < nw;) {
++		uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
++		if (op != OP_LINE && op != OP_NO_LINE) {
++			memcpy(out + o, w + i, len * 4);
++			o += len;
++		}
++		i += len;
++	}
++	*out_nw = o;
++	return out;
++}
++
+ /* Descriptor bindings no function of the module uses, dropped: their
+  * OpVariable, the decorations and names on it, and its place in the
+  * entry points' interfaces. The translator reflects every binding a
+@@ -1702,12 +1737,13 @@ static void spirv_apply(spirv_pass pass, const uint32_t **w, size_t *nw, uint32_
+ 	*nw = out_nw;
+ }
+ 
+-/* The module as the host gets it: descriptor bindings no function uses
+- * dropped, then storage buffers no function writes made read-only.
+- * Returns NULL when no pass changed it. */
++/* The module as the host gets it: debug lines and descriptor bindings no
++ * function uses dropped, then storage buffers no function writes made
++ * read-only. Returns NULL when no pass changed it. */
+ static uint32_t *spirv_for_host(const uint32_t *w, size_t nw, size_t *out_nw)
+ {
+ 	uint32_t *owned = NULL;
++	spirv_apply(spirv_strip_lines, &w, &nw, &owned);
+ 	spirv_apply(spirv_drop_unused, &w, &nw, &owned);
+ 	spirv_apply(spirv_mark_unwritten, &w, &nw, &owned);
+ 	*out_nw = nw;
+@@ -1739,7 +1775,7 @@ static API VkResult CALL kw_vkCreateShaderModule(VkDevice dh, const VkShaderModu
+ {
+ 	(void)a;
+ 	struct kw_device *d = DEV(dh);
+-	/* the module as the host gets it: unwritten storage buffers read-only */
++	/* the module as the host gets it (spirv_for_host) */
+ 	size_t marked_nw = 0;
+ 	uint32_t *marked = spirv_for_host(ci->pCode, ci->codeSize / 4, &marked_nw);
+ 	const uint32_t *code = marked ? marked : ci->pCode;

@@ -1,0 +1,84 @@
+Subject: [PATCH] kwvk: copy compressed images in whole blocks
+
+trynix carries this patch for kwvk, unkernel's guest Vulkan driver,
+until unkernel takes it (pithings/unkernel#32, change 6).
+
+Vulkan lets a copy of a BC, ETC2 or ASTC image end at a mip level's
+edge in the middle of a block, as in a 2x2 level. WebGPU wants whole
+blocks, the level's physical size, and refused Taisei's submit:
+
+  copySize.width (2) is not a multiple of compressed texture format
+  block width (4).
+
+The imageExtent of vkCmdCopyBufferToImage and vkCmdCopyImageToBuffer
+regions is now rounded up to the image format's block size. The
+driver keeps each image's format, so it knows the block.
+
+---
+diff --git a/vk/icd/icd.c b/vk/icd/icd.c
+index 371f9e3..4d4e060 100644
+--- a/vk/icd/icd.c
++++ b/vk/icd/icd.c
+@@ -3388,17 +3388,42 @@ static API void CALL kw_vkCmdBlitImage(VkCommandBuffer c, VkImage src, VkImageLa
+ 	jb_printf(b, "],\"filter\":%u}", filter);
+ }
+ 
+-static void j_bic(struct jb *b, const VkBufferImageCopy *r, uint32_t n)
++/* A format's block width and height: 4x4 for BC, ETC2 and EAC, the
++ * format's own for ASTC, 1x1 for an uncompressed one. */
++static void format_block(VkFormat f, uint32_t *bw, uint32_t *bh)
++{
++	static const uint8_t astc[][2] = {{4, 4}, {5, 4}, {5, 5}, {6, 5}, {6, 6}, {8, 5}, {8, 6},
++					  {8, 8}, {10, 5}, {10, 6}, {10, 8}, {10, 10}, {12, 10}, {12, 12}};
++	*bw = *bh = 1;
++	if (f >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && f <= VK_FORMAT_EAC_R11G11_SNORM_BLOCK) {
++		*bw = *bh = 4;
++	} else if (f >= VK_FORMAT_ASTC_4x4_UNORM_BLOCK && f <= VK_FORMAT_ASTC_12x12_SRGB_BLOCK) {
++		*bw = astc[(f - VK_FORMAT_ASTC_4x4_UNORM_BLOCK) / 2][0];
++		*bh = astc[(f - VK_FORMAT_ASTC_4x4_UNORM_BLOCK) / 2][1];
++	}
++}
++
++/* A copy's regions. Vulkan lets a compressed copy end at a mip level's
++ * edge mid-block (a 2x2 level of a BC texture); WebGPU wants whole
++ * blocks, the level's physical size, so the extent of `im`'s regions is
++ * rounded up to its format's blocks. */
++static void j_bic(struct jb *b, const VkBufferImageCopy *r, uint32_t n, const struct kw_image *im)
+ {
++	uint32_t bw = 1, bh = 1;
++	if (im)
++		format_block(im->format, &bw, &bh);
+ 	JS(b, ",\"regions\":[");
+ 	for (uint32_t i = 0; i < n; i++) {
++		VkExtent3D ext = r[i].imageExtent;
++		ext.width = (ext.width + bw - 1) / bw * bw;
++		ext.height = (ext.height + bh - 1) / bh * bh;
+ 		jb_printf(b, "%s{\"bufferOffset\":%llu,\"bufferRowLength\":%u,\"bufferImageHeight\":%u,\"imageSubresource\":", i ? "," : "",
+ 			  (unsigned long long)r[i].bufferOffset, r[i].bufferRowLength, r[i].bufferImageHeight);
+ 		j_layers(b, &r[i].imageSubresource);
+ 		JS(b, ",\"imageOffset\":");
+ 		j_off3(b, r[i].imageOffset);
+ 		JS(b, ",\"imageExtent\":");
+-		j_ext3(b, r[i].imageExtent);
++		j_ext3(b, ext);
+ 		JS(b, "}");
+ 	}
+ 	JS(b, "]}");
+@@ -3408,7 +3433,7 @@ static API void CALL kw_vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer src,
+ {
+ 	struct jb *b = cmd(c, "vkCmdCopyBufferToImage");
+ 	jb_printf(b, ",\"srcBuffer\":%u,\"dstImage\":%u,\"dstImageLayout\":%u", BUFID(src), OID(dst), dl);
+-	j_bic(b, r, n);
++	j_bic(b, r, n, HANDLE(struct kw_image, dst));
+ 	/* from each region's bufferOffset to the end (as vkCmdCopyImageToBuffer's writes) */
+ 	for (uint32_t i = 0; i < n; i++)
+ 		cb_read_range(CB(c), HANDLE(struct kw_buffer, src), r[i].bufferOffset, KW_WHOLE);
+@@ -3418,7 +3443,7 @@ static API void CALL kw_vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage src, V
+ {
+ 	struct jb *b = cmd(c, "vkCmdCopyImageToBuffer");
+ 	jb_printf(b, ",\"srcImage\":%u,\"srcImageLayout\":%u,\"dstBuffer\":%u", OID(src), sl, BUFID(dst));
+-	j_bic(b, r, n);
++	j_bic(b, r, n, HANDLE(struct kw_image, src));
+ 	/* from each region's bufferOffset to the end (the footprint needs the
+ 	 * format's block size, which the ICD does not keep) */
+ 	for (uint32_t i = 0; i < n; i++)

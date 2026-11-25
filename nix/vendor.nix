@@ -42,7 +42,10 @@ let
   ghostty =
     npm "ghostty-web" "0.4.0-next.20.g1858a59"
       "18gi29xv0f4qnc4znqpb6id2xvv745gyj3i9mabfggg0gkf6nd7g";
-  unkernelVersion = "0.2.0-261124-75694e2";
+  # The release kwvk, the guest's Vulkan driver the site serves, is built
+  # from (nix/kwvk.nix): the driver and the SDK's renderer speak one
+  # protocol, so the two move together.
+  unkernelVersion = (import ./kwvk.nix { inherit pkgs; }).version;
   unkernel = npm "unkernel" unkernelVersion "1x5zf9a30ajvg0kd93andxs7kngyx0ir2la39rhsihfm1w2i64qv";
   wland = npm "wland" "0.1.0-261122-6617578" "118n8wgcp6wgxp6wvvsyf834048d6qzy6zs5h5jb438jvy61ns5y";
 
