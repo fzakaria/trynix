@@ -1,0 +1,94 @@
+Subject: [PATCH] relay: queue every fd of one client flush
+
+trynix carries this patch for wland's relay until wland takes it.
+
+libwayland flushes a client's queued requests with one sendmsg, and up
+to 28 file descriptors ride with it (MAX_FDS_OUT in connection.c). The
+relay's FdQueue held 16. A client that queued more requests with a
+descriptor than that before it flushed lost the rest: the relay logged
+"fd queue overflow, dropping fd", met a create_pool with no fd left,
+logged "create_pool without fd", and closed the client's connection.
+The window went, and the program ran on.
+
+libdecor's GTK plugin, which SDL programs draw their title bars with,
+redraws the title bar into a new wl_shm pool on every pointer motion
+over it. GZDoom loading its scripts for a few seconds does not read
+its events; a reader who dragged its title bar meanwhile queued a few
+dozen motions, and GZDoom answered them in one burst of create_pools
+when it next dispatched.
+
+The queue now holds 256: one flush at its most, one recvmsg at its
+most (60, what the control buffer holds), and room for descriptors
+whose messages are not complete yet.
+
+---
+diff --git a/server/src/shm.zig b/server/src/shm.zig
+index 5b826b4..fa93dc7 100644
+--- a/server/src/shm.zig
++++ b/server/src/shm.zig
+@@ -8,8 +8,18 @@ const std = @import("std");
+ const posix = std.posix;
+ const linux = std.os.linux;
+ 
++/// How many received fds may wait for the messages they ride with. One
++/// libwayland flush carries up to 28 (MAX_FDS_OUT in its connection.c),
++/// one recvWithFds up to what its control buffer holds (60), and the
++/// queue keeps a few reads' worth on top for messages not yet complete.
++/// At 16, the queue dropped the fds of a client that queued more
++/// create_pools than that before it flushed (GTK's libdecor plugin
++/// redraws a title bar into a new pool on every pointer motion), and the
++/// relay closed the client at the first create_pool left without one.
++pub const max_queued_fds = 256;
++
+ pub const FdQueue = struct {
+-    fds: [16]posix.fd_t = undefined,
++    fds: [max_queued_fds]posix.fd_t = undefined,
+     len: usize = 0,
+ 
+     pub fn pop(self: *FdQueue) ?posix.fd_t {
+@@ -395,6 +405,45 @@ test "fd queue fifo" {
+     q.len = 0;
+ }
+ 
++test "fd queue takes every fd of one libwayland flush" {
++    // libwayland sends up to 28 fds with one sendmsg (MAX_FDS_OUT): a
++    // client that queues that many create_pools before it flushes (GTK's
++    // libdecor plugin redraws its title bar into a new pool on every
++    // pointer motion) delivers them to one recvmsg
++    const flush_fds = 28;
++    var pair: [2]i32 = undefined;
++    try std.testing.expectEqual(@as(usize, 0), linux.socketpair(linux.AF.UNIX, linux.SOCK.STREAM, 0, &pair));
++    defer _ = linux.close(pair[0]);
++    defer _ = linux.close(pair[1]);
++
++    // one byte, with `flush_fds` duplicates of the sender's own end riding along
++    var fds: [flush_fds]posix.fd_t = @splat(pair[0]);
++    const fds_len = flush_fds * @sizeOf(posix.fd_t);
++    var cmsg_buf: [cmsg_hdr_space + fds_len]u8 align(@alignOf(linux.cmsghdr)) = @splat(0);
++    const cmsg: *linux.cmsghdr = @ptrCast(&cmsg_buf);
++    cmsg.* = .{ .len = cmsg_hdr_space + fds_len, .level = linux.SOL.SOCKET, .type = linux.SCM.RIGHTS };
++    @memcpy(cmsg_buf[cmsg_hdr_space..][0..fds_len], std.mem.sliceAsBytes(&fds));
++    const byte = [1]u8{0};
++    var iov = [1]posix.iovec_const{.{ .base = &byte, .len = byte.len }};
++    const msg: linux.msghdr_const = .{
++        .name = null,
++        .namelen = 0,
++        .iov = &iov,
++        .iovlen = 1,
++        .control = &cmsg_buf,
++        .controllen = cmsg_buf.len,
++        .flags = 0,
++    };
++    try std.testing.expectEqual(@as(usize, byte.len), linux.sendmsg(pair[0], &msg, 0));
++
++    // every one of them is queued, none dropped
++    var q: FdQueue = .{};
++    defer q.drain();
++    var buf: [16]u8 = undefined;
++    try std.testing.expectEqual(@as(usize, byte.len), try recvWithFds(pair[1], &buf, &q));
++    try std.testing.expectEqual(@as(usize, flush_fds), q.len);
++}
++
+ test "cmsg alignment" {
+     try std.testing.expectEqual(@as(usize, 16), cmsg_hdr_space);
+     try std.testing.expectEqual(@as(usize, 24), cmsgAlign(20));

@@ -48,6 +48,14 @@ The cases:
            with an incomplete texture or none on its unit. Checks that
            each draw read back its colour and that the renderer
            reported no context error.
+    fds    tools/wayland-probe.py's fds check, run in the guest with
+           python3: 28 wl_shm pools sent to the relay with their
+           descriptors in one write, which is one libwayland flush at
+           its most, as a client sends them when it makes that many
+           pools before it flushes (libdecor's GTK plugin, redrawing an
+           SDL program's title bar on every pointer motion while the
+           program is busy). Checks that the connection lives through
+           them.
     glx    extremetuxracer, selected alone: an SFML 2 game that speaks
            X11 alone and makes its GL context with GLX, with no X
            server or driver selected. Waits for its window and checks
@@ -651,6 +659,19 @@ DRIVER_LINKED = "/run/opengl-driver is"
 FEEDBACK_PASSED = "FEEDBACK-TEST PASS"
 VIRGL_RENDERER = "renderer: virgl"
 
+# The cases that run tools/wayland-probe.py: python3 alone, and the
+# guest program, which runs one check in a shell that sourced the
+# manifest, for the session's socket. The page logs the relay's start;
+# the relay logs to the session's runtime directory (site/js/gui.js).
+PROBE_PACKAGES = ["python3"]
+PROBE_SCRIPT = os.path.join(HERE, "wayland-probe.py")
+PROBE_IN_GUEST = "/tmp/wayland-probe.py"
+PROBE_PASSED = "WAYLAND-PROBE PASS"
+PROBE_FDS = "fds"
+RELAY_RUNNING = "gui: the Wayland relay is running in the guest"
+RELAY_LOG = "/run/user/0/wlandr.log"
+RELAY_LOG_LINES = 5
+
 # What the renderer logs when a GL error puts a guest context in error
 # (vrend_check_no_error), and how long its log has to catch up after
 # the program's last read.
@@ -796,7 +817,7 @@ LLM_COMMAND = (
 LLM_LIMIT_SECONDS = 180
 
 
-CASES = ["foot", "gl", "x11", "feedback", "glx", "oldgl", "slowx", "vulkan", "llm"]
+CASES = ["foot", "gl", "x11", "feedback", "fds", "glx", "oldgl", "slowx", "vulkan", "llm"]
 
 # --gpu's choices, and the browser's WebGL for each.
 GPU_SOFTWARE = "software"
@@ -1261,6 +1282,52 @@ def run_feedback(browser, base, screenshots, fetch, viewport):
     print("  every draw read back its colour; no context error")
 
 
+def run_probe(browser, base, viewport, fetch, check):
+    """Boot python3, run tools/wayland-probe.py's `check` in the guest,
+    and return what it printed, with the relay's last lines after a
+    failure."""
+    seconds = boot(browser, base, PROBE_PACKAGES, fetch, viewport)
+    print(f"  shell after {seconds:.1f} s")
+    wait_for(
+        browser,
+        "document.getElementById('debug-log').textContent.includes("
+        + json.dumps(RELAY_RUNNING)
+        + ")",
+        BOOT_LIMIT_SECONDS,
+        "relay start",
+    )
+
+    # The program goes in as the input of a cat, then runs.
+    with open(PROBE_SCRIPT) as f:
+        written = guest_shell(browser, f"cat > {PROBE_IN_GUEST}", f.read())
+    if written["exitCode"] != 0:
+        raise SystemExit(f"FAIL writing {PROBE_IN_GUEST}: {written['stderr']}")
+    result = guest_shell(
+        browser, f"{SHELL_ENVIRONMENT}; {GUEST_PYTHON} {PROBE_IN_GUEST} {check} 2>&1"
+    )
+    for line in result["stdout"].splitlines():
+        print(f"  {line}")
+
+    # On a failure the relay's log says what it did.
+    passed = result["exitCode"] == 0 and PROBE_PASSED in result["stdout"]
+    if not passed:
+        tail = guest_shell(browser, f"tail -n {RELAY_LOG_LINES} {RELAY_LOG}")["stdout"]
+        for line in tail.splitlines():
+            print(f"  relay: {line}")
+    return passed
+
+
+def run_fds(browser, base, screenshots, fetch, viewport):
+    """fds: boot python3 and run wayland-probe.py's fds check, which
+    sends the relay 28 wl_shm pools with their descriptors in one write,
+    and check that the connection lived through them."""
+    del screenshots  # The program opens no window.
+    print("fds")
+    if not run_probe(browser, base, viewport, fetch, PROBE_FDS):
+        raise SystemExit("FAIL the relay closed a client over one flush of descriptors")
+    print("  the relay took one flush of descriptors and kept the client")
+
+
 def run_glx(browser, base, screenshots, fetch, viewport):
     """glx: boot extremetuxracer alone, let the link start it, wait for
     its window, and check that its frames came through the GL renderer
@@ -1547,6 +1614,7 @@ RUNNERS = {
     "gl": run_gl,
     "x11": run_x11,
     "feedback": run_feedback,
+    "fds": run_fds,
     "glx": run_glx,
     "oldgl": run_oldgl,
     "slowx": run_slowx,

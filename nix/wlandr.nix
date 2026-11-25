@@ -38,6 +38,15 @@ pkgs.stdenvNoCC.mkDerivation {
     sha256 = "17lmf872z2wdrqd9akv72pjbfbfbm9gmxa7h2m4zs1f5p3a9919w";
   };
 
+  # The relay queued 16 of the file descriptors a client sends, and
+  # libwayland flushes up to 28 at once: a client that made more pools
+  # than that before it flushed was disconnected, its window gone with
+  # the program still running. GZDoom's title bar, dragged while it
+  # loads, did it (docs/gui.md).
+  patches = [
+    ../patches/wland/0001-relay-queue-every-fd-of-one-client-flush.patch
+  ];
+
   nativeBuildInputs = [ pkgs.zig ];
 
   # The default install step also writes the compositor's wasm and the

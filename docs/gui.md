@@ -1090,6 +1090,16 @@ with NEAREST filters while the draw renders into its level 1, which
 reads level 0's red, and an integer sampler with an incomplete texture
 or none on its unit, which reads (0, 0, 0, 1). The case fails on a
 wrong colour or a context error in the renderer's log.
+The fds case runs the fds check of
+[tools/wayland-probe.py](../tools/wayland-probe.py) with python3 in the
+guest: it sends the relay 28 `wl_shm` pools with their file descriptors
+in one write, the most one libwayland flush carries, and checks that a
+`wl_display.sync` after them is answered. The relay
+used to queue 16 descriptors and close the client at a pool left
+without one. libdecor's GTK plugin redraws an SDL program's title bar
+into a new pool on every pointer motion, so dragging GZDoom's title
+bar while it loaded sent such a burst, and the window went with the
+program still running.
 The glx case boots extremetuxracer alone, with no X server or driver
 selected, waits for the game's window, and checks that its frames went
 through the page's GL renderer by GPU resource, which GLX reaches only
@@ -1147,6 +1157,10 @@ wland is pinned twice, and the two must name the same commit: the npm
 release in [nix/vendor.nix](../nix/vendor.nix) (the compositor) and
 the source in [nix/wlandr.nix](../nix/wlandr.nix) (the relay). The
 relay and the compositor speak one stream protocol.
+
+The relay is built with [patches/wland/](../patches/wland/), which
+queues every descriptor of a client's flush; it goes once wland has
+the change, and an update past that commit drops it.
 
 ## Licenses
 
