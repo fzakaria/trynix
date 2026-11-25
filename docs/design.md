@@ -104,6 +104,7 @@ for what is on screen:
 | `net=off`                          | the unkernel guest's network, on or off   |
 | `wisp=wss://relay.example.org/`    | the Wisp relay the network goes through   |
 | `sound=off`                        | the guest's sound switch                  |
+| `vk=1`                             | the unkernel guest's Vulkan, off or on    |
 | `run=sol+%26`                      | type a command at the shell once it is up |
 | `boot=1`                           | start without a click                     |
 

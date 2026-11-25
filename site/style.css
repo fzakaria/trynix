@@ -242,13 +242,14 @@ code {
 
 /* The settings lane: the guest choice as a short list of radio rows,
    each option's explanation on the option's own line, then the guest's
-   memory, its CPUs and the downloads choice in boxes of the same kind,
-   then the caches. */
+   memory, its CPUs, the downloads, network and Vulkan choices in boxes
+   of the same kind, then the caches. */
 #guest,
 #memory,
 #cpus,
 #downloads,
-#network {
+#network,
+#vulkan {
   margin: 0 0 1.2rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--line);
@@ -258,13 +259,15 @@ code {
 #memory legend,
 #cpus legend,
 #downloads legend,
-#network legend {
+#network legend,
+#vulkan legend {
   padding: 0 0.3rem;
   font-weight: 600;
 }
 #guest label,
 #downloads label,
-#network > label {
+#network > label,
+#vulkan label {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -273,7 +276,8 @@ code {
 }
 #guest label .muted,
 #downloads label .muted,
-#network > label .muted {
+#network > label .muted,
+#vulkan label .muted {
   display: block;
   font-size: 13px;
 }
@@ -300,14 +304,16 @@ code {
 #memory p,
 #cpus p,
 #downloads p,
-#network p {
+#network p,
+#vulkan p {
   margin: 0.4rem 0 0;
   font-size: 13px;
 }
 #memory-status:empty,
 #cpu-status:empty,
 #downloads-status:empty,
-#network-status:empty {
+#network-status:empty,
+#vulkan-status:empty {
   display: none;
 }
 /* The relay's field under the network choice, its label beside it. */

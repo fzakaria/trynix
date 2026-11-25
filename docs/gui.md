@@ -627,7 +627,10 @@ https://trynix.dev/?pkg=vulkan-tools&vk=1&boot=1&run=vulkaninfo+--summary
 ```
 
 It is off unless the link has `vk=1`
-([site/js/vulkan.js](../site/js/vulkan.js)). With it on, mpv's first
+([site/js/vulkan.js](../site/js/vulkan.js)), which the Vulkan box under
+Settings writes for the next boot. The box also says whether the
+browser gives WebGPU an adapter; the page asks the first time the
+Settings lane opens, never at a boot. With it on, mpv's first
 frame came 3 s later, for nothing: mpv tries Vulkan before GL, fails on
 kwvk, and starts the X server on the way (see [Programs that prefer
 Vulkan](#programs-that-prefer-vulkan)). Off, the guest is as it was

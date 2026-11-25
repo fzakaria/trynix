@@ -316,7 +316,7 @@
 
         <!-- The aarch64 guest's memory (site/js/memory.js). The radios are
              written by app.js from MEMORY_SIZES_MIB; a choice goes into the
-             link and is used at the next boot. This box and the three after
+             link and is used at the next boot. This box and the four after
              it are hidden on the x86_64 guest (app.js). -->
         <fieldset id="memory">
           <legend>Guest memory</legend>
@@ -402,6 +402,31 @@
             />
           </div>
           <p id="network-status" class="muted"></p>
+        </fieldset>
+
+        <!-- Guest Vulkan (site/js/vulkan.js): off, the default, or on
+             through the page's WebGPU. The status line says whether this
+             browser gives WebGPU an adapter, asked when the lane opens
+             (app.js). -->
+        <fieldset id="vulkan">
+          <legend>Vulkan</legend>
+          <label>
+            <input type="radio" name="vulkan" value="0" />
+            <span>
+              <strong>Off</strong>
+              <span class="muted">
+                The default, since some programs, mpv among them, start slower with it on.
+              </span>
+            </span>
+          </label>
+          <label>
+            <input type="radio" name="vulkan" value="1" />
+            <span>
+              <strong>On</strong>
+              <span class="muted">Vulkan programs draw with your browser's WebGPU.</span>
+            </span>
+          </label>
+          <p id="vulkan-status" class="muted"></p>
         </fieldset>
 
         <h3>Binary caches</h3>

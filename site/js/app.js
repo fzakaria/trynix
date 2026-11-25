@@ -123,7 +123,7 @@ import {
   relayOf,
 } from "./network.js";
 import { Sound } from "./sound.js";
-import { Vulkan } from "./vulkan.js";
+import { adapterNote, pickVulkan, probeAdapter, Vulkan } from "./vulkan.js";
 import { BootState, bootButtonOf } from "./boot-button.js";
 
 const STORE_PREFIX = "/nix/store/";
@@ -162,6 +162,8 @@ const downloadsStatus = document.getElementById("downloads-status");
 const networkChoice = document.getElementById("network");
 const networkRelay = document.getElementById("network-relay");
 const networkStatus = document.getElementById("network-status");
+const vulkanChoice = document.getElementById("vulkan");
+const vulkanStatus = document.getElementById("vulkan-status");
 const consoleTty = document.getElementById("console-tty");
 
 // What the console veil says once a boot has failed, in place of the
@@ -365,10 +367,11 @@ let network = pickNetwork({
 // link.
 let linkedSound = readUrl().sound;
 
-// Guest Vulkan's switch (vulkan.js, url.js `vk`): off unless the link
-// turns it on. The link keeps it, as it keeps the sound switch.
-const linkedVulkan = readUrl().vulkan;
-const vulkan = linkedVulkan ?? Vulkan.OFF;
+// Guest Vulkan's switch for the next boot (vulkan.js, url.js `vk`): off
+// unless the link turns it on. A choice made in Settings goes into the
+// link, as the memory does.
+let linkedVulkan = readUrl().vulkan;
+let vulkan = pickVulkan({ linked: linkedVulkan });
 
 // The link the page was opened with, while restore() is still looking
 // the link's packages up in the index, or null. Until the restore is
@@ -673,14 +676,16 @@ function wireDownloadsChoice() {
 }
 wireDownloadsChoice();
 
-// The settings only the aarch64 guest has (its memory, CPUs, downloads
-// and network) are not shown on the x86_64 guest, which has a fixed
-// machine, downloads everything first and has no network device.
+// The settings only the aarch64 guest has (its memory, CPUs, downloads,
+// network and Vulkan) are not shown on the x86_64 guest, which has a
+// fixed machine, downloads everything first, and has no network device
+// and no kwvk.
 const UNKERNEL_ONLY_SETTINGS = [
   memorySizes.closest("fieldset"),
   cpuCounts.closest("fieldset"),
   downloadsChoice,
   networkChoice,
+  vulkanChoice,
 ];
 if (ENGINE !== Engine.UNKERNEL) {
   for (const setting of UNKERNEL_ONLY_SETTINGS) {
@@ -752,6 +757,56 @@ function wireNetworkChoice() {
   });
 }
 wireNetworkChoice();
+
+// What the Vulkan status line says (showVulkanStatus): the adapter
+// probe's answer once it is in, and whether a choice waits for the next
+// boot.
+let adapterSaid = "";
+let vulkanChanged = false;
+
+function showVulkanStatus() {
+  vulkanStatus.textContent = [
+    adapterSaid,
+    vulkanChanged && bootState === BootState.RUNNING
+      ? "From the next boot; this guest keeps what it booted with."
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// The Vulkan choice under Settings: off or on. A choice goes into the
+// link and takes effect at the next boot.
+function wireVulkanChoice() {
+  vulkanChoice.querySelector(`input[value="${vulkan.mode}"]`).checked = true;
+
+  vulkanChoice.addEventListener("change", (event) => {
+    const mode = event.target.value;
+    vulkan = { mode, why: "chosen in Settings" };
+    linkedVulkan = mode;
+    vulkanChanged = true;
+    history.replaceState(null, "", link());
+    showVulkanStatus();
+  });
+}
+wireVulkanChoice();
+
+// Ask this browser's WebGPU for an adapter, once, the first time the
+// Settings lane opens on the guest that has Vulkan, and say what it
+// answered. Never at a boot: the SDK asks for its own adapter on the
+// guest's first VkInstance.
+let adapterAsked = false;
+
+function probeVulkan() {
+  if (adapterAsked || ENGINE !== Engine.UNKERNEL) {
+    return;
+  }
+  adapterAsked = true;
+  probeAdapter(navigator.gpu).then((adapter) => {
+    adapterSaid = adapterNote(adapter);
+    showVulkanStatus();
+  });
+}
 
 // The console bar's full-screen button, for the terminal and any GUI
 // windows over it, whichever engine boots.
@@ -923,14 +978,19 @@ cachesInput.addEventListener("input", () => {
 
 // The lane tabs: anchors so each is a real link, one visible at a time.
 const laneNav = document.getElementById("lanes");
+const SETTINGS_LANE = "settings";
 
-// Show the lane named `name` and mark its tab.
+// Show the lane named `name` and mark its tab. Opening Settings asks
+// for the WebGPU adapter its Vulkan box reports on.
 function showLane(name) {
   for (const link of laneNav.querySelectorAll("a[data-lane]")) {
     link.classList.toggle("active", link.dataset.lane === name);
   }
   for (const lane of document.querySelectorAll(".lane[data-lane]")) {
     lane.hidden = lane.dataset.lane !== name;
+  }
+  if (name === SETTINGS_LANE) {
+    probeVulkan();
   }
 }
 
@@ -946,7 +1006,6 @@ laneNav.addEventListener("click", (event) => {
 // A progress row's label that links to a setting (FIRST_USE_ROW) opens
 // the Settings lane at that setting and marks it for a moment, so the
 // reader sees which box the row meant.
-const SETTINGS_LANE = "settings";
 const FLASH_CLASS = "flash";
 bootProgress.addEventListener("click", (event) => {
   const link = event.target.closest('a.label[href^="#"]');
@@ -1584,9 +1643,7 @@ function unkernelEngine(panel) {
         : `unkernel network: off (${network.why})`,
     );
     log(
-      vulkan === Vulkan.ON
-        ? "unkernel Vulkan: on (the link asks for it)"
-        : "unkernel Vulkan: off (the default; vk=1 turns it on)",
+      `unkernel Vulkan: ${vulkan.mode === Vulkan.ON ? "on" : "off"} (${vulkan.why})`,
     );
     const vm = await startUnkernel({
       terminalElement,
@@ -1603,7 +1660,7 @@ function unkernelEngine(panel) {
       memory: { mib: memory.mib, fallbacks: fallbacksBelow(memory.mib) },
       cpus: cpus.count,
       net: netSpec(network),
-      vulkan,
+      vulkan: vulkan.mode,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
         kernel: urls.get(UNKERNEL_KERNEL),
