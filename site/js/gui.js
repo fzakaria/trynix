@@ -48,7 +48,9 @@ const WAYLAND_PORT = 1023;
 const HOST_CID = 2;
 
 // Where the page puts the GUI files in the share, and the names under
-// it. The share is the guest's /share, read-only to the guest.
+// it. The share is the guest's /share, read-only to the guest. The fonts
+// directory is `fonts` under GUI_SHARE_DIR because Firefox's sandbox
+// finds it there, through XDG_DATA_DIRS (sessionEnv).
 const GUI_SHARE_DIR = `${SHARE_DIR}/gui`;
 const RELAY_PATH = `${GUI_SHARE_DIR}/wlandr`;
 const FONT_DIR = `${GUI_SHARE_DIR}/fonts`;
@@ -187,6 +189,10 @@ const kwvkIcd = (driver) =>
 // libva's driver ABI 1.22, which libva 2.22 and later load.
 const KWVA_DRIVERS_DIR = "/kw/layer/usr/lib/aarch64-linux-gnu/dri";
 
+// The directories XDG's data lookups read when XDG_DATA_DIRS is unset,
+// which setting the variable would otherwise drop.
+const XDG_DEFAULT_DATA_DIRS = ["/usr/local/share", "/usr/share"];
+
 // The environment every guest shell gets, the same from the boot to the
 // end, so a GUI program started plainly finds the relay and picks its
 // Wayland backend. Toolkits that would otherwise look for X are told to
@@ -209,6 +215,14 @@ const KWVA_DRIVERS_DIR = "/kw/layer/usr/lib/aarch64-linux-gnu/dri";
 // a frame of its own, and the satellite, whose windows' frames are the
 // compositor's, does not: a Swing window opened blank and stayed so
 // until AWT was told.
+//
+// Firefox draws each website in a content process whose sandbox reads
+// only the directories it allows, and the page's fonts, in the share,
+// are in none of them: every letter of a website drew as a box with its
+// code in it (trynix#16). A file:// page's process may read anywhere,
+// so a local page drew its text. The sandbox allows `<dir>/fonts` for
+// each directory in XDG_DATA_DIRS, so the share's GUI directory, which
+// holds FONT_DIR, leads the list, ahead of XDG's defaults.
 export function sessionEnv({ vulkan = Vulkan.OFF, vulkanDriver = null } = {}) {
   const vulkanEnv =
     vulkan === Vulkan.ON
@@ -224,6 +238,7 @@ export function sessionEnv({ vulkan = Vulkan.OFF, vulkanDriver = null } = {}) {
     MOZ_ENABLE_WAYLAND: "1",
     ELECTRON_OZONE_PLATFORM_HINT: "wayland",
     FONTCONFIG_FILE: FONTS_CONF,
+    XDG_DATA_DIRS: [GUI_SHARE_DIR, ...XDG_DEFAULT_DATA_DIRS].join(":"),
     CANBERRA_DRIVER,
     ALSOFT_CONF,
     LIBVA_DRIVERS_PATH: KWVA_DRIVERS_DIR,

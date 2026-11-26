@@ -181,6 +181,13 @@ A few things the guest lacks, the page supplies:
   nixpkgs' fontconfig reads `/etc/fonts`, which the guest does not
   have. The site ships DejaVu Sans and Sans Mono and a `fonts.conf`
   that names them and maps `monospace`, `sans-serif` and `serif`.
+  Every shell also lists the fonts' parent, `/share/gui`, in
+  `XDG_DATA_DIRS`. Firefox draws a website in a content process whose
+  sandbox reads fonts only from a fixed list of system directories and
+  from `<dir>/fonts` for each directory in that variable. Without it,
+  every letter of a website drew as a box with its code in it
+  ([#16](https://github.com/fzakaria/trynix/issues/16)), while a
+  `file://` page, whose process may read anywhere, drew its text.
 - **The GL driver** and its link. nixpkgs' libglvnd and libgbm look
   for the driver in `/run/opengl-driver`, as on NixOS. The page links
   it to the site's Mesa before the shell starts, or to a selected

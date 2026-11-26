@@ -104,6 +104,17 @@ test("a session writes the relay, the fonts and fontconfig's file", async () => 
   );
 });
 
+// Checks that Firefox's sandbox lets a website's process read the
+// page's fonts: the sandbox allows `<dir>/fonts` for each directory in
+// XDG_DATA_DIRS and no directory of the share otherwise, so the fonts'
+// parent has to be listed. Also checks that the directories XDG reads
+// when the variable is unset stay at the end of the list.
+test("every shell lists the fonts' parent in XDG_DATA_DIRS", () => {
+  const dirs = sessionEnv().XDG_DATA_DIRS.split(":");
+  assert.ok(dirs.map((dir) => `${dir}/fonts`).includes("/share/gui/fonts"));
+  assert.deepEqual(dirs.slice(-2), ["/usr/local/share", "/usr/share"]);
+});
+
 // Checks the command that starts the relay: linked to the page's port
 // on vsock, reading buffers through kwshm, serving the socket the
 // session's environment names, and started once however often a
