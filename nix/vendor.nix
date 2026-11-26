@@ -65,8 +65,23 @@ let
     "present"
     "dnd"
   ];
+
+  # Writes unkernel's several-CPU kernel out of its package's kernel
+  # file, with the function the SDK itself calls in the page.
+  deriveSmp = pkgs.writeText "derive-smp.mjs" ''
+    import { readFile, writeFile } from "node:fs/promises";
+
+    const [sdk, bundle, out] = process.argv.slice(2);
+    const { smpKernelFromBundle } = await import(sdk);
+
+    const smp = await smpKernelFromBundle(new Uint8Array(await readFile(bundle)));
+    if (smp === undefined) {
+      throw new Error("the kernel file carries no several-CPU kernel");
+    }
+    await writeFile(out, smp);
+  '';
 in
-pkgs.runCommand "trynix-js-vendor" { } ''
+pkgs.runCommand "trynix-js-vendor" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
   mkdir -p $out unpack
   tar -xzf ${xtermPty} -C unpack
   cp unpack/package/index.js $out/xterm-pty.js
@@ -126,6 +141,13 @@ pkgs.runCommand "trynix-js-vendor" { } ''
   cp unpack/package/dist/web.mjs $out/unkernel/web.mjs
   cp unpack/package/dist/_chunks/core.mjs $out/unkernel/_chunks/core.mjs
   cp unpack/package/dist/unkernel.wasm $out/unkernel/unkernel.wasm
+  # The kernel for several CPUs. The package carries it as a binary
+  # difference from the one-CPU kernel, and the SDK applies the
+  # difference in the page at every boot on more than one CPU, about
+  # 150 ms. The SDK's own function applies the difference here, once,
+  # and the page fetches the result (site/js/cpus.js, kernelPath).
+  node ${deriveSmp} "$out/unkernel/_chunks/core.mjs" \
+    "$out/unkernel/unkernel.wasm" "$out/unkernel/unkernel-smp.wasm"
   # Guest GL's renderer: virglrenderer compiled to wasm, which the SDK
   # loads on the guest's first GL use and never before. virgl.mjs finds
   # its wasm next to itself.

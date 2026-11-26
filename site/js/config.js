@@ -92,6 +92,12 @@ export const SNAPSHOT_URL = "qemu/vm.state";
 export const UNKERNEL_MAIN = "vendor/unkernel/web.mjs";
 export const UNKERNEL_KERNEL = "vendor/unkernel/unkernel.wasm";
 
+// The kernel for a guest on several CPUs. unkernel's package carries it
+// as a binary difference from the one-CPU kernel, which the SDK applies
+// in the page at every boot; the site's build applies the difference
+// once instead (nix/vendor.nix), and the page fetches the result.
+export const UNKERNEL_KERNEL_SMP = "vendor/unkernel/unkernel-smp.wasm";
+
 // Guest GL's renderer, virglrenderer compiled to wasm (nix/vendor.nix).
 // The SDK fetches it on the guest's first GL use and never before.
 export const UNKERNEL_GL = "vendor/unkernel/virgl.mjs";

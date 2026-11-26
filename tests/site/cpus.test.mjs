@@ -8,12 +8,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { UNKERNEL_KERNEL, UNKERNEL_KERNEL_SMP } from "../../site/js/config.js";
 import { Pointer } from "../../site/js/memory.js";
 import {
   Browser,
   CPU_COUNTS,
   MAX_CPUS,
   defaultCpus,
+  kernelPath,
   offeredCpus,
   pickCpus,
 } from "../../site/js/cpus.js";
@@ -82,4 +84,14 @@ test("the offered counts", () => {
   assert.deepEqual(offeredCpus(desktop(12)), [1, 2, 4, 8]);
   assert.deepEqual(offeredCpus(desktop(4)), [1, 2, 4]);
   assert.deepEqual(offeredCpus(desktop(1)), [1]);
+});
+
+// Checks which kernel file a count boots: the one-CPU kernel for one
+// CPU, and the several-CPU kernel the site's build made for any count
+// above one, up to the most the kernel boots.
+test("the kernel file for a count", () => {
+  assert.equal(kernelPath(1), UNKERNEL_KERNEL);
+  assert.equal(kernelPath(2), UNKERNEL_KERNEL_SMP);
+  assert.equal(kernelPath(MAX_CPUS), UNKERNEL_KERNEL_SMP);
+  assert.notEqual(UNKERNEL_KERNEL, UNKERNEL_KERNEL_SMP);
 });

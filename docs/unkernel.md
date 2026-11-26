@@ -250,6 +250,23 @@ own thread, on one CPU.
   `stats().cpus`), and says so under Settings when that is fewer than
   asked for.
 
+Two things keep several CPUs from costing boot time. unkernel's package
+carries the SMP kernel as a binary difference from the one-CPU kernel,
+and the SDK applies the difference in the page at every boot, about
+150 ms; the site's build applies the difference once
+([nix/vendor.nix](../nix/vendor.nix)) and the page fetches
+`unkernel-smp.wasm` for any count above one. And the guest boots with
+`rcupdate.rcu_expedited=1`: its DHCP client binds and closes packet
+sockets before the first program can start, and each of those six
+calls waits out an RCU grace period of 12 to 42 ms once a second CPU
+is up. With both, `nix run .#boot-test` on the laptop below, 4 CPUs,
+went from a median of 1.5 s to 1.1 s over five boots (2026-11-26).
+What the parameter costs a busy guest was measured in tabc and not
+here: on two CPUs, forks, short connections, a 100 MB download and
+installing packages were each within 6% either way. GUI programs and
+sound were not measured with the parameter. Both costs are reported
+upstream as [unkernel#43](https://github.com/pithings/unkernel/issues/43).
+
 Measured in headless Chromium on a laptop (16 threads, Radeon 780M),
 2026-11-23, with a 2 GiB guest:
 

@@ -14,6 +14,7 @@
 // and the Settings lane offers 1, 2, 4, 8 and 16, a choice there going
 // into the link. Either is held to the host's threads.
 
+import { UNKERNEL_KERNEL, UNKERNEL_KERNEL_SMP } from "./config.js";
 import { Pointer } from "./memory.js";
 
 // The most CPUs unkernel's SMP kernel boots (NR_CPUS in its
@@ -121,4 +122,10 @@ export function pickCpus({ linked, device }) {
     };
   }
   return { count: linked, why: "the link asks for it" };
+}
+
+// The kernel file a guest on `count` CPUs boots: the one-CPU kernel, or
+// the several-CPU kernel the site's build made (config.js).
+export function kernelPath(count) {
+  return count > 1 ? UNKERNEL_KERNEL_SMP : UNKERNEL_KERNEL;
 }

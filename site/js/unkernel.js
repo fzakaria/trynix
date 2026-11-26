@@ -50,6 +50,15 @@ import {
 } from "./gui.js";
 import { kernelVulkan } from "./vulkan.js";
 
+// The guest kernel's command line: the SDK's own, and one parameter
+// more. Linux waits out an RCU grace period, tens of milliseconds once
+// a second CPU is up, in calls such as closing a packet socket. The
+// guest's DHCP client makes six such calls before the first program
+// can start, about 190 ms on two CPUs. The parameter has the kernel
+// interrupt the other CPUs and end the grace period at once
+// (docs/unkernel.md, "CPUs").
+const KERNEL_CMDLINE = "console=hvc0 rdinit=/init rcupdate.rcu_expedited=1";
+
 // Where the page writes the CA certificates when the guest has a
 // network (network.js), the same path on both sides of the share.
 const CERTS_SHARE_DIR = `${SHARE_DIR}/certs`;
@@ -419,6 +428,7 @@ export async function startUnkernel({
   });
   const kernel = await createKernel({
     kernel: new URL(engine.kernel, location.href).href,
+    cmdline: KERNEL_CMDLINE,
     memoryMiB: memory.mib,
     memoryFallbackMiB: memory.fallbacks,
     cpus,

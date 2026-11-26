@@ -87,7 +87,6 @@ import {
   SNAPSHOT_URL,
   SYSTEM,
   UNKERNEL_GL,
-  UNKERNEL_KERNEL,
   UNKERNEL_MAIN,
   UNKERNEL_VK,
   X11_SERVER,
@@ -107,6 +106,7 @@ import {
 import {
   MAX_CPUS,
   offeredCpus,
+  kernelPath,
   pickCpus,
   thisDevice as cpuDevice,
 } from "./cpus.js";
@@ -1711,9 +1711,11 @@ function unkernelEngine(panel) {
   const engineRow = panel.row("unkernel engine");
 
   return async function start(started) {
+    // The kernel for the count this boot asks for (cpus.js).
+    const kernelFile = kernelPath(cpus.count);
     const urls = await assets([
       UNKERNEL_MAIN,
-      UNKERNEL_KERNEL,
+      kernelFile,
       UNKERNEL_GL,
       UNKERNEL_VK,
     ]);
@@ -1721,7 +1723,7 @@ function unkernelEngine(panel) {
     // The kernel is not held by the page: the SDK streams the wasm from
     // the URL and the browser compiles as the bytes arrive. This
     // download fills the HTTP cache, and the bar.
-    await warmHttpCache(urls.get(UNKERNEL_KERNEL), {
+    await warmHttpCache(urls.get(kernelFile), {
       onTotal: (n) => engineRow.setTotal(n),
       onBytes: (n) => engineRow.add(n),
     });
@@ -1761,7 +1763,7 @@ function unkernelEngine(panel) {
       vulkan: vulkan.mode,
       engine: {
         main: urls.get(UNKERNEL_MAIN),
-        kernel: urls.get(UNKERNEL_KERNEL),
+        kernel: urls.get(kernelFile),
         gl: urls.get(UNKERNEL_GL),
         vk: urls.get(UNKERNEL_VK),
       },
@@ -2444,10 +2446,12 @@ async function prefetch() {
       // an optimisation that failed is not an error
     }
   };
-  // unkernel has one file worth warming, the kernel, which goes to the
-  // HTTP cache where the SDK's own fetch finds it.
+  // unkernel has one file worth warming, the kernel for the count the
+  // page has picked so far, which goes to the HTTP cache where the
+  // SDK's own fetch finds it. A reader who then picks a count that
+  // boots the other kernel waits for that kernel at boot.
   if (ENGINE === Engine.UNKERNEL) {
-    warm(UNKERNEL_KERNEL, warmHttpCache);
+    warm(kernelPath(cpus.count), warmHttpCache);
     return;
   }
 
