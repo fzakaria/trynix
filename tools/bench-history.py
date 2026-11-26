@@ -16,6 +16,7 @@ file, keyed by the release tag.
     nix run .#bench-history -- --site <site> --out h.json --revs 805107b cd13238 --emubench-runs 3
     nix run .#bench-history -- --merge a.json b.json --out history.json
     nix run .#bench-history -- --site <site> --out history.json --unkernel
+    nix run .#bench-history -- --site <site> --out history.json --unkernel --commit 897fb44
 
 --site is the page every engine is driven through: build it from the
 checkout the tool runs in (`nix build .#site`). --revs restricts the
@@ -39,6 +40,12 @@ numbers beside its own as `baseline`, because the suite's packages move
 with the index and two engines are only comparable when both ran the
 same day's packages on the same cores. The instruction-class probe is
 x86_64 assembly and is not run.
+
+A change to how the page boots unkernel moves the numbers without moving
+the version. --commit names the commit of this repository that --site
+was built from, and the record is then tagged
+unkernel-<version>+<short commit> and keeps the commit and its subject,
+so the version's earlier record stays in the history beside the new one.
 
 Read the numbers as one machine's: the history is only comparable within
 a run on one host, which the record names. One machine is not one speed
@@ -87,6 +94,11 @@ UNKERNEL_ENGINE = "unkernel"
 QEMU_ENGINE = "qemu"
 UNKERNEL_TAG_PREFIX = "unkernel-"
 UNKERNEL_VERSION_FILE = "vendor/unkernel/VERSION"
+# What joins an unkernel version to the commit of this repository in the
+# tag of a record taken with --commit, and how much of the commit's hash
+# the tag carries. site/bench/bench.js cuts the tag at the same mark.
+PAGE_COMMIT_SEPARATOR = "+"
+SHORT_COMMIT_LENGTH = 7
 # The policy numa_maps names for a process numactl did not bind.
 DEFAULT_MEMORY_POLICY = "default"
 # How long a core spins before its clock is read, so it has left idle.
@@ -293,11 +305,16 @@ def merge_histories(histories):
     }
 
 
-def unkernel_record(version, machine, measured, unkernel, baseline_tag, baseline):
+def unkernel_record(version, machine, measured, unkernel, baseline_tag, baseline, page_commit=None):
     """The record of one unkernel version: its own suite numbers, and
     the qemu engine's from the same run under `baseline`. The date is
-    when the version was measured, which is when trynix carried it."""
-    return {
+    when the version was measured, which is when trynix carried it.
+
+    `page_commit` is the commit of this repository the site was built
+    from (`commit` and `subject`), given when the record is of a change
+    to the page under a version already measured. The tag then carries
+    the commit, so the record does not replace the version's own."""
+    record = {
         "engine": UNKERNEL_ENGINE,
         "tag": UNKERNEL_TAG_PREFIX + version,
         "unkernel_version": version,
@@ -308,6 +325,13 @@ def unkernel_record(version, machine, measured, unkernel, baseline_tag, baseline
         "exec": unkernel,
         "baseline": {"tag": baseline_tag, "exec": baseline},
     }
+    if page_commit is None:
+        return record
+
+    record["tag"] += PAGE_COMMIT_SEPARATOR + page_commit["commit"][:SHORT_COMMIT_LENGTH]
+    record["commit"] = page_commit["commit"]
+    record["subject"] = page_commit["subject"]
+    return record
 
 
 def busy_clock(cpu):
@@ -447,9 +471,10 @@ def measure_exec(site, only, browser, workdir, log, guest_engine=QEMU_ENGINE):
     return measured
 
 
-def measure_unkernel(site, pins_root, only, browser, machine, log):
+def measure_unkernel(site, pins_root, only, browser, machine, log, page_commit=None):
     """Measure the unkernel version `site` carries, then the site's qemu
-    engine on the same suite, and return the record."""
+    engine on the same suite, and return the record. `page_commit` is
+    unkernel_record's."""
     with open(os.path.join(site, UNKERNEL_VERSION_FILE)) as f:
         version = f.read().strip()
     with open(os.path.join(pins_root, PINS_PATH)) as f:
@@ -475,6 +500,7 @@ def measure_unkernel(site, pins_root, only, browser, machine, log):
         unkernel=measurements[UNKERNEL_ENGINE],
         baseline_tag=baseline_tag,
         baseline=measurements[QEMU_ENGINE],
+        page_commit=page_commit,
     )
 
 
@@ -518,6 +544,10 @@ def main():
         action="store_true",
         help="measure the unkernel version --site carries, and its qemu engine beside it, and stop",
     )
+    parser.add_argument(
+        "--commit",
+        help="with --unkernel: the commit of --repo that --site was built from, for a record of a change to the page under an unkernel version already measured",
+    )
     parser.add_argument("--log", help="where the tools' own output goes (default: <out>.log)")
     parser.add_argument(
         "--browser",
@@ -534,6 +564,8 @@ def main():
 
     if not args.site:
         sys.exit("pass --site <a built site directory>")
+    if args.commit and not args.unkernel:
+        sys.exit("--commit names the page's commit for an --unkernel record; a qemu engine's record is named by --revs")
     log = args.log or args.out + ".log"
     history = load_history(args.out)
     done = {record["tag"] for record in history["records"]}
@@ -546,8 +578,13 @@ def main():
 
     # The unkernel record needs no pin history, only the tree that
     # names the site's qemu engine: --repo, or the working directory.
+    # With --commit that tree must also be a checkout that has the commit.
     if args.unkernel:
-        record = measure_unkernel(args.site, args.repo or os.getcwd(), args.only, args.browser, machine, log)
+        pins_root = args.repo or os.getcwd()
+        # Read the commit before measuring: a name git cannot resolve
+        # should fail now and not after the suite has run.
+        page_commit = describe_commit(pins_root, args.commit) if args.commit else None
+        record = measure_unkernel(args.site, pins_root, args.only, args.browser, machine, log, page_commit)
         existing = next((r for r in history["records"] if r["tag"] == record["tag"]), None)
         history["records"] = [r for r in history["records"] if r["tag"] != record["tag"]]
         history["records"].append(merge_record(existing, record))

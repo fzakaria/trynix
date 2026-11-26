@@ -20,8 +20,11 @@ const REPO_URL = "https://github.com/fzakaria/trynix/";
 const RELEASES_URL = REPO_URL + "releases/tag/";
 const PATCHES_URL = REPO_URL + "blob/main/patches/";
 // An unkernel record's tag is this prefix and the package's version, and
-// the version's release lives in unkernel's own repository.
+// the version's release lives in unkernel's own repository. A record of
+// a change to the page under a version already measured adds this mark
+// and the short commit of this repository (bench-history.py --commit).
 const UNKERNEL_TAG_PREFIX = "unkernel-";
+const PAGE_COMMIT_SEPARATOR = "+";
 const UNKERNEL_RELEASES_URL =
   "https://github.com/pithings/unkernel/releases/tag/v";
 const MILESTONES = [
@@ -162,7 +165,8 @@ function changeDescription(milestone) {
 // repository's for a qemu engine, unkernel's own for an unkernel version.
 function tagLink(tag) {
   const href = tag.startsWith(UNKERNEL_TAG_PREFIX)
-    ? UNKERNEL_RELEASES_URL + tag.slice(UNKERNEL_TAG_PREFIX.length)
+    ? UNKERNEL_RELEASES_URL +
+      tag.slice(UNKERNEL_TAG_PREFIX.length).split(PAGE_COMMIT_SEPARATOR)[0]
     : RELEASES_URL + tag;
   return html("a", { href, class: "tag" }, [html("code", {}, [tag])]);
 }

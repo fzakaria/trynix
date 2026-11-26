@@ -157,8 +157,9 @@ class Chronology(unittest.TestCase):
 class UnkernelRecord(unittest.TestCase):
     """Tests the record an unkernel measurement becomes: named after the
     unkernel version the site carries, marked with its engine, and
-    holding the qemu engine's numbers from the same run beside its own.
-    Built from made-up measurements, with no browser."""
+    holding the qemu engine's numbers from the same run beside its own,
+    and named after the trynix commit as well when the record is of a
+    change to the page. Built from made-up measurements, with no browser."""
 
     def test_names_the_version_and_keeps_the_baseline(self):
         history = load()
@@ -176,6 +177,36 @@ class UnkernelRecord(unittest.TestCase):
         self.assertEqual(record["exec"], {"results": [{"name": "hello"}]})
         self.assertEqual(record["baseline"]["tag"], "engine-20260913-2056")
         self.assertEqual(record["baseline"]["exec"], {"results": [{"name": "hello"}]})
+        self.assertNotIn("commit", record)
+
+    def test_a_change_to_the_page_gets_a_record_of_its_own(self):
+        # A record of the same unkernel version measured at a later
+        # trynix commit must not replace the version's first record:
+        # the two are built from the same made-up measurements and
+        # merged, and both have to survive under different tags.
+        history = load()
+        measurements = dict(
+            version="0.2.0-261125-cec0a49",
+            machine={"host": "leviathan"},
+            unkernel={"results": [{"name": "hello"}]},
+            baseline_tag="engine-20260913-2056",
+            baseline={"results": [{"name": "hello"}]},
+        )
+        first = history.unkernel_record(measured="2026-11-25T18:00:00+00:00", **measurements)
+        second = history.unkernel_record(
+            measured="2026-11-26T22:00:00+00:00",
+            page_commit={"commit": "897fb44b230eaa3967a3eeda146ab7c080fdd30a", "subject": "Boot unkernel on several CPUs 0.4 s sooner"},
+            **measurements,
+        )
+        self.assertEqual(second["tag"], "unkernel-0.2.0-261125-cec0a49+897fb44")
+        self.assertEqual(second["unkernel_version"], "0.2.0-261125-cec0a49")
+        self.assertEqual(second["commit"], "897fb44b230eaa3967a3eeda146ab7c080fdd30a")
+        self.assertEqual(second["subject"], "Boot unkernel on several CPUs 0.4 s sooner")
+        merged = history.merge_histories([{"records": [second, first]}])
+        self.assertEqual(
+            [record["tag"] for record in merged["records"]],
+            ["unkernel-0.2.0-261125-cec0a49", "unkernel-0.2.0-261125-cec0a49+897fb44"],
+        )
 
 
 class MemoryPolicy(unittest.TestCase):
