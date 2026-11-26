@@ -634,6 +634,16 @@ function drawEmubench(records) {
   host.append(grid, table(withRows, columns));
 }
 
+// Where a pinned run ran: its CPUs, and the NUMA policy its memory was
+// placed by when the record has one (`bind:5` is numactl --membind=5).
+function placement(runner) {
+  const cpus = `CPUs ${runner.cpu_affinity.join(", ")}`;
+  if (!runner.memory_policy) {
+    return cpus;
+  }
+  return `${cpus}; NUMA memory policy ${runner.memory_policy}`;
+}
+
 function describeRunner(records) {
   const latest = [...records].reverse().find((r) => r.runner);
   if (!latest) {
@@ -648,12 +658,7 @@ function describeRunner(records) {
       `every instruction-class point is the median of ${probeRuns ?? "several"} probe runs; every package point is one run, cold then warm, in a fresh guest`,
     ],
     ["CPU", `${runner.cpu}, ${runner.cores} hardware threads`],
-    [
-      "latest run placement",
-      runner.cpu_affinity
-        ? `CPUs ${runner.cpu_affinity.join(", ")}; NUMA memory node ${runner.memory_node}`
-        : null,
-    ],
+    ["latest run placement", runner.cpu_affinity ? placement(runner) : null],
     [
       "memory",
       typeof runner.memory_gib === "number" ? `${runner.memory_gib} GiB` : null,
