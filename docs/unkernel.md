@@ -261,11 +261,17 @@ sockets before the first program can start, and each of those six
 calls waits out an RCU grace period of 12 to 42 ms once a second CPU
 is up. With both, `nix run .#boot-test` on the laptop below, 4 CPUs,
 went from a median of 1.5 s to 1.1 s over five boots (2026-11-26).
-What the parameter costs a busy guest was measured in tabc and not
-here: on two CPUs, forks, short connections, a 100 MB download and
-installing packages were each within 6% either way. GUI programs and
-sound were not measured with the parameter. Both costs are reported
-upstream as [unkernel#43](https://github.com/pithings/unkernel/issues/43).
+What the parameter costs a busy guest was measured in tabc first: on
+two CPUs, forks, short connections, a 100 MB download and installing
+packages were each within 6% either way. The bench machine then ran
+the suite on the commit before and the commit itself in alternation,
+five times each on two CPUs (`nix run .#exec-bench`, 2026-11-26): the
+median boot to a shell went from 2.99 s to 2.44 s, `opencode --version`
+read 30.04 s before and 30.15 s after, and every other command's median
+moved by 7 ms or less (the benchmark page, [site/bench/](../site/bench/)).
+GUI programs and sound were not measured with the parameter. Both costs
+are reported upstream as
+[unkernel#43](https://github.com/pithings/unkernel/issues/43).
 
 Measured in headless Chromium on a laptop (16 threads, Radeon 780M),
 2026-11-23, with a 2 GiB guest:

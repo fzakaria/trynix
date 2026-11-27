@@ -345,6 +345,39 @@
         </p>
       </section>
 
+      <section class="change">
+        <h3>The second CPU at boot</h3>
+        <p class="meta">
+          <a href="https://github.com/fzakaria/trynix/blob/main/nix/vendor.nix">nix/vendor.nix</a>
+          · <code>rcupdate.rcu_expedited=1</code> ·
+          <a href="https://github.com/pithings/unkernel/issues/43">unkernel#43</a>
+          · the same unkernel, booted differently
+        </p>
+        <p class="gain">
+          boot to a shell 2.99 s to 2.44 s, the median of 25 boots each;
+          <code>opencode --version</code> 30.0 s before and 30.1 s after
+        </p>
+        <p>
+          A guest on two CPUs paid for the second one at every boot. unkernel ships its SMP kernel
+          as a binary difference from the one-CPU kernel, and the page applied the difference at
+          each boot, about 150 ms; the site's build now applies it once and the page fetches the
+          result. The guest's DHCP client runs before the first program can start, and six of its
+          calls each waited out an RCU grace period of 12 to 42 ms once a second CPU was up; the
+          guest now boots with <code>rcupdate.rcu_expedited=1</code>, which ends a grace period
+          at once.
+        </p>
+        <p>
+          The unkernel version did not move, so this record is a commit of the page measured on
+          the version of the record before it. The two sites were also run in alternation, five
+          times each. hello, ripgrep and jj booted 0.4 to 0.7 s sooner; python and opencode, whose
+          boots wait longer on the closure, about 0.2 s. Ending grace periods early cost a busy
+          guest nothing the suite can see: the median of every command but opencode moved by 7 ms
+          or less, and opencode read 30.04 s before and 30.15 s after cold, 29.61 s and 29.46 s
+          warm. This record's own cold opencode, 33.4 s, is one run, as every point on the charts
+          is, and it sits outside all ten of those takes, which ranged from 29.9 to 30.7 s.
+        </p>
+      </section>
+
       <h2>Appendix</h2>
       <dl id="appendix"></dl>
       <div id="appendix-skipped" class="muted"></div>

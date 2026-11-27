@@ -80,6 +80,11 @@ const MILESTONES = [
     label:
       "the default engine becomes unkernel: the kernel is compiled wasm, the guest is aarch64",
   },
+  {
+    tag: "unkernel-0.2.0-261125-cec0a49+897fb44",
+    label:
+      "the SMP kernel is built with the site, and RCU grace periods are expedited",
+  },
 ];
 
 // The suite exec-bench runs, in the order the charts show them.
