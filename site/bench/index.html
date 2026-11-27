@@ -84,91 +84,103 @@
         carry the profiles and the dead ends.
       </p>
 
-      <section class="change">
-        <h3>The store share</h3>
+      <details class="change">
+        <summary>
+          <h3>The store share</h3>
+          <span class="gain">first <code>ruby -e 1</code>: about 35 s to about 15 s</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0002-9p-local-resolve-a-path-in-one-syscall-under-emscripten.patch"
             >patch 0002</a
           >
           · <code>cache=loose</code> on the 9p mount
         </p>
-        <p class="gain">first <code>ruby -e 1</code>: about 35 s to about 15 s</p>
         <p>
           Packages reach the guest over a 9p share. The guest now caches the share instead of asking
           the host on every lookup, and resolves a path in one syscall instead of one per
           component.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>Entropy</h3>
+      <details class="change">
+        <summary>
+          <h3>Entropy</h3>
+          <span class="gain">first run of any binary: about 50 s to 2.5 s</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest/reseed.c">reseed.c</a> ·
           <code>rdrand</code> and <code>virtio-rng</code> in
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest/machine.json">machine.json</a>
         </p>
-        <p class="gain">first run of any binary: about 50 s to 2.5 s</p>
         <p>
           The snapshot is taken before the kernel has seeded its random pool, so the first program
           to ask for randomness spun in a jitter loop for most of a minute. The guest now has a
           hardware random source and reseeds at boot.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The clock</h3>
+      <details class="change">
+        <summary>
+          <h3>The clock</h3>
+          <span class="gain">guest time was 3.3x slow; <code>sleep 10</code> took 33 s, now 10</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0003-count-the-clock-the-resumer-will-count.patch"
             >patch 0003</a
           >
         </p>
-        <p class="gain">guest time was 3.3x slow; <code>sleep 10</code> took 33 s, now 10</p>
         <p>
           The snapshot was taken on a 3.29 GHz cycle counter and resumed on a 1 GHz one, so the
           guest's clock ran 3.3x slow. Both builds now count the same clock, and instruction-class
           numbers from before are corrected by the measured ratio.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>Idle, and the engine's size</h3>
+      <details class="change">
+        <summary>
+          <h3>Idle, and the engine's size</h3>
+          <span class="gain">idle guest 1.45 to 0.39 cores; engine download 41 MB to 13 MB</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/xterm-pty">xterm-pty patch</a>
           · <code>ioeventfd=off</code> · DWARF stripped
         </p>
-        <p class="gain">idle guest 1.45 to 0.39 cores; engine download 41 MB to 13 MB</p>
         <p>
           The main loop never slept because the pty poll returned at once; it now waits, with 9p
           off that loop so the wait is safe. Stripping debug info from the engine cut the
           download to a third.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>Correctness</h3>
+      <details class="change">
+        <summary>
+          <h3>Correctness</h3>
+          <span class="gain">no speed change; opencode runs at all</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0004-wasm-tcg-pass-ctpop-the-right-operands.patch"
             >patch 0004</a
           >
           · guest CPU raised to x86-64-v3
         </p>
-        <p class="gain">no speed change; opencode runs at all</p>
         <p>
           The newer CPU model exposed a <code>POPCNT</code> that answered from a stale register,
           now fixed and checked in CI. opencode needs SSE4.2 and crashed until that fix, so its
           chart starts here.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The backend</h3>
+      <details class="change">
+        <summary>
+          <h3>The backend</h3>
+          <span class="gain">
+            <code>opencode --version</code> 408 s to 171 s; one compiled block 349 to 1163 mips
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0006-wasm32-batch-chain-locals.patch"
             >patch 0006</a
           >
-        </p>
-        <p class="gain">
-          <code>opencode --version</code> 408 s to 171 s; one compiled block 349 to 1163 mips
         </p>
         <p>
           Blocks now compile in batches of 64 after 32 runs instead of one module per block after
@@ -176,18 +188,20 @@
           guest registers in wasm locals. What remains is generated code spread over about 48,000
           blocks, cache-missing on every transition.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The transition</h3>
+      <details class="change">
+        <summary>
+          <h3>The transition</h3>
+          <span class="gain">
+            two- and four-block loops 1.5x to 1.9x; <code>opencode --version</code> warm 182 s to
+            173 s here, cold within noise
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0007-wasm32-cached-chains-direct-calls-mul64.patch"
             >patch 0007</a
           >
-        </p>
-        <p class="gain">
-          two- and four-block loops 1.5x to 1.9x; <code>opencode --version</code> warm 182 s to
-          173 s here, cold within noise
         </p>
         <p>
           A jump now caches its successor's function index in its own block, a successor in the
@@ -196,17 +210,19 @@
           instead of through a helper. The single hot block and the memory tests do not move; the
           cold-code rows do because they carry an <code>imul</code> per block.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>Linux 7.2.5</h3>
+      <details class="change">
+        <summary>
+          <h3>Linux 7.2.5</h3>
+          <span class="gain">
+            cold <code>jj --version</code> 3.19 s to 3.72 s, cold python 5.30 s to 5.58 s; warm
+            unchanged
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest.nix">nix/guest.nix</a> ·
           guest kernel 6.1.187 to 7.2.5
-        </p>
-        <p class="gain">
-          cold <code>jj --version</code> 3.19 s to 3.72 s, cold python 5.30 s to 5.58 s; warm
-          unchanged
         </p>
         <p>
           The new kernel fixes ELF loading for Fil-C binaries and costs every cold exec: it does
@@ -215,32 +231,36 @@
           page-cache code that grew across the folio conversions. No configuration setting
           recovers it; the profile and the diagnostic builds are in engine-execution.md.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The warm-up</h3>
+      <details class="change">
+        <summary>
+          <h3>The warm-up</h3>
+          <span class="gain">cold browser CPU 4% on jj, 5% on python, 3% on opencode; warm unchanged</span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0008-wasm32-warmup-128.patch"
             >patch 0008</a
           >
         </p>
-        <p class="gain">cold browser CPU 4% on jj, 5% on python, 3% on opencode; warm unchanged</p>
         <p>
           A block now interprets 128 times before it joins a batch instead of 32. A cold start
           spends a third of its vCPU time making code and under six percent interpreting it, so
           compiling a quarter of the blocks it translates was the wrong side of that trade.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The clock, again</h3>
+      <details class="change">
+        <summary>
+          <h3>The clock, again</h3>
+          <span class="gain">
+            two releases ran guest time 3.3x slow; their guest-reported columns are wrong, the
+            host-measured ones are not
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/native-qemu.nix">nix/native-qemu.nix</a>
           · a guest clock check in <code>boot-test</code>
-        </p>
-        <p class="gain">
-          two releases ran guest time 3.3x slow; their guest-reported columns are wrong, the
-          host-measured ones are not
         </p>
         <p>
           The snapshots of the two releases before this one were taken on a native QEMU built
@@ -250,47 +270,56 @@
           opencode read 15% faster on those two records, which is not the engine: the same
           engine measures 188 s here with the clock right.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The lookup</h3>
+      <details class="change">
+        <summary>
+          <h3>The lookup</h3>
+          <span class="gain">
+            <code>call</code> 1.34x, <code>indirect</code> 1.2x; python 3% and opencode 3 to 4% of
+            browser CPU; jj unchanged
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/patches/0009-wasm32-lookup-cache.patch"
             >patch 0009</a
           >
-        </p>
-        <p class="gain">
-          <code>call</code> 1.34x, <code>indirect</code> 1.2x; python 3% and opencode 3 to 4% of
-          browser CPU; jj unchanged
         </p>
         <p>
           A return or indirect jump asked a C helper for its target on every transition. Generated
           code now probes a per-vCPU cache keyed on the guest state first, and hits 92 to 94% of
           the time.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The first command</h3>
+      <details class="change">
+        <summary>
+          <h3>The first command</h3>
+          <span class="gain">
+            cold <code>jj --version</code> 3.71 s to 2.92 s at this runner's one second of think
+            time; 27% less browser CPU at three seconds
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/guest/init">nix/guest/init</a>
           · a background read after the mount
         </p>
-        <p class="gain">
-          cold <code>jj --version</code> 3.71 s to 2.92 s at this runner's one second of think
-          time; 27% less browser CPU at three seconds
-        </p>
         <p>
-          A cold exec is mostly the binary being faulted in over 9p, so init reads what
+          A cold exec is mostly the binary faulting in over 9p, so init reads what
           <code>/share/bin</code> links to in the background right after the mount. The first
-          release also read the libraries, which helped small binaries and cost python; the next
-          reads the binaries alone, which is why hello, ripgrep and jj give a little back between
-          those two records.
+          release with it also read the libraries, which helped small binaries and cost python,
+          so hello, ripgrep and jj give a little back at the next.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>A second engine</h3>
+      <details class="change">
+        <summary>
+          <h3>A second engine</h3>
+          <span class="gain">
+            cold <code>jj --version</code> 3.02 s to 0.35 s, python 5.21 s to 1.09 s,
+            <code>opencode --version</code> 184 s to 98 s
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/pithings/unkernel">unkernel</a>
           ·
@@ -301,28 +330,23 @@
           >
           · the kernel is compiled to wasm, only the programs are emulated
         </p>
-        <p class="gain">
-          cold <code>jj --version</code> 3.02 s to 0.35 s, <code>python3 -c 'print(1)'</code> 5.21
-          s to 1.09 s, <code>opencode --version</code> 184 s to 98 s, measured together
-        </p>
         <p>
-          QEMU emulates a whole PC, so the guest's kernel runs through the same translator as the
-          program, and a first run is mostly kernel work: faulting the closure in over 9p, mapping
-          it, starting the process. unkernel is Linux compiled to WebAssembly with an aarch64
-          emulator inside for user programs, so that work runs as compiled code. It boots in
-          under half a second, which is why the boot panel drops without a snapshot. The page
-          resolves packages against the aarch64 builds for it; QEMU stays for x86_64 store paths,
-          for versions Hydra never built for aarch64, and for browsers without JSPI.
+          A first run is mostly kernel work, which QEMU sends through the same translator as the
+          program and unkernel runs as compiled WebAssembly. QEMU stays for x86_64 store paths,
+          versions Hydra never built for aarch64, and browsers without JSPI. The package charts
+          step here between two engines; "The two engines, measured together" is the
+          like-for-like pair.
         </p>
-        <p>
-          The last point on every package chart is unkernel. The step there is two engines apart,
-          not one engine improving, and the table under "The two engines, measured together" is
-          the like-for-like pair.
-        </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>Two guest CPUs</h3>
+      <details class="change">
+        <summary>
+          <h3>Two guest CPUs</h3>
+          <span class="gain">
+            <code>opencode --version</code> 55 to 114 s between runs on one CPU, 30 to 33 s on two;
+            the other packages within a few percent
+          </span>
+        </summary>
         <p class="meta">
           <a
             data-unpinned
@@ -331,52 +355,37 @@
           >
           · unkernel's SMP kernel · the bench names the guest's size in every link
         </p>
-        <p class="gain">
-          <code>opencode --version</code> 55 to 114 s between runs on one CPU, 30 to 33 s on two;
-          the other packages within a few percent
-        </p>
         <p>
-          The page now boots the unkernel guest on several CPUs, up to four by the host's threads,
-          and the bench now boots it on two with 2048 MiB whatever the host has. The records before
-          this one ran on one CPU with 512 MiB. opencode's runtime runs threads beside its main
-          one, and on one CPU its time swung by two to one between runs, so those records' opencode
-          points are one draw from that spread. The step at this record is the second CPU, not a
-          faster unkernel.
+          The page boots the unkernel guest on up to four CPUs, and the bench boots it on two with
+          2048 MiB, where the records before ran on one with 512 MiB. On one CPU, opencode's
+          threads made its time swing two to one between runs, so the earlier opencode points are
+          one draw from that spread.
         </p>
-      </section>
+      </details>
 
-      <section class="change">
-        <h3>The second CPU at boot</h3>
+      <details class="change">
+        <summary>
+          <h3>The second CPU at boot</h3>
+          <span class="gain">
+            boot to a shell 2.99 s to 2.44 s, the median of 25 boots each;
+            <code>opencode --version</code> 30.0 s before and 30.1 s after
+          </span>
+        </summary>
         <p class="meta">
           <a href="https://github.com/fzakaria/trynix/blob/main/nix/vendor.nix">nix/vendor.nix</a>
           · <code>rcupdate.rcu_expedited=1</code> ·
           <a href="https://github.com/pithings/unkernel/issues/43">unkernel#43</a>
           · the same unkernel, booted differently
         </p>
-        <p class="gain">
-          boot to a shell 2.99 s to 2.44 s, the median of 25 boots each;
-          <code>opencode --version</code> 30.0 s before and 30.1 s after
-        </p>
         <p>
-          A guest on two CPUs paid for the second one at every boot. unkernel ships its SMP kernel
-          as a binary difference from the one-CPU kernel, and the page applied the difference at
-          each boot, about 150 ms; the site's build now applies it once and the page fetches the
-          result. The guest's DHCP client runs before the first program can start, and six of its
-          calls each waited out an RCU grace period of 12 to 42 ms once a second CPU was up; the
-          guest now boots with <code>rcupdate.rcu_expedited=1</code>, which ends a grace period
-          at once.
+          The page applied unkernel's SMP kernel, a binary diff of the one-CPU kernel, at every
+          boot for about 150 ms; the site's build now applies it once. Once a second CPU was up,
+          six of the guest's DHCP calls each waited out an RCU grace period of 12 to 42 ms, and
+          <code>rcupdate.rcu_expedited=1</code> ends a grace period at once. This record's cold
+          opencode, 33.4 s, is one run; ten runs alternating this page and the one before ranged
+          from 29.9 to 30.7 s.
         </p>
-        <p>
-          The unkernel version did not move, so this record is a commit of the page measured on
-          the version of the record before it. The two sites were also run in alternation, five
-          times each. hello, ripgrep and jj booted 0.4 to 0.7 s sooner; python and opencode, whose
-          boots wait longer on the closure, about 0.2 s. Ending grace periods early cost a busy
-          guest nothing the suite can see: the median of every command but opencode moved by 7 ms
-          or less, and opencode read 30.04 s before and 30.15 s after cold, 29.61 s and 29.46 s
-          warm. This record's own cold opencode, 33.4 s, is one run, as every point on the charts
-          is, and it sits outside all ten of those takes, which ranged from 29.9 to 30.7 s.
-        </p>
-      </section>
+      </details>
 
       <h2>Appendix</h2>
       <dl id="appendix"></dl>
